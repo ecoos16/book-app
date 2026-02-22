@@ -1,4 +1,4 @@
-import { router } from "expo-router";
+import { router, useLocalSearchParams } from "expo-router";
 import React, { useMemo, useState } from "react";
 import {
   Alert,
@@ -8,12 +8,12 @@ import {
   TextInput,
   View,
 } from "react-native";
-import { StarRating } from "../components/StarRating";
-import { useBooks } from "../context/BooksContext";
-import type { BookStatus } from "../types/book";
+import { StarRating } from "../../components/StarRating";
+import { useBooks } from "../../context/BooksContext";
+import type { BookStatus } from "../../types/book";
 
 /**
- * Durum etiketleri
+ * Durum etiketleri (UI'da görünen Türkçe karşılıklar)
  */
 const statusLabel: Record<BookStatus, string> = {
   reading: "Okuyorum",
@@ -21,42 +21,105 @@ const statusLabel: Record<BookStatus, string> = {
   want: "İstiyorum",
 };
 
-export default function AddBook() {
-  const { addBook } = useBooks();
-
-  // Temel alanlar
-  const [title, setTitle] = useState("");
-  const [author, setAuthor] = useState("");
-
-  // Durum
-  const [status, setStatus] = useState<BookStatus>("reading");
-
-  // ✅ Okudum alanları
-  const [rating, setRating] = useState<number>(0);
-  const [note, setNote] = useState("");
-
-  // ✅ Okuyorum alanları (progress)
-  const [pagesTotalText, setPagesTotalText] = useState(""); // TextInput string tutar
-  const [pagesReadText, setPagesReadText] = useState("");
-
-  // Kaydet butonu kontrol
-  const canSave = useMemo(() => {
-    return title.trim().length > 0 && author.trim().length > 0;
-  }, [title, author]);
+export default function EditBook() {
+  /**
+   * URL'den id alıyoruz: /edit-book/[id]
+   */
+  const { id } = useLocalSearchParams<{ id: string }>();
 
   /**
-   * Status değişince gereksiz alanları temizleyelim (UX için)
+   * Context'ten:
+   * - getById: kitabı bul
+   * - updateBook: güncelle
+   */
+  const { getById, updateBook } = useBooks();
+
+  const book = id ? getById(id) : undefined;
+
+  /**
+   * ✅ Form state'leri
+   * book varsa mevcut değerlerle başlatıyoruz
+   */
+  const [title, setTitle] = useState(book?.title ?? "");
+  const [author, setAuthor] = useState(book?.author ?? "");
+  const [status, setStatus] = useState<BookStatus>(book?.status ?? "reading");
+
+  // ✅ Okudum alanları
+  const [note, setNote] = useState(book?.note ?? "");
+  const [rating, setRating] = useState<number>(book?.rating ?? 0);
+
+  // ✅ Okuyorum alanları (progress)
+  // TextInput string tuttuğu için sayıları string olarak saklıyoruz
+  const [pagesTotalText, setPagesTotalText] = useState(
+    book?.pagesTotal ? String(book.pagesTotal) : "",
+  );
+  const [pagesReadText, setPagesReadText] = useState(
+    book?.pagesRead ? String(book.pagesRead) : "",
+  );
+
+  /**
+   * Kaydet butonunun aktifliği:
+   * title ve author boş olmamalı
+   */
+  const canSave = useMemo(
+    () => title.trim().length > 0 && author.trim().length > 0,
+    [title, author],
+  );
+
+  /**
+   * Kitap bulunamazsa güvenli ekran
+   */
+  if (!book) {
+    return (
+      <ScrollView contentContainerStyle={{ padding: 16 }}>
+        <Text style={{ fontSize: 18, fontWeight: "700" }}>
+          Kitap bulunamadı
+        </Text>
+
+        <Pressable
+          onPress={() => router.back()}
+          style={{
+            marginTop: 12,
+            paddingVertical: 12,
+            borderRadius: 12,
+            borderWidth: 1,
+            borderColor: "#ddd",
+            alignItems: "center",
+          }}
+        >
+          <Text style={{ fontWeight: "700" }}>Geri</Text>
+        </Pressable>
+      </ScrollView>
+    );
+  }
+
+  /**
+   * ✅ TextInput’tan gelen sayıları güvenli number’a çevirir
+   * - NaN ise undefined
+   * - negatif ise 0
+   * - küsurat girilirse floor ile tamsayıya indirir
+   */
+  const toSafeNumber = (t: string) => {
+    const n = Number(t.replace(",", "."));
+    if (!Number.isFinite(n)) return undefined;
+    return Math.max(0, Math.floor(n));
+  };
+
+  /**
+   * ✅ Status değişince UX:
+   * - Okudum değilse: rating/note temizle
+   * - Okuyorum değilse: pagesTotal/pagesRead temizle
    */
   const onChangeStatus = (next: BookStatus) => {
     setStatus(next);
 
-    // Okudum değilse rating/note temizle
+    // Okudum değilse -> rating/note temizle
     if (next !== "read") {
       setRating(0);
       setNote("");
     }
 
-    // Okuyorum değilse sayfa alanlarını temizle
+    // Okuyorum değilse -> progress temizle
     if (next !== "reading") {
       setPagesTotalText("");
       setPagesReadText("");
@@ -64,45 +127,38 @@ export default function AddBook() {
   };
 
   /**
-   * TextInput'tan gelen sayıları güvenli number'a çeviren helper
+   * ✅ Kaydet
+   * Status’a göre doğru alanları güncelleriz
    */
-  const toSafeNumber = (t: string) => {
-    const n = Number(t.replace(",", "."));
-    if (!Number.isFinite(n)) return undefined;
-    // sayfa sayısı negatif olamaz
-    const v = Math.max(0, Math.floor(n));
-    return v;
-  };
-
-  const onSubmit = () => {
+  const onSave = () => {
     if (!canSave) {
       Alert.alert("Eksik bilgi", "Kitap adı ve yazar zorunlu.");
       return;
     }
 
-    // ✅ Progress alanlarını sadece status=reading ise kaydet
+    // ✅ Progress alanlarını sadece Okuyorum seçiliyse kullan
     const pagesTotal =
       status === "reading" ? toSafeNumber(pagesTotalText) : undefined;
     const pagesRead =
       status === "reading" ? toSafeNumber(pagesReadText) : undefined;
 
-    // Eğer toplam sayfa girilmişse ve okunan daha büyükse otomatik sınırla
+    // Okunan sayfa toplamdan büyükse otomatik sınırla
     const fixedPagesRead =
       typeof pagesTotal === "number" && typeof pagesRead === "number"
         ? Math.min(pagesRead, pagesTotal)
         : pagesRead;
 
-    addBook({
+    updateBook(book.id, {
+      // temel alanlar
       title: title.trim(),
       author: author.trim(),
       status,
 
-      // Okudum -> rating/note
+      // ✅ Okudum ise rating/note kaydet, değilse temizle
+      note: status === "read" && note.trim().length ? note.trim() : undefined,
       rating: status === "read" && rating > 0 ? rating : undefined,
-      note:
-        status === "read" && note.trim().length > 0 ? note.trim() : undefined,
 
-      // Okuyorum -> progress
+      // ✅ Okuyorum ise progress kaydet, değilse temizle
       pagesTotal:
         status === "reading" && typeof pagesTotal === "number" && pagesTotal > 0
           ? pagesTotal
@@ -120,15 +176,15 @@ export default function AddBook() {
 
   return (
     <ScrollView contentContainerStyle={{ padding: 16, gap: 12 }}>
-      <Text style={{ fontSize: 22, fontWeight: "900" }}>Kitap Ekle</Text>
+      <Text style={{ fontSize: 22, fontWeight: "800" }}>Kitabı Düzenle</Text>
 
       {/* Kitap adı */}
       <View style={{ gap: 6 }}>
-        <Text style={{ fontWeight: "800" }}>Kitap Adı</Text>
+        <Text style={{ fontWeight: "700" }}>Kitap Adı</Text>
         <TextInput
           value={title}
           onChangeText={setTitle}
-          placeholder="Örn: 1984"
+          placeholder="Kitap adı"
           style={{
             borderWidth: 1,
             borderColor: "#ddd",
@@ -141,11 +197,11 @@ export default function AddBook() {
 
       {/* Yazar */}
       <View style={{ gap: 6 }}>
-        <Text style={{ fontWeight: "800" }}>Yazar</Text>
+        <Text style={{ fontWeight: "700" }}>Yazar</Text>
         <TextInput
           value={author}
           onChangeText={setAuthor}
-          placeholder="Örn: George Orwell"
+          placeholder="Yazar"
           style={{
             borderWidth: 1,
             borderColor: "#ddd",
@@ -158,10 +214,12 @@ export default function AddBook() {
 
       {/* Durum seçimi */}
       <View style={{ gap: 8 }}>
-        <Text style={{ fontWeight: "800" }}>Durum</Text>
+        <Text style={{ fontWeight: "700" }}>Durum</Text>
+
         <View style={{ flexDirection: "row", gap: 8, flexWrap: "wrap" }}>
           {(["reading", "read", "want"] as BookStatus[]).map((s) => {
             const active = s === status;
+
             return (
               <Pressable
                 key={s}
@@ -176,7 +234,10 @@ export default function AddBook() {
                 }}
               >
                 <Text
-                  style={{ color: active ? "#fff" : "#111", fontWeight: "800" }}
+                  style={{
+                    color: active ? "#fff" : "#111",
+                    fontWeight: "700",
+                  }}
                 >
                   {statusLabel[s]}
                 </Text>
@@ -193,7 +254,7 @@ export default function AddBook() {
 
           {/* Toplam sayfa */}
           <View style={{ gap: 6 }}>
-            <Text style={{ fontWeight: "800" }}>Toplam Sayfa</Text>
+            <Text style={{ fontWeight: "700" }}>Toplam Sayfa</Text>
             <TextInput
               value={pagesTotalText}
               onChangeText={setPagesTotalText}
@@ -211,7 +272,7 @@ export default function AddBook() {
 
           {/* Okunan sayfa */}
           <View style={{ gap: 6 }}>
-            <Text style={{ fontWeight: "800" }}>Okunan Sayfa</Text>
+            <Text style={{ fontWeight: "700" }}>Okunan Sayfa</Text>
             <TextInput
               value={pagesReadText}
               onChangeText={setPagesReadText}
@@ -228,7 +289,7 @@ export default function AddBook() {
           </View>
 
           <Text style={{ color: "#888", fontSize: 12 }}>
-            (İpucu: Okunan sayfa toplamdan büyükse otomatik düzeltilir)
+            (Okunan sayfa toplamdan büyükse otomatik düzeltilir)
           </Text>
         </View>
       )}
@@ -237,8 +298,9 @@ export default function AddBook() {
       {status === "read" && (
         <>
           <View style={{ gap: 8 }}>
-            <Text style={{ fontWeight: "800" }}>Puan</Text>
+            <Text style={{ fontWeight: "700" }}>Puan</Text>
             <StarRating value={rating} onChange={setRating} />
+
             <Pressable
               onPress={() => setRating(0)}
               style={{ alignSelf: "flex-start" }}
@@ -248,11 +310,11 @@ export default function AddBook() {
           </View>
 
           <View style={{ gap: 6 }}>
-            <Text style={{ fontWeight: "800" }}>Not</Text>
+            <Text style={{ fontWeight: "700" }}>Not</Text>
             <TextInput
               value={note}
               onChangeText={setNote}
-              placeholder="Kitap hakkında kısa notun…"
+              placeholder="Bu kitapla ilgili notun…"
               multiline
               style={{
                 borderWidth: 1,
@@ -270,7 +332,7 @@ export default function AddBook() {
 
       {/* Kaydet */}
       <Pressable
-        onPress={onSubmit}
+        onPress={onSave}
         style={{
           marginTop: 8,
           backgroundColor: canSave ? "#111" : "#999",
@@ -279,10 +341,10 @@ export default function AddBook() {
           alignItems: "center",
         }}
       >
-        <Text style={{ color: "#fff", fontWeight: "900" }}>Kaydet</Text>
+        <Text style={{ color: "#fff", fontWeight: "800" }}>Kaydet</Text>
       </Pressable>
 
-      {/* Vazgeç */}
+      {/* Geri */}
       <Pressable
         onPress={() => router.back()}
         style={{
@@ -294,7 +356,7 @@ export default function AddBook() {
           backgroundColor: "#fff",
         }}
       >
-        <Text style={{ fontWeight: "900" }}>Vazgeç</Text>
+        <Text style={{ fontWeight: "800" }}>Geri</Text>
       </Pressable>
     </ScrollView>
   );
