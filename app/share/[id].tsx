@@ -1,3 +1,4 @@
+// app/share/[id].tsx
 import { router, useLocalSearchParams } from "expo-router";
 import React, { useMemo, useState } from "react";
 import {
@@ -12,34 +13,30 @@ import { useBooks } from "../../context/BooksContext";
 
 export default function ShareBook() {
   /**
-   * URL'den id alıyoruz: /share/[id]
+   * ✅ Route param: /share/[id]
    */
   const { id } = useLocalSearchParams<{ id: string }>();
 
   /**
-   * Context'ten kitabı bulup güncelleyeceğiz
+   * ✅ Context: kitabı bul + güncelle
    */
   const { getById, updateBook } = useBooks();
 
+  /**
+   * ✅ Kitabı getir
+   */
   const book = id ? getById(id) : undefined;
 
   /**
-   * Eğer daha önce paylaşılmışsa shareText dolu olabilir -> input'a basıyoruz
+   * ✅ Kitap yoksa güvenli ekran
    */
-  const [shareText, setShareText] = useState(book?.shareText ?? "");
-
-  /**
-   * Paylaş/Güncelle aktiflik kontrolü
-   */
-  const canSubmit = useMemo(() => shareText.trim().length > 0, [shareText]);
-
-  // Kitap yoksa güvenli ekran
   if (!book) {
     return (
       <ScrollView contentContainerStyle={{ padding: 16, gap: 12 }}>
         <Text style={{ fontSize: 18, fontWeight: "900" }}>
           Kitap bulunamadı
         </Text>
+
         <Pressable
           onPress={() => router.back()}
           style={{
@@ -48,6 +45,7 @@ export default function ShareBook() {
             borderWidth: 1,
             borderColor: "#ddd",
             alignItems: "center",
+            backgroundColor: "#fff",
           }}
         >
           <Text style={{ fontWeight: "900" }}>Geri</Text>
@@ -57,35 +55,82 @@ export default function ShareBook() {
   }
 
   /**
+   * ✅ Daha önce paylaşılmış mı?
+   * sharedAt varsa "paylaşılmış" sayıyoruz
+   */
+  const alreadyShared = typeof book.sharedAt === "number";
+
+  /**
+   * ✅ Otomatik öneri metni
+   * - not/puan varsa daha "gerçek" olur
+   * - yoksa basit bir şablon
+   */
+  const suggestedText = useMemo(() => {
+    const stars = book.rating ? "★".repeat(book.rating) : "";
+    const note = book.note?.trim();
+
+    if (note?.length) {
+      return `${book.title} • ${book.author}\n${stars ? stars + "\n" : ""}\n“${note}”`;
+    }
+
+    return `${book.title} • ${book.author}\n\nYeni bitirdim, tavsiye ederim.`;
+  }, [book.author, book.note, book.rating, book.title]);
+
+  /**
+   * ✅ Input state
+   * - daha önce paylaşılmışsa shareText ile başlar
+   * - yoksa öneri metni ile başlar (kullanıcı isterse değiştirir)
+   */
+  const [shareText, setShareText] = useState<string>(
+    (book.shareText ?? "").trim().length
+      ? (book.shareText ?? "")
+      : suggestedText,
+  );
+
+  /**
+   * ✅ Buton aktif mi?
+   */
+  const canSubmit = useMemo(() => shareText.trim().length > 0, [shareText]);
+
+  /**
    * ✅ Paylaş / Güncelle
-   * - sharedAt set edince "paylaşılmış" kabul edilir
+   * - sharedAt set edince "paylaşıldı" sayılır
+   * - ilk kez paylaşılıyorsa likes/isLiked/comments default kurulur
    */
   const onSubmit = () => {
-    if (!canSubmit) {
+    const text = shareText.trim();
+
+    if (!text.length) {
       Alert.alert("Boş olmaz", "Paylaşım metni yazmalısın.");
       return;
     }
 
-    // Daha önce paylaşılmadıysa sosyal alanları default başlat
+    /**
+     * ✅ İlk paylaşım mı?
+     */
     const firstShare = typeof book.sharedAt !== "number";
 
     updateBook(book.id, {
-      shareText: shareText.trim(),
+      // paylaşım bilgileri
+      shareText: text,
       sharedAt: Date.now(),
-      // İlk paylaşım ise like/comment alanlarını başlat
+
+      // ✅ sosyal alanlar: ilk paylaşımda başlat
       likes: firstShare ? 0 : (book.likes ?? 0),
       isLiked: firstShare ? false : (book.isLiked ?? false),
-      comments: firstShare ? [] : (book.comments ?? []),
+      comments: firstShare ? (book.comments ?? []) : (book.comments ?? []),
     });
 
-    // Home'a dön
+    /**
+     * ✅ Home'a dön
+     */
     router.replace("/(tabs)/home");
   };
 
   /**
    * ✅ Paylaşımı kaldır
-   * - sharedAt ve shareText temizlenir
-   * - istersen likes/comments da temizlenebilir (ben temizliyorum -> daha mantıklı)
+   * - sharedAt + shareText temizlenir
+   * - istersen sosyal alanları da temizleyebilirsin (ben temizliyorum)
    */
   const onUnshare = () => {
     Alert.alert(
@@ -100,10 +145,13 @@ export default function ShareBook() {
             updateBook(book.id, {
               sharedAt: undefined,
               shareText: undefined,
+
+              // ✅ sosyal alanları da sıfırla (istersen kaldırabilirsin)
               likes: undefined,
               isLiked: undefined,
               comments: undefined,
             });
+
             router.replace("/(tabs)/home");
           },
         },
@@ -111,15 +159,15 @@ export default function ShareBook() {
     );
   };
 
-  const alreadyShared = typeof book.sharedAt === "number";
-
   return (
     <ScrollView contentContainerStyle={{ padding: 16, gap: 12 }}>
       <Text style={{ fontSize: 22, fontWeight: "900" }}>
         {alreadyShared ? "Paylaşımı Düzenle" : "Paylaş"}
       </Text>
 
-      {/* Kitap bilgisi */}
+      {/* ------------------------------------------------ */}
+      {/* ✅ Kitap Kartı */}
+      {/* ------------------------------------------------ */}
       <View
         style={{
           padding: 12,
@@ -127,13 +175,22 @@ export default function ShareBook() {
           borderWidth: 1,
           borderColor: "#eee",
           backgroundColor: "#fff",
+          gap: 6,
         }}
       >
-        <Text style={{ fontWeight: "900" }}>{book.title}</Text>
-        <Text style={{ color: "#666", marginTop: 4 }}>{book.author}</Text>
+        <Text style={{ fontWeight: "900", fontSize: 16 }}>{book.title}</Text>
+        <Text style={{ color: "#666" }}>{book.author}</Text>
+
+        {/* ✅ Ek küçük bilgi (puan/not varsa) */}
+        <Text style={{ color: "#666" }}>
+          {book.rating ? "★".repeat(book.rating) : "☆"}
+          {book.note?.trim()?.length ? " • Not var" : " • Not yok"}
+        </Text>
       </View>
 
-      {/* Paylaşım metni */}
+      {/* ------------------------------------------------ */}
+      {/* ✅ Paylaşım Metni */}
+      {/* ------------------------------------------------ */}
       <View style={{ gap: 6 }}>
         <Text style={{ fontWeight: "900" }}>Paylaşım Notu</Text>
         <TextInput
@@ -146,16 +203,19 @@ export default function ShareBook() {
             borderColor: "#ddd",
             borderRadius: 12,
             padding: 12,
-            minHeight: 120,
+            minHeight: 140,
             textAlignVertical: "top",
             backgroundColor: "#fff",
           }}
         />
       </View>
 
-      {/* Paylaş / Güncelle */}
+      {/* ------------------------------------------------ */}
+      {/* ✅ Paylaş / Güncelle */}
+      {/* ------------------------------------------------ */}
       <Pressable
         onPress={onSubmit}
+        disabled={!canSubmit}
         style={{
           backgroundColor: canSubmit ? "#111" : "#999",
           paddingVertical: 12,
@@ -168,7 +228,9 @@ export default function ShareBook() {
         </Text>
       </Pressable>
 
-      {/* Paylaşımı kaldır (sadece zaten paylaşıldıysa) */}
+      {/* ------------------------------------------------ */}
+      {/* ✅ Paylaşımı Kaldır (sadece paylaşıldıysa) */}
+      {/* ------------------------------------------------ */}
       {alreadyShared && (
         <Pressable
           onPress={onUnshare}
@@ -187,7 +249,9 @@ export default function ShareBook() {
         </Pressable>
       )}
 
-      {/* Vazgeç */}
+      {/* ------------------------------------------------ */}
+      {/* ✅ Vazgeç */}
+      {/* ------------------------------------------------ */}
       <Pressable
         onPress={() => router.back()}
         style={{

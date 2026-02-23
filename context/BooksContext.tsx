@@ -69,13 +69,22 @@ export function BooksProvider({ children }: { children: ReactNode }) {
     AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(books)).catch(() => {});
   }, [books, isHydrated]);
 
+  // ✅ Kitap ekleme
   const addBook: BooksContextValue["addBook"] = (payload) => {
     const id = makeId();
+
     const newBook: Book = {
       id,
       createdAt: Date.now(),
+
+      // ✅ payload'tan gelenler
       ...payload,
+
+      // ✅ paylaşım/etkileşim alanları default
+      likes: 0,
+      commentsCount: 0,
     };
+
     setBooks((prev) => [newBook, ...prev]);
     return id;
   };

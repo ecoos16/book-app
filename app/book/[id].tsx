@@ -1,8 +1,11 @@
 import { router, useLocalSearchParams } from "expo-router";
 import React from "react";
 import { Alert, Pressable, ScrollView, Text, View } from "react-native";
+
 import { ProgressBar } from "../../components/ProgressBar";
 import { useBooks } from "../../context/BooksContext";
+import { useReadingGoal } from "../../context/ReadingGoalContext"; // ✅ step buradan gelecek
+import { useReadingLog } from "../../context/ReadingLogContext"; // ✅ log eklemek için
 import type { BookStatus } from "../../types/book";
 
 /**
@@ -25,6 +28,16 @@ export default function BookDetail() {
    * Global store fonksiyonları
    */
   const { getById, removeBook, updateBook } = useBooks();
+
+  /**
+   * ✅ Kullanıcı step miktarı (10/20/30...)
+   */
+  const { step } = useReadingGoal();
+
+  /**
+   * ✅ Günlük okuma log’una yazmak için
+   */
+  const { addLog } = useReadingLog();
 
   const book = id ? getById(id) : undefined;
 
@@ -88,7 +101,49 @@ export default function BookDetail() {
         : book.status === "read"
           ? "want"
           : "reading";
+    {
+      /* ✅ Okudum akışı: puan/not yoksa kullanıcıya öner */
+    }
+    {
+      book.status === "read" &&
+        (!book.rating || !book.note?.trim()?.length) && (
+          <View
+            style={{
+              borderWidth: 1,
+              borderColor: "#eee",
+              borderRadius: 12,
+              padding: 12,
+              backgroundColor: "#fff",
+              gap: 8,
+            }}
+          >
+            <Text style={{ fontWeight: "900" }}>Bitirdin 🎉</Text>
+            <Text style={{ color: "#666" }}>
+              İstersen puan ve kısa bir not ekleyip daha sonra paylaşabilirsin.
+            </Text>
 
+            <Pressable
+              onPress={() =>
+                router.push({
+                  pathname: "/edit-book/[id]" as const,
+                  params: { id: book.id },
+                })
+              }
+              style={{
+                backgroundColor: "#111",
+                paddingVertical: 10,
+                borderRadius: 12,
+                alignItems: "center",
+              }}
+            >
+              <Text style={{ color: "#fff", fontWeight: "800" }}>
+                Puan/Not Ekle
+              </Text>
+            </Pressable>
+          </View>
+        );
+    }
+    // ✅ Okuyorum'a geçince rating/note temiz
     if (next === "reading") {
       updateBook(book.id, {
         status: "reading",
@@ -98,6 +153,7 @@ export default function BookDetail() {
       return;
     }
 
+    // ✅ Okudum'a geçince pages alanları temiz
     if (next === "read") {
       updateBook(book.id, {
         status: "read",
@@ -107,6 +163,7 @@ export default function BookDetail() {
       return;
     }
 
+    // ✅ İstiyorum'a geçince hepsini temiz
     updateBook(book.id, {
       status: "want",
       rating: undefined,
@@ -118,20 +175,28 @@ export default function BookDetail() {
 
   /**
    * -----------------------------
-   * PROGRESS +10 PAGE
+   * ✅ PROGRESS +STEP PAGE (kişiye özel)
+   * - step kadar ilerletir
+   * - günlük ReadingLog'a da yazar
    * -----------------------------
    */
-  const add10Pages = () => {
+  const addStepPages = () => {
     if (!book.pagesTotal) return;
 
     const current = book.pagesRead ?? 0;
-    const next = Math.min(current + 10, book.pagesTotal);
+    const next = Math.min(current + step, book.pagesTotal);
 
+    // 1) kitap içi progress güncelle
     updateBook(book.id, { pagesRead: next });
 
+    // 2) haftalık okuma istatistiği için log'a ekle
+    // Not: gerçek eklenen miktarı log'a yazıyoruz (sona geldiğinde step yerine kalan yazsın)
+    const actuallyAdded = next - current;
+    if (actuallyAdded > 0) addLog(actuallyAdded);
+
     /**
-     * ⭐ İSTEĞE BAĞLI
-     * Kitap bitince otomatik "okudum"
+     * ⭐ Opsiyonel: Bitince otomatik "Okudum" yap
+     * İstersen açarız.
      *
      * if (next >= book.pagesTotal) {
      *   updateBook(book.id, { status: "read" });
@@ -140,7 +205,7 @@ export default function BookDetail() {
   };
 
   /**
-   * Progress hesaplama
+   * Progress yüzdesi
    */
   const progressPercent =
     book.pagesTotal && book.pagesTotal > 0
@@ -185,7 +250,7 @@ export default function BookDetail() {
           </Text>
 
           <Pressable
-            onPress={add10Pages}
+            onPress={addStepPages}
             disabled={!book.pagesTotal}
             style={{
               backgroundColor: book.pagesTotal ? "#111" : "#999",
@@ -195,7 +260,7 @@ export default function BookDetail() {
             }}
           >
             <Text style={{ color: "#fff", fontWeight: "700" }}>
-              +10 Sayfa Okudum
+              +{step} Sayfa Okudum
             </Text>
           </Pressable>
         </>
