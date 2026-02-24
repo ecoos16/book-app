@@ -1,45 +1,50 @@
 // types/book.ts
 
 /**
- * ✅ Kitabın statüsü
+ * ✅ Kitap statüleri
  */
 export type BookStatus = "reading" | "read" | "want";
 
 /**
- * ✅ Yorum modeli (local dummy)
+ * ✅ Yorum modeli (local)
  */
 export type BookComment = {
-  id: string; // uniq id
+  id: string;
   text: string;
-  createdAt: number; // Date.now()
+  createdAt: number;
 };
 
 /**
- * ✅ Ana Book modeli
- * (Home / Share / Comments / Detail / Edit hepsi bunun üstünden gider)
+ * ✅ Ana Book modeli (tek kaynak)
+ * Buradaki alanlara göre tüm app şekillenecek.
  */
 export type Book = {
   id: string;
+
+  // Temel bilgi
   title: string;
   author: string;
+
+  // Durum
   status: BookStatus;
 
-  createdAt: number;
-
-  // Okuma takibi
+  // Okuma ilerleme (Okuyorum)
   pagesTotal?: number;
   pagesRead?: number;
 
-  // Okudum alanları
+  // Bitince (Okudum)
   rating?: number; // 1-5
   note?: string;
 
-  // Paylaşım
-  sharedAt?: number; // paylaşıldıysa timestamp
+  // Paylaşım (feed)
+  sharedAt?: number;
   shareText?: string;
 
   // Sosyal (local)
-  likes?: number; // like sayısı
-  isLiked?: boolean; // kullanıcı beğendi mi
-  comments?: BookComment[]; // yorumlar (local)
+  likes?: number;
+  isLiked?: boolean;
+  comments?: BookComment[];
+
+  // Meta
+  createdAt: number;
 };

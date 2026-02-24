@@ -1,4 +1,3 @@
-// context/ReadingGoalContext.tsx
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import React, {
   createContext,
@@ -8,20 +7,18 @@ import React, {
   useState,
 } from "react";
 
-/**
- * ✅ Kullanıcının okuma ayarları
- * goal: günlük hedef (sayfa)
- * step: kitap detayda "kaç sayfa okudum" buton miktarı (10/20/30 gibi)
- */
+const KEY_GOAL = "DAILY_GOAL";
+const KEY_STEP = "READING_STEP";
+
 type Ctx = {
   goal: number;
   setGoal: (n: number) => void;
 
-  step: number; // ✅ yeni
-  setStep: (n: number) => void; // ✅ yeni
+  // ✅ Hızlı ekleme adımı (+10/+20/+30...)
+  step: number;
+  setStep: (n: number) => void;
 };
 
-const KEY = "DAILY_GOAL_V2"; // ✅ versiyon yükselttik (eski KEY ile çakışmasın)
 const C = createContext<Ctx | null>(null);
 
 export function ReadingGoalProvider({
@@ -29,75 +26,35 @@ export function ReadingGoalProvider({
 }: {
   children: React.ReactNode;
 }) {
-  // ✅ default değerler
   const [goal, setGoalState] = useState<number>(20);
   const [step, setStepState] = useState<number>(10);
 
-  const [hydrated, setHydrated] = useState(false);
-
-  /**
-   * ✅ İlk açılışta AsyncStorage'tan yükle
-   */
+  // ✅ İlk açılışta hedef + step’i AsyncStorage’dan çek
   useEffect(() => {
-    let mounted = true;
-
     (async () => {
-      try {
-        const raw = await AsyncStorage.getItem(KEY);
-        if (!mounted) return;
+      const g = await AsyncStorage.getItem(KEY_GOAL);
+      if (g) setGoalState(Number(g) || 20);
 
-        if (raw) {
-          // Beklenen: { goal: number, step: number }
-          const parsed = JSON.parse(raw) as { goal?: number; step?: number };
-
-          const g = Number(parsed?.goal);
-          const s = Number(parsed?.step);
-
-          // ✅ güvenli set
-          setGoalState(Number.isFinite(g) && g > 0 ? Math.round(g) : 20);
-          setStepState(Number.isFinite(s) && s > 0 ? Math.round(s) : 10);
-        }
-      } catch {
-        // storage bozulsa bile uygulama çalışsın
-        setGoalState(20);
-        setStepState(10);
-      } finally {
-        if (mounted) setHydrated(true);
-      }
+      const s = await AsyncStorage.getItem(KEY_STEP);
+      if (s) setStepState(Number(s) || 10);
     })();
-
-    return () => {
-      mounted = false;
-    };
   }, []);
 
-  /**
-   * ✅ goal/step değişince kaydet
-   */
-  useEffect(() => {
-    if (!hydrated) return;
-    AsyncStorage.setItem(KEY, JSON.stringify({ goal, step })).catch(() => {});
-  }, [goal, step, hydrated]);
-
-  /**
-   * ✅ Public setter'lar
-   */
+  // ✅ hedef kaydet
   const setGoal = (n: number) => {
-    const v = Number(n);
-    if (!Number.isFinite(v) || v <= 0) return;
-    setGoalState(Math.round(v));
+    const val = Math.max(1, Number(n) || 1);
+    setGoalState(val);
+    AsyncStorage.setItem(KEY_GOAL, String(val)).catch(() => {});
   };
 
+  // ✅ step kaydet
   const setStep = (n: number) => {
-    const v = Number(n);
-    if (!Number.isFinite(v) || v <= 0) return;
-    setStepState(Math.round(v));
+    const val = Math.max(1, Number(n) || 1);
+    setStepState(val);
+    AsyncStorage.setItem(KEY_STEP, String(val)).catch(() => {});
   };
 
-  const value = useMemo<Ctx>(
-    () => ({ goal, setGoal, step, setStep }),
-    [goal, step],
-  );
+  const value = useMemo(() => ({ goal, setGoal, step, setStep }), [goal, step]);
 
   return <C.Provider value={value}>{children}</C.Provider>;
 }

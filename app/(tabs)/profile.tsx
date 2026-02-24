@@ -11,12 +11,12 @@ import {
 
 import { useBooks } from "../../context/BooksContext";
 import { useReadingGoal } from "../../context/ReadingGoalContext";
-import type { ReadingLogItem } from "../../context/ReadingLogContext"; // ✅ type import (var)
+import type { ReadingLogItem } from "../../context/ReadingLogContext";
 import { useReadingLog } from "../../context/ReadingLogContext";
 import { useUser } from "../../context/UserContext";
 
 /**
- * ✅ Basit istatistik kutusu
+ * Basit istatistik kutusu
  */
 function StatBox({ label, value }: { label: string; value: string | number }) {
   return (
@@ -39,71 +39,109 @@ function StatBox({ label, value }: { label: string; value: string | number }) {
   );
 }
 
-/**
- * ✅ Chip (profilde step seçimi için)
- */
-function Chip({
-  label,
-  active,
-  onPress,
-}: {
-  label: string;
-  active: boolean;
-  onPress: () => void;
-}) {
-  return (
-    <Pressable
-      onPress={onPress}
-      style={{
-        paddingHorizontal: 12,
-        paddingVertical: 10,
-        borderRadius: 999,
-        borderWidth: 1,
-        borderColor: active ? "#111" : "#ddd",
-        backgroundColor: active ? "#111" : "#fff",
-      }}
-    >
-      <Text style={{ color: active ? "#fff" : "#111", fontWeight: "800" }}>
-        {label}
-      </Text>
-    </Pressable>
-  );
+/** YYYY-MM-DD */
+function todayKey() {
+  return new Date().toISOString().slice(0, 10);
 }
 
+type TabKey = "stats" | "posts";
+
 export default function Profile() {
-  /**
-   * GLOBAL STATE
-   */
   const { books, isHydrated, clearAll } = useBooks();
-
-  // ✅ goal + step + setStep aldık (kişiye özel buton)
-  const { goal, setGoal, step, setStep } = useReadingGoal();
+  const { goal, setGoal } = useReadingGoal();
   const { user } = useUser();
-
-  // ✅ Haftalık loglar + manuel ekleme
   const { logs, addLog } = useReadingLog();
 
-  /**
-   * ✅ Günlük okuma manuel giriş
-   */
-  const [logDate, setLogDate] = useState<string>(
-    new Date().toISOString().slice(0, 10),
-  );
+  /** Sekme: stats / posts */
+  const [tab, setTab] = useState<TabKey>("stats");
+
+  /** Günlük hedef input */
+  const [goalInput, setGoalInput] = useState<string>(String(goal ?? 0));
+
+  /** Log inputları */
+  const [logDate, setLogDate] = useState<string>(todayKey());
   const [logPages, setLogPages] = useState<string>("");
-  /**
-   * ✅ Goal edit (kullanıcı hedefini değiştirecek)
-   * goalInput: input text
-   */
-  const [goalInput, setGoalInput] = useState<string>(String(goal));
+
+  /** Hızlı ekle butonları */
+  const steps = [10, 20, 30, 40, 50];
+  const [step, setStep] = useState<number>(10);
 
   /**
-   * ✅ goal değişirse input da güncellensin (storage yüklenince vs.)
+   * Yardımcı: belirli bir günün toplam sayfası
    */
-  React.useEffect(() => {
-    setGoalInput(String(goal));
-  }, [goal]);
+  const getTotalForDate = (dateKey: string) => {
+    return logs
+      .filter((l: ReadingLogItem) => l.date === dateKey)
+      .reduce((sum: number, l: ReadingLogItem) => sum + (l.pages ?? 0), 0);
+  };
+
   /**
-   * ✅ Haftalık okuma hesabı (son 7 gün)
+   * Günlük hedef kontrol:
+   * Aynı gün içinde hedef ilk kez geçilince uyarı ver
+   */
+  const maybeNotifyGoalReached = (dateKey: string, addedPages: number) => {
+    const g = Number(goal) || 0;
+    if (g <= 0) return;
+
+    const before = getTotalForDate(dateKey);
+    const after = before + addedPages;
+
+    if (before < g && after >= g) {
+      Alert.alert("🎉 Hedefe ulaşıldı!", `${dateKey} için ${g} sayfa tamam!`);
+    }
+  };
+
+  /**
+   * ✅ Hızlı ekle:
+   * Chip'e basınca direkt n sayfa ekler.
+   * (Burada parametre var -> senin hatayı çözüyor)
+   */
+  const onQuickAdd = (n: number) => {
+    const dateKey = logDate.trim();
+
+    if (!dateKey || dateKey.length !== 10) {
+      Alert.alert("Hata", "Tarih formatı: YYYY-MM-DD olmalı. Örn: 2026-02-23");
+      return;
+    }
+
+    const pages = Number(n) || 0;
+    if (pages <= 0) return;
+
+    // hedef bildirim kontrol
+    maybeNotifyGoalReached(dateKey, pages);
+
+    // log’a ekle
+    addLog(pages, dateKey);
+
+    Alert.alert("✅ Eklendi", `${dateKey} için +${pages} sayfa eklendi.`);
+  };
+
+  /**
+   * ✅ Manuel ekle:
+   * Input'taki sayfa sayısını ekler
+   */
+  const onManualAdd = () => {
+    const dateKey = logDate.trim();
+    const pages = Number(logPages) || 0;
+
+    if (!dateKey || dateKey.length !== 10) {
+      Alert.alert("Hata", "Tarih formatı: YYYY-MM-DD olmalı. Örn: 2026-02-23");
+      return;
+    }
+    if (pages <= 0) {
+      Alert.alert("Hata", "Sayfa sayısı 1 veya daha büyük olmalı.");
+      return;
+    }
+
+    maybeNotifyGoalReached(dateKey, pages);
+    addLog(pages, dateKey);
+
+    setLogPages("");
+    Alert.alert("✅ Eklendi", `${dateKey} için ${pages} sayfa eklendi.`);
+  };
+
+  /**
+   * Haftalık okuma hesabı (son 7 gün)
    */
   const weekly = useMemo(() => {
     const today = new Date();
@@ -113,76 +151,55 @@ export default function Profile() {
     for (let i = 6; i >= 0; i--) {
       const d = new Date();
       d.setDate(today.getDate() - i);
-
-      const key = d.toISOString().slice(0, 10); // "YYYY-MM-DD"
+      const key = d.toISOString().slice(0, 10);
 
       const dayTotal = logs
         .filter((l: ReadingLogItem) => l.date === key)
-        .reduce((sum: number, l: ReadingLogItem) => sum + l.pages, 0);
+        .reduce((sum: number, l: ReadingLogItem) => sum + (l.pages ?? 0), 0);
 
       const idx = d.getDay() === 0 ? 6 : d.getDay() - 1;
-
-      days.push({
-        label: labels[idx],
-        pages: dayTotal,
-      });
+      days.push({ label: labels[idx], pages: dayTotal });
     }
 
-    const total = days.reduce((s: number, d) => s + d.pages, 0);
-
+    const total = days.reduce((s, d) => s + d.pages, 0);
     return { days, total };
   }, [logs]);
 
   /**
-   * ✅ Normal istatistikler
+   * Normal istatistik
    */
   const stats = useMemo(() => {
     const total = books.length;
     const reading = books.filter((b) => b.status === "reading").length;
     const read = books.filter((b) => b.status === "read").length;
     const want = books.filter((b) => b.status === "want").length;
-
-    const rated = books.filter(
-      (b) => typeof b.rating === "number" && (b.rating ?? 0) > 0,
-    );
-
-    const avgRating =
-      rated.length === 0
-        ? null
-        : Math.round(
-            (rated.reduce((sum: number, b) => sum + (b.rating ?? 0), 0) /
-              rated.length) *
-              10,
-          ) / 10;
-
-    return { total, reading, read, want, avgRating };
+    return { total, reading, read, want };
   }, [books]);
 
   /**
-   * ✅ Manuel log ekle
+   * Paylaşımlarım
    */
-  const onAddDailyLog = () => {
-    const pages = Number(logPages) || 0;
+  const myShares = useMemo(() => {
+    return books
+      .filter((b) => typeof b.sharedAt === "number")
+      .sort((a, b) => (b.sharedAt ?? 0) - (a.sharedAt ?? 0));
+  }, [books]);
 
-    if (!logDate.trim() || logDate.trim().length !== 10) {
-      Alert.alert("Hata", "Tarih formatı: YYYY-MM-DD olmalı. Örn: 2026-02-22");
+  /**
+   * Hedef kaydet
+   */
+  const onSaveGoal = () => {
+    const n = Number(goalInput);
+    if (!Number.isFinite(n) || n <= 0) {
+      Alert.alert("Hata", "Günlük hedef 1 veya daha büyük olmalı.");
       return;
     }
-
-    if (pages <= 0) {
-      Alert.alert("Hata", "Sayfa sayısı 1 veya daha büyük olmalı.");
-      return;
-    }
-
-    // ✅ seçilen güne ekle
-    addLog(pages, logDate.trim());
-
-    setLogPages("");
-    Alert.alert("✅ Eklendi", `${logDate.trim()} için ${pages} sayfa eklendi.`);
+    setGoal(Math.floor(n));
+    Alert.alert("✅ Kaydedildi", `Günlük hedef: ${Math.floor(n)} sayfa`);
   };
 
   /**
-   * ✅ Tüm kitapları sil
+   * Tüm kitapları sil
    */
   const onClearAll = () => {
     Alert.alert("Tüm kitaplar silinsin mi?", "Bu işlem geri alınamaz.", [
@@ -191,269 +208,344 @@ export default function Profile() {
     ]);
   };
 
+  /**
+   * Sekme switch (ikonlar)
+   */
+  const TabSwitch = (
+    <View style={{ flexDirection: "row", gap: 10 }}>
+      <Pressable
+        onPress={() => setTab("stats")}
+        style={{
+          flex: 1,
+          paddingVertical: 10,
+          borderRadius: 999,
+          borderWidth: 1,
+          borderColor: tab === "stats" ? "#111" : "#ddd",
+          backgroundColor: tab === "stats" ? "#111" : "#fff",
+          alignItems: "center",
+        }}
+      >
+        <Text
+          style={{
+            fontWeight: "900",
+            color: tab === "stats" ? "#fff" : "#111",
+          }}
+        >
+          📚
+        </Text>
+      </Pressable>
+
+      <Pressable
+        onPress={() => setTab("posts")}
+        style={{
+          flex: 1,
+          paddingVertical: 10,
+          borderRadius: 999,
+          borderWidth: 1,
+          borderColor: tab === "posts" ? "#111" : "#ddd",
+          backgroundColor: tab === "posts" ? "#111" : "#fff",
+          alignItems: "center",
+        }}
+      >
+        <Text
+          style={{
+            fontWeight: "900",
+            color: tab === "posts" ? "#fff" : "#111",
+          }}
+        >
+          📣
+        </Text>
+      </Pressable>
+    </View>
+  );
+
   return (
     <ScrollView contentContainerStyle={{ padding: 20, gap: 12 }}>
-      {/* 👤 kullanıcı */}
-      <Text style={{ fontSize: 18 }}>👋 {user.name}</Text>
-      <Text style={{ fontSize: 24, fontWeight: "700" }}>Profil</Text>
+      <Text style={{ fontSize: 18 }}>👋 {user?.name ?? "Misafir"}</Text>
+      <Text style={{ fontSize: 24, fontWeight: "900" }}>Profil</Text>
 
-      {/* ------------------------------------------------ */}
-      {/* ✅ NORMAL İSTATİSTİK */}
-      {/* ------------------------------------------------ */}
-      {!isHydrated ? (
-        <Text style={{ color: "#666" }}>Yükleniyor…</Text>
-      ) : (
+      {TabSwitch}
+
+      {/* ================= TAB 1: STATS ================= */}
+      {tab === "stats" && (
         <>
-          <View style={{ flexDirection: "row", gap: 10 }}>
-            <StatBox label="Toplam Kitap" value={stats.total} />
-            <StatBox label="Okuyorum" value={stats.reading} />
-          </View>
+          {!isHydrated ? (
+            <Text style={{ color: "#666" }}>Yükleniyor…</Text>
+          ) : (
+            <>
+              {/* İstatistikler */}
+              <View style={{ gap: 10 }}>
+                <View style={{ flexDirection: "row", gap: 10 }}>
+                  <StatBox label="Toplam Kitap" value={stats.total} />
+                  <StatBox label="Okuyorum" value={stats.reading} />
+                </View>
+                <View style={{ flexDirection: "row", gap: 10 }}>
+                  <StatBox label="Okudum" value={stats.read} />
+                  <StatBox label="İstiyorum" value={stats.want} />
+                </View>
+              </View>
 
-          <View style={{ flexDirection: "row", gap: 10 }}>
-            <StatBox label="Okudum" value={stats.read} />
-            <StatBox label="İstiyorum" value={stats.want} />
-          </View>
+              {/* Günlük hedef */}
+              <View
+                style={{
+                  gap: 8,
+                  borderWidth: 1,
+                  borderColor: "#eee",
+                  borderRadius: 14,
+                  padding: 12,
+                  backgroundColor: "#fff",
+                }}
+              >
+                <Text style={{ fontSize: 16, fontWeight: "900" }}>
+                  Günlük Hedef
+                </Text>
 
-          {/* ✅ Günlük hedef düzenleme */}
-          <View
-            style={{
-              flex: 1,
-              borderWidth: 1,
-              borderColor: "#eee",
-              borderRadius: 14,
-              padding: 12,
-              backgroundColor: "#fff",
-              gap: 8,
-            }}
-          >
-            <Text style={{ color: "#666", fontWeight: "700", fontSize: 12 }}>
-              Günlük Hedef
-            </Text>
+                <TextInput
+                  value={goalInput}
+                  onChangeText={setGoalInput}
+                  keyboardType="numeric"
+                  placeholder="Örn: 20"
+                  style={{
+                    borderWidth: 1,
+                    borderColor: "#ddd",
+                    borderRadius: 12,
+                    padding: 10,
+                    backgroundColor: "#fff",
+                  }}
+                />
 
-            {/* Input */}
-            <TextInput
-              value={goalInput}
-              onChangeText={setGoalInput}
-              placeholder="Örn: 20"
-              keyboardType="numeric"
-              style={{
-                borderWidth: 1,
-                borderColor: "#ddd",
-                borderRadius: 12,
-                paddingVertical: 10,
-                paddingHorizontal: 12,
-                backgroundColor: "#fff",
-                fontWeight: "800",
-              }}
-            />
+                <Pressable
+                  onPress={onSaveGoal}
+                  style={{
+                    backgroundColor: "#111",
+                    paddingVertical: 12,
+                    borderRadius: 12,
+                    alignItems: "center",
+                  }}
+                >
+                  <Text style={{ color: "#fff", fontWeight: "900" }}>
+                    Kaydet
+                  </Text>
+                </Pressable>
 
-            {/* Kaydet */}
-            <Pressable
-              onPress={() => {
-                const n = Number(goalInput);
-                if (!Number.isFinite(n) || n <= 0) {
-                  Alert.alert("Hata", "Hedef 1 veya daha büyük olmalı.");
-                  return;
-                }
-                setGoal(Math.round(n));
-                Alert.alert(
-                  "✅ Kaydedildi",
-                  `Günlük hedef: ${Math.round(n)} sayfa`,
-                );
-              }}
-              style={{
-                backgroundColor: "#111",
-                paddingVertical: 10,
-                borderRadius: 12,
-                alignItems: "center",
-              }}
-            >
-              <Text style={{ color: "#fff", fontWeight: "800" }}>Kaydet</Text>
-            </Pressable>
+                <Text style={{ color: "#666" }}>
+                  Şu anki hedef:{" "}
+                  <Text style={{ fontWeight: "900" }}>{goal}</Text> sayfa
+                </Text>
+              </View>
 
-            {/* Bilgi */}
-            <Text style={{ color: "#666", fontSize: 12 }}>
-              Şu anki hedef: <Text style={{ fontWeight: "900" }}>{goal}</Text>{" "}
-              sayfa
-            </Text>
-          </View>
+              {/* Günlük okuma ekle (tek kutu) */}
+              <View
+                style={{
+                  gap: 10,
+                  borderWidth: 1,
+                  borderColor: "#eee",
+                  borderRadius: 14,
+                  padding: 12,
+                  backgroundColor: "#fff",
+                }}
+              >
+                <Text style={{ fontSize: 16, fontWeight: "900" }}>
+                  Günlük Okuma Ekle
+                </Text>
+
+                {/* Tarih */}
+                <Text style={{ fontWeight: "900" }}>Tarih (YYYY-MM-DD)</Text>
+                <TextInput
+                  value={logDate}
+                  onChangeText={setLogDate}
+                  placeholder="2026-02-23"
+                  style={{
+                    borderWidth: 1,
+                    borderColor: "#ddd",
+                    borderRadius: 12,
+                    padding: 10,
+                    backgroundColor: "#fff",
+                  }}
+                />
+
+                {/* Manuel */}
+                <Text style={{ fontWeight: "900" }}>Okunan Sayfa Sayısı</Text>
+                <TextInput
+                  value={logPages}
+                  onChangeText={setLogPages}
+                  placeholder="Örn: 35"
+                  keyboardType="numeric"
+                  style={{
+                    borderWidth: 1,
+                    borderColor: "#ddd",
+                    borderRadius: 12,
+                    padding: 10,
+                    backgroundColor: "#fff",
+                  }}
+                />
+
+                <Pressable
+                  onPress={onManualAdd}
+                  style={{
+                    backgroundColor: "#111",
+                    paddingVertical: 12,
+                    borderRadius: 12,
+                    alignItems: "center",
+                  }}
+                >
+                  <Text style={{ color: "#fff", fontWeight: "900" }}>Ekle</Text>
+                </Pressable>
+
+                {/* Hızlı ekle */}
+                <Text style={{ fontWeight: "900" }}>Hızlı Ekle</Text>
+                <View
+                  style={{ flexDirection: "row", gap: 8, flexWrap: "wrap" }}
+                >
+                  {steps.map((n) => {
+                    const active = step === n;
+                    return (
+                      <Pressable
+                        key={n}
+                        onPress={() => {
+                          // sadece UI için seçiliyi göster
+                          setStep(n);
+                          // ve direkt o sayıyı ekle
+                          onQuickAdd(n);
+                        }}
+                        style={{
+                          paddingHorizontal: 12,
+                          paddingVertical: 8,
+                          borderRadius: 999,
+                          borderWidth: 1,
+                          borderColor: active ? "#111" : "#ddd",
+                          backgroundColor: active ? "#111" : "#fff",
+                        }}
+                      >
+                        <Text
+                          style={{
+                            fontWeight: "900",
+                            color: active ? "#fff" : "#111",
+                          }}
+                        >
+                          +{n}
+                        </Text>
+                      </Pressable>
+                    );
+                  })}
+                </View>
+
+                <Text style={{ color: "#666" }}>
+                  Hızlı ekle butonlarına basınca direkt eklenir.
+                </Text>
+              </View>
+
+              {/* Haftalık okuma */}
+              <View style={{ gap: 8 }}>
+                <Text style={{ fontSize: 16, fontWeight: "900" }}>
+                  Bu Hafta Okuma
+                </Text>
+
+                <StatBox label="Toplam Sayfa" value={weekly.total} />
+
+                {weekly.days.map((d, i) => (
+                  <View
+                    key={`${d.label}_${i}`}
+                    style={{
+                      flexDirection: "row",
+                      justifyContent: "space-between",
+                      paddingVertical: 4,
+                    }}
+                  >
+                    <Text>{d.label}</Text>
+                    <Text style={{ fontWeight: "900" }}>{d.pages} sayfa</Text>
+                  </View>
+                ))}
+              </View>
+
+              {/* Nav */}
+              <Pressable
+                onPress={() => router.push("/add-book")}
+                style={{
+                  backgroundColor: "#111",
+                  paddingVertical: 12,
+                  borderRadius: 12,
+                  alignItems: "center",
+                }}
+              >
+                <Text style={{ color: "#fff", fontWeight: "900" }}>
+                  + Kitap Ekle
+                </Text>
+              </Pressable>
+
+              <Pressable
+                onPress={onClearAll}
+                style={{
+                  marginTop: 10,
+                  paddingVertical: 12,
+                  borderRadius: 12,
+                  alignItems: "center",
+                  borderWidth: 1,
+                  borderColor: "#ffdddd",
+                }}
+              >
+                <Text style={{ fontWeight: "900", color: "#c00" }}>
+                  Tüm Kitapları Sil
+                </Text>
+              </Pressable>
+            </>
+          )}
         </>
       )}
 
-      {/* ------------------------------------------------ */}
-      {/* ✅ KİŞİYE ÖZEL STEP SEÇİMİ */}
-      {/* ------------------------------------------------ */}
-      <View
-        style={{
-          gap: 10,
-          borderWidth: 1,
-          borderColor: "#eee",
-          borderRadius: 14,
-          padding: 12,
-          backgroundColor: "#fff",
-        }}
-      >
-        <Text style={{ fontSize: 16, fontWeight: "900" }}>
-          Hızlı Ekle Butonu
-        </Text>
-        <Text style={{ color: "#666" }}>
-          Kitap detay ekranındaki “+X sayfa okudum” butonu senin seçtiğin değere
-          göre değişir.
-        </Text>
+      {/* ================= TAB 2: POSTS ================= */}
+      {tab === "posts" && (
+        <View style={{ gap: 10 }}>
+          <Text style={{ fontSize: 16, fontWeight: "900" }}>Paylaşımlarım</Text>
 
-        <View style={{ flexDirection: "row", gap: 8, flexWrap: "wrap" }}>
-          {[10, 20, 30, 40, 50].map((n) => (
-            <Chip
-              key={n}
-              label={`+${n}`}
-              active={step === n}
-              onPress={() => setStep(n)}
-            />
-          ))}
+          {!isHydrated ? (
+            <Text style={{ color: "#666" }}>Yükleniyor…</Text>
+          ) : myShares.length === 0 ? (
+            <Text style={{ color: "#666" }}>
+              Henüz paylaşım yok. Kitap detayından “Paylaş” diyebilirsin.
+            </Text>
+          ) : (
+            myShares.map((b) => (
+              <Pressable
+                key={b.id}
+                onPress={() =>
+                  router.push({
+                    pathname: "/book/[id]" as const,
+                    params: { id: b.id },
+                  })
+                }
+                style={{
+                  padding: 14,
+                  borderRadius: 14,
+                  borderWidth: 1,
+                  borderColor: "#eee",
+                  backgroundColor: "#fff",
+                  gap: 6,
+                }}
+              >
+                <Text style={{ fontWeight: "900" }}>{b.title}</Text>
+                <Text style={{ color: "#666" }}>{b.author}</Text>
+
+                <Text style={{ color: "#666" }} numberOfLines={3}>
+                  “{b.shareText ?? "Paylaşım metni yok"}”
+                </Text>
+
+                <View
+                  style={{
+                    flexDirection: "row",
+                    justifyContent: "space-between",
+                  }}
+                >
+                  <Text style={{ color: "#666" }}>❤️ {b.likes ?? 0}</Text>
+                  <Text style={{ color: "#666" }}>
+                    💬 {b.comments?.length ?? 0}
+                  </Text>
+                </View>
+              </Pressable>
+            ))
+          )}
         </View>
-
-        <Text style={{ color: "#666" }}>
-          Seçili: <Text style={{ fontWeight: "900" }}>{step}</Text> sayfa
-        </Text>
-      </View>
-
-      {/* ------------------------------------------------ */}
-      {/* ✅ GÜNLÜK OKUMA GİR (MANUEL) */}
-      {/* ------------------------------------------------ */}
-      <View
-        style={{
-          gap: 8,
-          borderWidth: 1,
-          borderColor: "#eee",
-          borderRadius: 14,
-          padding: 12,
-          backgroundColor: "#fff",
-        }}
-      >
-        <Text style={{ fontSize: 16, fontWeight: "900" }}>
-          Günlük Okuma Ekle
-        </Text>
-
-        {/* Tarih */}
-        <Text style={{ fontWeight: "700" }}>Tarih (YYYY-MM-DD)</Text>
-        <TextInput
-          value={logDate}
-          onChangeText={setLogDate}
-          placeholder="2026-02-22"
-          style={{
-            borderWidth: 1,
-            borderColor: "#ddd",
-            borderRadius: 12,
-            padding: 10,
-            backgroundColor: "#fff",
-          }}
-        />
-
-        {/* Sayfa */}
-        <Text style={{ fontWeight: "700" }}>Okunan Sayfa</Text>
-        <TextInput
-          value={logPages}
-          onChangeText={setLogPages}
-          placeholder="Örn: 20"
-          keyboardType="numeric"
-          style={{
-            borderWidth: 1,
-            borderColor: "#ddd",
-            borderRadius: 12,
-            padding: 10,
-            backgroundColor: "#fff",
-          }}
-        />
-
-        {/* Ekle */}
-        <Pressable
-          onPress={onAddDailyLog}
-          style={{
-            backgroundColor: "#111",
-            paddingVertical: 12,
-            borderRadius: 12,
-            alignItems: "center",
-            marginTop: 6,
-          }}
-        >
-          <Text style={{ color: "#fff", fontWeight: "800" }}>Ekle</Text>
-        </Pressable>
-      </View>
-
-      {/* ------------------------------------------------ */}
-      {/* ✅ HAFTALIK OKUMA */}
-      {/* ------------------------------------------------ */}
-      <View style={{ gap: 8 }}>
-        <Text style={{ fontSize: 16, fontWeight: "900" }}>Bu Hafta Okuma</Text>
-
-        <StatBox label="Toplam Sayfa" value={weekly.total} />
-
-        {weekly.days.map((d, i) => (
-          <View
-            key={`${d.label}_${i}`}
-            style={{
-              flexDirection: "row",
-              justifyContent: "space-between",
-              paddingVertical: 4,
-            }}
-          >
-            <Text>{d.label}</Text>
-            <Text style={{ fontWeight: "700" }}>{d.pages} sayfa</Text>
-          </View>
-        ))}
-      </View>
-
-      {/* ------------------------------------------------ */}
-      {/* NAV */}
-      {/* ------------------------------------------------ */}
-      <Pressable
-        onPress={() => router.push("/add-book")}
-        style={{
-          backgroundColor: "#111",
-          paddingVertical: 12,
-          borderRadius: 12,
-          alignItems: "center",
-        }}
-      >
-        <Text style={{ color: "#fff", fontWeight: "700" }}>+ Kitap Ekle</Text>
-      </Pressable>
-
-      <Pressable
-        style={{ padding: 14, backgroundColor: "#eee", borderRadius: 10 }}
-        onPress={() => router.push("/lists/reading")}
-      >
-        <Text>Okuyorum</Text>
-      </Pressable>
-
-      <Pressable
-        style={{ padding: 14, backgroundColor: "#eee", borderRadius: 10 }}
-        onPress={() => router.push("/lists/read")}
-      >
-        <Text>Okudum</Text>
-      </Pressable>
-
-      <Pressable
-        style={{ padding: 14, backgroundColor: "#eee", borderRadius: 10 }}
-        onPress={() => router.push("/lists/want")}
-      >
-        <Text>Okumak İstiyorum</Text>
-      </Pressable>
-
-      <Pressable
-        onPress={onClearAll}
-        style={{
-          marginTop: 10,
-          paddingVertical: 12,
-          borderRadius: 12,
-          alignItems: "center",
-          borderWidth: 1,
-          borderColor: "#ffdddd",
-        }}
-      >
-        <Text style={{ fontWeight: "900", color: "#c00" }}>
-          Tüm Kitapları Sil
-        </Text>
-      </Pressable>
+      )}
     </ScrollView>
   );
 }

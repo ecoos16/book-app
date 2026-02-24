@@ -3,7 +3,12 @@ import { Tabs } from "expo-router";
 
 export default function TabsLayout() {
   return (
-    <Tabs>
+    <Tabs
+      screenOptions={{
+        headerShown: false,
+        tabBarActiveTintColor: "#111",
+      }}
+    >
       <Tabs.Screen
         name="home"
         options={{
@@ -13,15 +18,28 @@ export default function TabsLayout() {
           ),
         }}
       />
+
       <Tabs.Screen
         name="chat"
         options={{
           title: "Sohbet",
           tabBarIcon: ({ color, size }) => (
-            <Ionicons name="chatbubble" color={color} size={size} />
+            <Ionicons name="chatbubble-ellipses" color={color} size={size} />
           ),
         }}
       />
+
+      {/* ✅ YENİ TAB - KİTAPLIK */}
+      <Tabs.Screen
+        name="library"
+        options={{
+          title: "Kitaplık",
+          tabBarIcon: ({ color, size }) => (
+            <Ionicons name="library" color={color} size={size} />
+          ),
+        }}
+      />
+
       <Tabs.Screen
         name="profile"
         options={{

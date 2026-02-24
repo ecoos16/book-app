@@ -1,26 +1,49 @@
+// app/(tabs)/home.tsx
 import { router } from "expo-router";
 import React, { useMemo } from "react";
 import { Pressable, ScrollView, Text, View } from "react-native";
 import { useBooks } from "../../context/BooksContext";
 
+/**
+ * ✅ Diğer insanların paylaşımları (mock)
+ * DB gelene kadar “gerçek feed hissi” verir.
+ */
+const DEMO_FEED = [
+  {
+    id: "p1",
+    user: "Eylül",
+    title: "Kürk Mantolu Madonna",
+    author: "Sabahattin Ali",
+    shareText: "Bitirince günlerce etkisinden çıkamadım…",
+    likes: 42,
+    commentsCount: 8,
+    time: "2s",
+  },
+  {
+    id: "p2",
+    user: "Mert",
+    title: "1984",
+    author: "George Orwell",
+    shareText: "Bazı cümleler bugünle o kadar aynı ki ürkütüyor.",
+    likes: 31,
+    commentsCount: 12,
+    time: "5s",
+  },
+];
+
 export default function Home() {
   /**
-   * ✅ Global kitap state'i
-   * - books: tüm kitaplar
-   * - isHydrated: AsyncStorage yükleme bitti mi?
-   * - updateBook: like/comment/paylaşım alanlarını güncellemek için
+   * ✅ updateBook: like/comment güncellemek için gerekli
    */
   const { books, isHydrated, updateBook } = useBooks();
 
   /**
-   * ✅ Son eklenen 3 kitap (en baştaki 3)
-   * Not: addBook'ta listeye başa ekliyorsun, o yüzden slice(0,3) mantıklı
+   * ✅ Son eklenen 3 kitap
    */
   const last3 = useMemo(() => books.slice(0, 3), [books]);
 
   /**
    * ✅ Paylaşılan kitaplar (sharedAt olanlar)
-   * En yeni paylaşım en üstte
    */
   const sharedBooks = useMemo(() => {
     return books
@@ -29,20 +52,78 @@ export default function Home() {
   }, [books]);
 
   return (
-    <ScrollView contentContainerStyle={{ padding: 16, gap: 16 }}>
-      {/* Başlık */}
+    <ScrollView
+      contentContainerStyle={{ padding: 16, gap: 16, paddingBottom: 100 }}
+    >
       <Text style={{ fontSize: 22, fontWeight: "800" }}>Ana Sayfa</Text>
 
-      {/* ------------------------------------------------ */}
-      {/* ✅ PAYLAŞIMLARIN (LOCAL FEED) */}
-      {/* ------------------------------------------------ */}
-      {isHydrated && (
-        <View>
-          <Text style={{ fontSize: 18, fontWeight: "900" }}>Paylaşımların</Text>
+      {/* -------------------------------- */}
+      {/* ✅ ARAMA BAR (şimdilik search page'e götür) */}
+      {/* -------------------------------- */}
+      <Pressable
+        onPress={() => router.push("/search" as any)}
+        style={{
+          borderWidth: 1,
+          borderColor: "#e5e5e5",
+          borderRadius: 14,
+          padding: 12,
+          backgroundColor: "#fff",
+        }}
+      >
+        <Text style={{ color: "#888" }}>🔎 Kitap / yazar ara…</Text>
+      </Pressable>
 
-          {/* Paylaşım yoksa */}
+      {/* -------------------------------- */}
+      {/* ✅ DİĞER İNSANLARIN PAYLAŞIMLARI (MOCK FEED) */}
+      {/* -------------------------------- */}
+      <View style={{ gap: 10 }}>
+        <Text style={{ fontSize: 18, fontWeight: "900" }}>Topluluk</Text>
+
+        {DEMO_FEED.map((p) => (
+          <View
+            key={p.id}
+            style={{
+              padding: 14,
+              borderRadius: 14,
+              borderWidth: 1,
+              borderColor: "#eee",
+              backgroundColor: "#fff",
+              gap: 8,
+            }}
+          >
+            {/* header */}
+            <View
+              style={{ flexDirection: "row", justifyContent: "space-between" }}
+            >
+              <Text style={{ fontWeight: "900" }}>{p.user}</Text>
+              <Text style={{ color: "#888" }}>{p.time} önce</Text>
+            </View>
+
+            {/* book */}
+            <Text style={{ fontWeight: "900" }}>{p.title}</Text>
+            <Text style={{ color: "#666" }}>{p.author}</Text>
+
+            {/* text */}
+            <Text style={{ color: "#666" }} numberOfLines={3}>
+              “{p.shareText}”
+            </Text>
+
+            {/* footer */}
+            <View style={{ flexDirection: "row", gap: 12 }}>
+              <Text>❤️ {p.likes}</Text>
+              <Text>💬 {p.commentsCount}</Text>
+            </View>
+          </View>
+        ))}
+      </View>
+
+      {/* -------------------------------- */}
+      {/* ✅ PAYLAŞIMLARIN (SENİN GERÇEK LOCAL POSTLAR) */}
+      {/* -------------------------------- */}
+      {isHydrated && (
+        <View style={{ gap: 10 }}>
           {sharedBooks.length === 0 ? (
-            <Text style={{ color: "#666", marginTop: 8 }}>
+            <Text style={{ color: "#666" }}>
               Henüz paylaşım yok. Kitap detayından “Paylaş” diyebilirsin.
             </Text>
           ) : (
@@ -50,7 +131,6 @@ export default function Home() {
               <View
                 key={b.id}
                 style={{
-                  marginTop: 10,
                   padding: 14,
                   borderRadius: 14,
                   borderWidth: 1,
@@ -59,7 +139,7 @@ export default function Home() {
                   gap: 8,
                 }}
               >
-                {/* ✅ Kart üst kısmı: detaya gider */}
+                {/* detaya götüren alan */}
                 <Pressable
                   onPress={() =>
                     router.push({
@@ -67,40 +147,34 @@ export default function Home() {
                       params: { id: b.id },
                     })
                   }
-                  style={{ gap: 8 }}
+                  style={{ gap: 6 }}
                 >
-                  {/* kitap info */}
                   <Text style={{ fontWeight: "900" }}>{b.title}</Text>
                   <Text style={{ color: "#666" }}>{b.author}</Text>
 
-                  {/* paylaşım metni */}
                   <Text style={{ color: "#666" }} numberOfLines={3}>
                     “{b.shareText ?? "Paylaşım metni yok"}”
                   </Text>
 
-                  {/* rating (varsa) */}
                   <Text style={{ color: "#666" }}>
                     {b.rating ? "★".repeat(b.rating) : "☆"}
                   </Text>
                 </Pressable>
 
-                {/* ✅ Sosyal bar: Like / Comment / Düzenle */}
+                {/* sosyal */}
                 <View
                   style={{
                     flexDirection: "row",
                     gap: 10,
                     alignItems: "center",
-                    marginTop: 4,
                   }}
                 >
-                  {/* ❤️ Like (toggle) */}
+                  {/* ❤️ Like */}
                   <Pressable
                     onPress={() => {
-                      // mevcut durumlar
                       const liked = b.isLiked ?? false;
                       const likes = b.likes ?? 0;
 
-                      // toggle + like sayısını ayarla
                       updateBook(b.id, {
                         isLiked: !liked,
                         likes: liked ? Math.max(0, likes - 1) : likes + 1,
@@ -124,11 +198,7 @@ export default function Home() {
                   <Pressable
                     onPress={() =>
                       router.push({
-                        /**
-                         * ✅ Typed routes bazen union'a eklemiyor,
-                         * en hızlı çözüm: as any
-                         */
-                        pathname: "/comments/[id]" as any,
+                        pathname: "/comments/[id]" as const, // ✅ senin dosyan app/comments/[id].tsx ise bu doğru
                         params: { id: b.id },
                       })
                     }
@@ -146,7 +216,7 @@ export default function Home() {
                     </Text>
                   </Pressable>
 
-                  {/* Paylaşımı düzenle (share ekranına) */}
+                  {/* Share edit */}
                   <Pressable
                     onPress={() =>
                       router.push({
@@ -167,54 +237,7 @@ export default function Home() {
         </View>
       )}
 
-      {/* ------------------------------------------------ */}
-      {/* ✅ SON EKLEDİKLERİN */}
-      {/* ------------------------------------------------ */}
-      {isHydrated && (
-        <View>
-          <Text style={{ fontSize: 18, fontWeight: "900" }}>
-            Son Eklediklerin
-          </Text>
-
-          {last3.length === 0 ? (
-            <Text style={{ color: "#666", marginTop: 8 }}>
-              Henüz kitap eklemedin.
-            </Text>
-          ) : (
-            last3.map((b) => (
-              <Pressable
-                key={b.id}
-                onPress={() =>
-                  router.push({
-                    pathname: "/book/[id]" as const,
-                    params: { id: b.id },
-                  })
-                }
-                style={{
-                  marginTop: 10,
-                  padding: 12,
-                  borderRadius: 14,
-                  borderWidth: 1,
-                  borderColor: "#eee",
-                  backgroundColor: "#fff",
-                }}
-              >
-                <Text style={{ fontWeight: "700" }}>{b.title}</Text>
-                <Text style={{ color: "#666" }}>{b.author}</Text>
-
-                <Text style={{ color: "#666", marginTop: 4 }}>
-                  {b.rating ? "★".repeat(b.rating) : "☆"}{" "}
-                  {b.note?.trim()?.length ? " • Not var" : " • Not yok"}
-                </Text>
-              </Pressable>
-            ))
-          )}
-        </View>
-      )}
-
-      {/* ------------------------------------------------ */}
-      {/* ✅ Floating Add Button */}
-      {/* ------------------------------------------------ */}
+      {/* Floating Add */}
       <Pressable
         onPress={() => router.push("/add-book")}
         style={{

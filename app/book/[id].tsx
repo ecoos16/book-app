@@ -1,15 +1,16 @@
+// app/book/[id].tsx
 import { router, useLocalSearchParams } from "expo-router";
 import React from "react";
 import { Alert, Pressable, ScrollView, Text, View } from "react-native";
 
 import { ProgressBar } from "../../components/ProgressBar";
 import { useBooks } from "../../context/BooksContext";
-import { useReadingGoal } from "../../context/ReadingGoalContext"; // ✅ step buradan gelecek
-import { useReadingLog } from "../../context/ReadingLogContext"; // ✅ log eklemek için
+import { useReadingGoal } from "../../context/ReadingGoalContext"; // ✅ step burada
+import { useReadingLog } from "../../context/ReadingLogContext"; // ✅ haftalık log burada
 import type { BookStatus } from "../../types/book";
 
 /**
- * Status label map (UI gösterim)
+ * ✅ Status label map (UI gösterim)
  */
 const statusLabel: Record<BookStatus, string> = {
   reading: "Okuyorum",
@@ -19,30 +20,29 @@ const statusLabel: Record<BookStatus, string> = {
 
 export default function BookDetail() {
   /**
-   * Route param
-   * /book/[id]
+   * ✅ Route param: /book/[id]
    */
   const { id } = useLocalSearchParams<{ id: string }>();
 
   /**
-   * Global store fonksiyonları
+   * ✅ Global store
    */
   const { getById, removeBook, updateBook } = useBooks();
 
   /**
-   * ✅ Kullanıcı step miktarı (10/20/30...)
+   * ✅ Kullanıcının seçtiği hızlı ekleme değeri (10/20/30...)
    */
   const { step } = useReadingGoal();
 
   /**
-   * ✅ Günlük okuma log’una yazmak için
+   * ✅ Okuma logu: haftalık okuma buradan besleniyor
    */
   const { addLog } = useReadingLog();
 
   const book = id ? getById(id) : undefined;
 
   /**
-   * Kitap yoksa safe screen
+   * ✅ Kitap yoksa safe screen
    */
   if (!book) {
     return (
@@ -69,9 +69,7 @@ export default function BookDetail() {
   }
 
   /**
-   * -----------------------------
-   * DELETE
-   * -----------------------------
+   * ✅ Silme onayı
    */
   const confirmDelete = () => {
     Alert.alert("Silinsin mi?", `"${book.title}" silinecek.`, [
@@ -88,11 +86,9 @@ export default function BookDetail() {
   };
 
   /**
-   * -----------------------------
-   * STATUS CHANGE
-   * reading → read → want → reading
+   * ✅ Status döngü değişimi
+   * reading -> read -> want -> reading
    * UX gereği bazı alanları temizler
-   * -----------------------------
    */
   const cycleStatus = () => {
     const next: BookStatus =
@@ -101,49 +97,7 @@ export default function BookDetail() {
         : book.status === "read"
           ? "want"
           : "reading";
-    {
-      /* ✅ Okudum akışı: puan/not yoksa kullanıcıya öner */
-    }
-    {
-      book.status === "read" &&
-        (!book.rating || !book.note?.trim()?.length) && (
-          <View
-            style={{
-              borderWidth: 1,
-              borderColor: "#eee",
-              borderRadius: 12,
-              padding: 12,
-              backgroundColor: "#fff",
-              gap: 8,
-            }}
-          >
-            <Text style={{ fontWeight: "900" }}>Bitirdin 🎉</Text>
-            <Text style={{ color: "#666" }}>
-              İstersen puan ve kısa bir not ekleyip daha sonra paylaşabilirsin.
-            </Text>
 
-            <Pressable
-              onPress={() =>
-                router.push({
-                  pathname: "/edit-book/[id]" as const,
-                  params: { id: book.id },
-                })
-              }
-              style={{
-                backgroundColor: "#111",
-                paddingVertical: 10,
-                borderRadius: 12,
-                alignItems: "center",
-              }}
-            >
-              <Text style={{ color: "#fff", fontWeight: "800" }}>
-                Puan/Not Ekle
-              </Text>
-            </Pressable>
-          </View>
-        );
-    }
-    // ✅ Okuyorum'a geçince rating/note temiz
     if (next === "reading") {
       updateBook(book.id, {
         status: "reading",
@@ -153,7 +107,6 @@ export default function BookDetail() {
       return;
     }
 
-    // ✅ Okudum'a geçince pages alanları temiz
     if (next === "read") {
       updateBook(book.id, {
         status: "read",
@@ -163,7 +116,6 @@ export default function BookDetail() {
       return;
     }
 
-    // ✅ İstiyorum'a geçince hepsini temiz
     updateBook(book.id, {
       status: "want",
       rating: undefined,
@@ -174,38 +126,34 @@ export default function BookDetail() {
   };
 
   /**
-   * -----------------------------
-   * ✅ PROGRESS +STEP PAGE (kişiye özel)
-   * - step kadar ilerletir
-   * - günlük ReadingLog'a da yazar
-   * -----------------------------
+   * ✅ +X sayfa ilerleme (X = kullanıcının step'i)
+   * - pagesRead güncellenir
+   * - ReadingLog'a otomatik eklenir (haftalık dolsun diye)
    */
-  const addStepPages = () => {
-    if (!book.pagesTotal) return;
+  const addPages = () => {
+    // sadece "Okuyorum" iken mantıklı
+    if (book.status !== "reading") return;
+
+    // toplam sayfa girilmediyse ilerleme yapamayız
+    if (!book.pagesTotal || book.pagesTotal <= 0) return;
 
     const current = book.pagesRead ?? 0;
     const next = Math.min(current + step, book.pagesTotal);
 
-    // 1) kitap içi progress güncelle
+    // ✅ kitap ilerleme
     updateBook(book.id, { pagesRead: next });
 
-    // 2) haftalık okuma istatistiği için log'a ekle
-    // Not: gerçek eklenen miktarı log'a yazıyoruz (sona geldiğinde step yerine kalan yazsın)
-    const actuallyAdded = next - current;
-    if (actuallyAdded > 0) addLog(actuallyAdded);
+    // ✅ haftalık log (bugüne step kadar ekler)
+    // NOT: bitmeye yakın step kadar okudun -> yine step logluyoruz, istersen "gerçek eklenen" loglanır:
+    // addLog(next - current)
+    addLog(step);
 
-    /**
-     * ⭐ Opsiyonel: Bitince otomatik "Okudum" yap
-     * İstersen açarız.
-     *
-     * if (next >= book.pagesTotal) {
-     *   updateBook(book.id, { status: "read" });
-     * }
-     */
+    // (opsiyonel) kitap biterse otomatik "okudum" geçişi
+    // if (next >= book.pagesTotal) updateBook(book.id, { status: "read" });
   };
 
   /**
-   * Progress yüzdesi
+   * ✅ Progress yüzdesi
    */
   const progressPercent =
     book.pagesTotal && book.pagesTotal > 0
@@ -214,15 +162,11 @@ export default function BookDetail() {
 
   return (
     <ScrollView contentContainerStyle={{ padding: 16, gap: 12 }}>
-      {/* -------------------------------- */}
       {/* HEADER */}
-      {/* -------------------------------- */}
       <Text style={{ fontSize: 24, fontWeight: "800" }}>{book.title}</Text>
       <Text style={{ color: "#666", fontSize: 16 }}>{book.author}</Text>
 
-      {/* -------------------------------- */}
       {/* STATUS */}
-      {/* -------------------------------- */}
       <View
         style={{
           padding: 12,
@@ -235,9 +179,7 @@ export default function BookDetail() {
         <Text style={{ marginTop: 6 }}>{statusLabel[book.status]}</Text>
       </View>
 
-      {/* -------------------------------- */}
-      {/* READING PROGRESS */}
-      {/* -------------------------------- */}
+      {/* OKUYORUM → PROGRESS */}
       {book.status === "reading" && (
         <>
           <ProgressBar
@@ -250,7 +192,7 @@ export default function BookDetail() {
           </Text>
 
           <Pressable
-            onPress={addStepPages}
+            onPress={addPages}
             disabled={!book.pagesTotal}
             style={{
               backgroundColor: book.pagesTotal ? "#111" : "#999",
@@ -266,9 +208,7 @@ export default function BookDetail() {
         </>
       )}
 
-      {/* -------------------------------- */}
-      {/* READ → RATING + NOTE */}
-      {/* -------------------------------- */}
+      {/* OKUDUM → PUAN + NOT */}
       {book.status === "read" && (
         <>
           <View
@@ -301,11 +241,7 @@ export default function BookDetail() {
         </>
       )}
 
-      {/* -------------------------------- */}
-      {/* ACTIONS */}
-      {/* -------------------------------- */}
-
-      {/* EDIT */}
+      {/* DÜZENLE */}
       <Pressable
         onPress={() =>
           router.push({
@@ -325,7 +261,7 @@ export default function BookDetail() {
         <Text style={{ fontWeight: "800" }}>Düzenle</Text>
       </Pressable>
 
-      {/* STATUS CHANGE */}
+      {/* DURUM DEĞİŞTİR */}
       <Pressable
         onPress={cycleStatus}
         style={{
@@ -340,7 +276,7 @@ export default function BookDetail() {
         </Text>
       </Pressable>
 
-      {/* SHARE */}
+      {/* PAYLAŞ */}
       <Pressable
         onPress={() =>
           router.push({
@@ -358,7 +294,7 @@ export default function BookDetail() {
         <Text style={{ color: "#fff", fontWeight: "800" }}>Paylaş</Text>
       </Pressable>
 
-      {/* DELETE */}
+      {/* SİL */}
       <Pressable
         onPress={confirmDelete}
         style={{
@@ -372,7 +308,7 @@ export default function BookDetail() {
         <Text style={{ fontWeight: "700", color: "#c00" }}>Kitabı Sil</Text>
       </Pressable>
 
-      {/* BACK */}
+      {/* GERİ */}
       <Pressable
         onPress={() => router.back()}
         style={{
