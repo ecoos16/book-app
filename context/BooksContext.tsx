@@ -31,11 +31,48 @@ function makeId() {
   return `${Date.now()}_${Math.random().toString(16).slice(2)}`;
 }
 
+/**
+ * ✅ Migration / Normalize
+ * - Eski kayıtlarda olmayan alanlara default verir.
+ * - Böylece UI hiçbir zaman undefined yüzünden patlamaz.
+ */
+function normalizeBook(b: any): Book {
+  return {
+    ...b,
+
+    // required basics (safe fallback)
+    id: typeof b?.id === "string" ? b.id : makeId(),
+    title: typeof b?.title === "string" ? b.title : "",
+    author: typeof b?.author === "string" ? b.author : "",
+    status:
+      b?.status === "reading" || b?.status === "read" || b?.status === "want"
+        ? b.status
+        : "reading",
+
+    createdAt: typeof b?.createdAt === "number" ? b.createdAt : Date.now(),
+
+    // ✅ new fields (optional)
+    thumbnail:
+      typeof b?.thumbnail === "string" && b.thumbnail.length > 0
+        ? b.thumbnail
+        : undefined,
+    googleId:
+      typeof b?.googleId === "string" && b.googleId.length > 0
+        ? b.googleId
+        : undefined,
+
+    // ✅ social defaults
+    likes: typeof b?.likes === "number" ? b.likes : 0,
+    isLiked: typeof b?.isLiked === "boolean" ? b.isLiked : false,
+    comments: Array.isArray(b?.comments) ? b.comments : [],
+  };
+}
+
 export function BooksProvider({ children }: { children: ReactNode }) {
   const [books, setBooks] = useState<Book[]>([]);
   const [isHydrated, setIsHydrated] = useState(false);
 
-  // ✅ App açılınca storage'tan oku
+  // ✅ App açılınca storage'tan oku (normalize + migration)
   useEffect(() => {
     let mounted = true;
 
@@ -46,8 +83,11 @@ export function BooksProvider({ children }: { children: ReactNode }) {
 
         if (raw) {
           const parsed = JSON.parse(raw) as unknown;
-          if (Array.isArray(parsed)) setBooks(parsed as Book[]);
-          else setBooks([]);
+          if (Array.isArray(parsed)) {
+            setBooks((parsed as any[]).map(normalizeBook));
+          } else {
+            setBooks([]);
+          }
         } else {
           setBooks([]);
         }
@@ -63,38 +103,46 @@ export function BooksProvider({ children }: { children: ReactNode }) {
     };
   }, []);
 
-  // ✅ books değişince storage'a yaz
+  // ✅ books değişince storage'a yaz (normalize ederek)
   useEffect(() => {
     if (!isHydrated) return;
-    AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(books)).catch(() => {});
+    AsyncStorage.setItem(
+      STORAGE_KEY,
+      JSON.stringify(books.map(normalizeBook)),
+    ).catch(() => {});
   }, [books, isHydrated]);
 
-  // ✅ Kitap ekleme
+  // ✅ Kitap ekleme (default + normalize)
   const addBook: BooksContextValue["addBook"] = (payload) => {
     const id = makeId();
 
-    const newBook: Book = {
+    const newBook: Book = normalizeBook({
       id,
       createdAt: Date.now(),
 
-      // ✅ payload'tan gelenler
+      // ✅ payload'tan gelenler (title/author/status/pages/rating/note/shareText/thumbnail/googleId vs.)
       ...payload,
 
-      // ✅ paylaşım/etkileşim alanları default
-      likes: 0,
-      commentsCount: 0,
-    };
+      // ✅ sosyal default (payload gelmese de)
+      likes: payload.likes ?? 0,
+      isLiked: payload.isLiked ?? false,
+      comments: payload.comments ?? [],
+    });
 
-    setBooks((prev) => [newBook, ...prev]);
+    setBooks((prev) => [newBook, ...prev].map(normalizeBook));
     return id;
   };
 
   const updateBook: BooksContextValue["updateBook"] = (id, patch) => {
-    setBooks((prev) => prev.map((b) => (b.id === id ? { ...b, ...patch } : b)));
+    setBooks((prev) =>
+      prev
+        .map((b) => (b.id === id ? normalizeBook({ ...b, ...patch }) : b))
+        .map(normalizeBook),
+    );
   };
 
   const removeBook: BooksContextValue["removeBook"] = (id) => {
-    setBooks((prev) => prev.filter((b) => b.id !== id));
+    setBooks((prev) => prev.filter((b) => b.id !== id).map(normalizeBook));
   };
 
   const clearAll: BooksContextValue["clearAll"] = async () => {
@@ -132,7 +180,6 @@ export function BooksProvider({ children }: { children: ReactNode }) {
 export function useBooks() {
   const ctx = useContext(BooksContext);
   if (!ctx) {
-    // Bu hata varsa %99 RootLayout provider devrede değildir.
     throw new Error("useBooks must be used within BooksProvider");
   }
   return ctx;

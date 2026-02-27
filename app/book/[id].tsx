@@ -1,7 +1,7 @@
 // app/book/[id].tsx
 import { router, useLocalSearchParams } from "expo-router";
 import React from "react";
-import { Alert, Pressable, ScrollView, Text, View } from "react-native";
+import { Alert, Image, Pressable, ScrollView, Text, View } from "react-native";
 
 import { ProgressBar } from "../../components/ProgressBar";
 import { useBooks } from "../../context/BooksContext";
@@ -60,6 +60,7 @@ export default function BookDetail() {
             borderWidth: 1,
             borderColor: "#ddd",
             alignItems: "center",
+            backgroundColor: "#fff",
           }}
         >
           <Text style={{ fontWeight: "700" }}>Geri</Text>
@@ -143,13 +144,8 @@ export default function BookDetail() {
     // ✅ kitap ilerleme
     updateBook(book.id, { pagesRead: next });
 
-    // ✅ haftalık log (bugüne step kadar ekler)
-    // NOT: bitmeye yakın step kadar okudun -> yine step logluyoruz, istersen "gerçek eklenen" loglanır:
-    // addLog(next - current)
+    // ✅ haftalık log
     addLog(step);
-
-    // (opsiyonel) kitap biterse otomatik "okudum" geçişi
-    // if (next >= book.pagesTotal) updateBook(book.id, { status: "read" });
   };
 
   /**
@@ -162,9 +158,45 @@ export default function BookDetail() {
 
   return (
     <ScrollView contentContainerStyle={{ padding: 16, gap: 12 }}>
-      {/* HEADER */}
-      <Text style={{ fontSize: 24, fontWeight: "800" }}>{book.title}</Text>
-      <Text style={{ color: "#666", fontSize: 16 }}>{book.author}</Text>
+      {/* HEADER (Kapak + Başlık/Yazar) */}
+      <View style={{ flexDirection: "row", gap: 12 }}>
+        <View
+          style={{
+            width: 90,
+            height: 130,
+            borderRadius: 14,
+            overflow: "hidden",
+            backgroundColor: "#f3f3f3",
+          }}
+        >
+          {book.thumbnail ? (
+            <Image
+              source={{ uri: book.thumbnail }}
+              style={{ width: 90, height: 130 }}
+              resizeMode="cover"
+            />
+          ) : null}
+        </View>
+
+        <View style={{ flex: 1, gap: 8 }}>
+          <Text style={{ fontSize: 22, fontWeight: "900" }} numberOfLines={3}>
+            {book.title}
+          </Text>
+          <Text
+            style={{ color: "#666", fontSize: 15, fontWeight: "700" }}
+            numberOfLines={2}
+          >
+            {book.author}
+          </Text>
+
+          {/* küçük bilgi satırı */}
+          {typeof book.pagesTotal === "number" && book.pagesTotal > 0 ? (
+            <Text style={{ color: "#777", fontSize: 12 }}>
+              {book.pagesRead ?? 0} / {book.pagesTotal} sayfa
+            </Text>
+          ) : null}
+        </View>
+      </View>
 
       {/* STATUS */}
       <View
@@ -173,10 +205,13 @@ export default function BookDetail() {
           borderRadius: 12,
           borderWidth: 1,
           borderColor: "#eee",
+          backgroundColor: "#fff",
         }}
       >
-        <Text style={{ fontWeight: "700" }}>Durum</Text>
-        <Text style={{ marginTop: 6 }}>{statusLabel[book.status]}</Text>
+        <Text style={{ fontWeight: "800" }}>Durum</Text>
+        <Text style={{ marginTop: 6, color: "#444" }}>
+          {statusLabel[book.status]}
+        </Text>
       </View>
 
       {/* OKUYORUM → PROGRESS */}
@@ -201,7 +236,7 @@ export default function BookDetail() {
               alignItems: "center",
             }}
           >
-            <Text style={{ color: "#fff", fontWeight: "700" }}>
+            <Text style={{ color: "#fff", fontWeight: "800" }}>
               +{step} Sayfa Okudum
             </Text>
           </Pressable>
@@ -217,9 +252,10 @@ export default function BookDetail() {
               borderRadius: 12,
               borderWidth: 1,
               borderColor: "#eee",
+              backgroundColor: "#fff",
             }}
           >
-            <Text style={{ fontWeight: "700" }}>Puan</Text>
+            <Text style={{ fontWeight: "800" }}>Puan</Text>
             <Text style={{ marginTop: 6, color: "#666" }}>
               {book.rating ? "★".repeat(book.rating) : "Puan yok"}
             </Text>
@@ -231,9 +267,10 @@ export default function BookDetail() {
               borderRadius: 12,
               borderWidth: 1,
               borderColor: "#eee",
+              backgroundColor: "#fff",
             }}
           >
-            <Text style={{ fontWeight: "700" }}>Not</Text>
+            <Text style={{ fontWeight: "800" }}>Not</Text>
             <Text style={{ marginTop: 6, color: "#666" }}>
               {book.note?.trim()?.length ? book.note : "Not yok"}
             </Text>
@@ -258,7 +295,7 @@ export default function BookDetail() {
           borderColor: "#ddd",
         }}
       >
-        <Text style={{ fontWeight: "800" }}>Düzenle</Text>
+        <Text style={{ fontWeight: "900" }}>Düzenle</Text>
       </Pressable>
 
       {/* DURUM DEĞİŞTİR */}
@@ -271,7 +308,7 @@ export default function BookDetail() {
           alignItems: "center",
         }}
       >
-        <Text style={{ color: "#fff", fontWeight: "700" }}>
+        <Text style={{ color: "#fff", fontWeight: "800" }}>
           Durumu Değiştir
         </Text>
       </Pressable>
@@ -291,7 +328,7 @@ export default function BookDetail() {
           alignItems: "center",
         }}
       >
-        <Text style={{ color: "#fff", fontWeight: "800" }}>Paylaş</Text>
+        <Text style={{ color: "#fff", fontWeight: "900" }}>Paylaş</Text>
       </Pressable>
 
       {/* SİL */}
@@ -303,9 +340,10 @@ export default function BookDetail() {
           alignItems: "center",
           borderWidth: 1,
           borderColor: "#ffdddd",
+          backgroundColor: "#fff",
         }}
       >
-        <Text style={{ fontWeight: "700", color: "#c00" }}>Kitabı Sil</Text>
+        <Text style={{ fontWeight: "800", color: "#c00" }}>Kitabı Sil</Text>
       </Pressable>
 
       {/* GERİ */}
@@ -317,9 +355,10 @@ export default function BookDetail() {
           alignItems: "center",
           borderWidth: 1,
           borderColor: "#ddd",
+          backgroundColor: "#fff",
         }}
       >
-        <Text style={{ fontWeight: "700" }}>Geri</Text>
+        <Text style={{ fontWeight: "800" }}>Geri</Text>
       </Pressable>
     </ScrollView>
   );

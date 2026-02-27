@@ -1,5 +1,5 @@
-import { router } from "expo-router";
-import React, { useMemo, useState } from "react";
+import { router, useLocalSearchParams } from "expo-router";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   Alert,
   Pressable,
@@ -24,6 +24,15 @@ const statusLabel: Record<BookStatus, string> = {
 export default function AddBook() {
   const { addBook } = useBooks();
 
+  // ✅ Search ekranından gelen parametreler
+  const params = useLocalSearchParams<{
+    title?: string;
+    author?: string;
+    pagesTotal?: string;
+    thumbnail?: string;
+    googleId?: string;
+  }>();
+
   // Temel alanlar
   const [title, setTitle] = useState("");
   const [author, setAuthor] = useState("");
@@ -38,6 +47,38 @@ export default function AddBook() {
   // ✅ Okuyorum alanları (progress)
   const [pagesTotalText, setPagesTotalText] = useState(""); // TextInput string tutar
   const [pagesReadText, setPagesReadText] = useState("");
+
+  // ✅ Autofill sadece 1 kere çalışsın (kullanıcı yazarken overwrite etmesin)
+  const didHydrate = useRef(false);
+
+  useEffect(() => {
+    if (didHydrate.current) return;
+
+    const incomingTitle = typeof params.title === "string" ? params.title : "";
+    const incomingAuthor =
+      typeof params.author === "string" ? params.author : "";
+    const incomingPagesTotal =
+      typeof params.pagesTotal === "string" ? params.pagesTotal : "";
+
+    const hasIncoming = !!(
+      incomingTitle ||
+      incomingAuthor ||
+      incomingPagesTotal
+    );
+    if (!hasIncoming) return;
+
+    // Başlık / yazar doldur
+    if (incomingTitle) setTitle(incomingTitle);
+    if (incomingAuthor) setAuthor(incomingAuthor);
+
+    // Sayfa bilgisi geldiyse reading'e uygun
+    if (incomingPagesTotal) {
+      setStatus("reading");
+      setPagesTotalText(incomingPagesTotal);
+    }
+
+    didHydrate.current = true;
+  }, [params.title, params.author, params.pagesTotal]);
 
   // Kaydet butonu kontrol
   const canSave = useMemo(() => {
@@ -92,10 +133,24 @@ export default function AddBook() {
         ? Math.min(pagesRead, pagesTotal)
         : pagesRead;
 
+    const safeThumbnail =
+      typeof params.thumbnail === "string" && params.thumbnail.length > 0
+        ? params.thumbnail
+        : undefined;
+
+    const safeGoogleId =
+      typeof params.googleId === "string" && params.googleId.length > 0
+        ? params.googleId
+        : undefined;
+
     addBook({
       title: title.trim(),
       author: author.trim(),
       status,
+
+      // ✅ Kapak / Google referansı (ürün hissi)
+      thumbnail: safeThumbnail,
+      googleId: safeGoogleId,
 
       // Okudum -> rating/note
       rating: status === "read" && rating > 0 ? rating : undefined,

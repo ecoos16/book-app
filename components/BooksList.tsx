@@ -1,6 +1,6 @@
 import { router } from "expo-router";
 import React, { useMemo, useState } from "react";
-import { Alert, Pressable, Text, TextInput, View } from "react-native";
+import { Alert, Image, Pressable, Text, TextInput, View } from "react-native";
 import { useBooks } from "../context/BooksContext";
 import type { Book, BookStatus } from "../types/book";
 import { ProgressBar } from "./ProgressBar"; // ✅ Progress bar component
@@ -218,31 +218,62 @@ export function BooksList({ books }: { books: Book[] }) {
               gap: 8,
             }}
           >
-            {/* title + status chip */}
-            <View style={{ flexDirection: "row", alignItems: "center" }}>
-              <Text style={{ fontSize: 16, fontWeight: "800", flex: 1 }}>
-                {b.title}
-              </Text>
-
+            {/* ✅ Kapak + title + status chip */}
+            <View style={{ flexDirection: "row", gap: 12 }}>
+              {/* Kapak */}
               <View
                 style={{
-                  paddingHorizontal: 10,
-                  paddingVertical: 6,
-                  borderRadius: 999,
-                  borderWidth: 1,
-                  borderColor: "#ddd",
+                  width: 52,
+                  height: 74,
+                  borderRadius: 10,
+                  overflow: "hidden",
+                  backgroundColor: "#f3f3f3",
                 }}
               >
-                <Text
-                  style={{ fontSize: 12, fontWeight: "700", color: "#444" }}
-                >
-                  {statusLabel[b.status]}
+                {b.thumbnail ? (
+                  <Image
+                    source={{ uri: b.thumbnail }}
+                    style={{ width: 52, height: 74 }}
+                    resizeMode="cover"
+                  />
+                ) : null}
+              </View>
+
+              {/* Sağ taraf */}
+              <View style={{ flex: 1, gap: 6 }}>
+                {/* title + status chip */}
+                <View style={{ flexDirection: "row", alignItems: "center" }}>
+                  <Text
+                    style={{ fontSize: 16, fontWeight: "800", flex: 1 }}
+                    numberOfLines={2}
+                  >
+                    {b.title}
+                  </Text>
+
+                  <View
+                    style={{
+                      paddingHorizontal: 10,
+                      paddingVertical: 6,
+                      borderRadius: 999,
+                      borderWidth: 1,
+                      borderColor: "#ddd",
+                      marginLeft: 8,
+                    }}
+                  >
+                    <Text
+                      style={{ fontSize: 12, fontWeight: "700", color: "#444" }}
+                    >
+                      {statusLabel[b.status]}
+                    </Text>
+                  </View>
+                </View>
+
+                {/* author */}
+                <Text style={{ color: "#666" }} numberOfLines={1}>
+                  {b.author}
                 </Text>
               </View>
             </View>
-
-            {/* author */}
-            <Text style={{ color: "#666" }}>{b.author}</Text>
 
             {/* ------------------------------------------------ */}
             {/* ✅ Okuyorum -> Progress bar */}

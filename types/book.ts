@@ -12,39 +12,48 @@ export type BookComment = {
   id: string;
   text: string;
   createdAt: number;
+
+  // İleride gerçek user sistemine hazır olsun
+  userId?: string;
+  userName?: string;
+  userAvatar?: string;
 };
 
 /**
  * ✅ Ana Book modeli (tek kaynak)
- * Buradaki alanlara göre tüm app şekillenecek.
+ * Ürün seviyesinde genişletilmiş versiyon
  */
 export type Book = {
   id: string;
 
-  // Temel bilgi
+  // 🔹 Temel bilgi
   title: string;
   author: string;
 
-  // Durum
+  // ✅ Ürün hissi için kapak ve kaynak bilgisi
+  thumbnail?: string; // Google Books thumbnail URL
+  googleId?: string; // Google Books volumeId
+
+  // 🔹 Durum
   status: BookStatus;
 
-  // Okuma ilerleme (Okuyorum)
+  // 🔹 Okuma ilerleme (Okuyorum)
   pagesTotal?: number;
   pagesRead?: number;
 
-  // Bitince (Okudum)
+  // 🔹 Bitince (Okudum)
   rating?: number; // 1-5
   note?: string;
 
-  // Paylaşım (feed)
+  // 🔹 Paylaşım (feed)
   sharedAt?: number;
   shareText?: string;
 
-  // Sosyal (local)
-  likes?: number;
-  isLiked?: boolean;
-  comments?: BookComment[];
+  // 🔹 Sosyal (local)
+  likes?: number; // default: 0
+  isLiked?: boolean; // default: false
+  comments?: BookComment[]; // default: []
 
-  // Meta
+  // 🔹 Meta
   createdAt: number;
 };
