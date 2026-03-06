@@ -5,13 +5,10 @@ import { Alert, Image, Pressable, ScrollView, Text, View } from "react-native";
 
 import { ProgressBar } from "../../components/ProgressBar";
 import { useBooks } from "../../context/BooksContext";
-import { useReadingGoal } from "../../context/ReadingGoalContext"; // ✅ step burada
-import { useReadingLog } from "../../context/ReadingLogContext"; // ✅ haftalık log burada
+import { useReadingGoal } from "../../context/ReadingGoalContext";
+import { useReadingLog } from "../../context/ReadingLogContext";
 import type { BookStatus } from "../../types/book";
 
-/**
- * ✅ Status label map (UI gösterim)
- */
 const statusLabel: Record<BookStatus, string> = {
   reading: "Okuyorum",
   read: "Okudum",
@@ -19,61 +16,74 @@ const statusLabel: Record<BookStatus, string> = {
 };
 
 export default function BookDetail() {
-  /**
-   * ✅ Route param: /book/[id]
-   */
   const { id } = useLocalSearchParams<{ id: string }>();
 
-  /**
-   * ✅ Global store
-   */
   const { getById, removeBook, updateBook } = useBooks();
-
-  /**
-   * ✅ Kullanıcının seçtiği hızlı ekleme değeri (10/20/30...)
-   */
   const { step } = useReadingGoal();
-
-  /**
-   * ✅ Okuma logu: haftalık okuma buradan besleniyor
-   */
   const { addLog } = useReadingLog();
 
   const book = id ? getById(id) : undefined;
 
-  /**
-   * ✅ Kitap yoksa safe screen
-   */
   if (!book) {
     return (
       <ScrollView contentContainerStyle={{ padding: 16 }}>
-        <Text style={{ fontSize: 18, fontWeight: "700" }}>
-          Kitap bulunamadı
-        </Text>
-
-        <Pressable
-          onPress={() => router.back()}
+        <View
           style={{
-            marginTop: 12,
-            paddingVertical: 12,
-            borderRadius: 12,
+            marginTop: 20,
             borderWidth: 1,
-            borderColor: "#ddd",
-            alignItems: "center",
+            borderColor: "#eee",
+            borderRadius: 18,
+            paddingVertical: 30,
+            paddingHorizontal: 20,
             backgroundColor: "#fff",
+            alignItems: "center",
           }}
         >
-          <Text style={{ fontWeight: "700" }}>Geri</Text>
-        </Pressable>
+          <Text style={{ fontSize: 40 }}>📚</Text>
+          <Text
+            style={{
+              marginTop: 10,
+              fontSize: 18,
+              fontWeight: "800",
+              color: "#222",
+            }}
+          >
+            Kitap bulunamadı
+          </Text>
+          <Text
+            style={{
+              marginTop: 6,
+              color: "#666",
+              textAlign: "center",
+              lineHeight: 20,
+            }}
+          >
+            Bu kitap silinmiş olabilir veya geçersiz bir bağlantı açılmış
+            olabilir.
+          </Text>
+
+          <Pressable
+            onPress={() => router.back()}
+            style={{
+              marginTop: 16,
+              paddingVertical: 12,
+              paddingHorizontal: 24,
+              borderRadius: 12,
+              borderWidth: 1,
+              borderColor: "#ddd",
+              alignItems: "center",
+              backgroundColor: "#fff",
+            }}
+          >
+            <Text style={{ fontWeight: "800" }}>Geri</Text>
+          </Pressable>
+        </View>
       </ScrollView>
     );
   }
 
-  /**
-   * ✅ Silme onayı
-   */
   const confirmDelete = () => {
-    Alert.alert("Silinsin mi?", `"${book.title}" silinecek.`, [
+    Alert.alert("Kitabı sil", `"${book.title}" silinecek. Emin misin?`, [
       { text: "Vazgeç", style: "cancel" },
       {
         text: "Sil",
@@ -86,11 +96,6 @@ export default function BookDetail() {
     ]);
   };
 
-  /**
-   * ✅ Status döngü değişimi
-   * reading -> read -> want -> reading
-   * UX gereği bazı alanları temizler
-   */
   const cycleStatus = () => {
     const next: BookStatus =
       book.status === "reading"
@@ -111,7 +116,6 @@ export default function BookDetail() {
     if (next === "read") {
       updateBook(book.id, {
         status: "read",
-        pagesTotal: undefined,
         pagesRead: undefined,
       });
       return;
@@ -121,36 +125,33 @@ export default function BookDetail() {
       status: "want",
       rating: undefined,
       note: undefined,
-      pagesTotal: undefined,
       pagesRead: undefined,
     });
   };
 
-  /**
-   * ✅ +X sayfa ilerleme (X = kullanıcının step'i)
-   * - pagesRead güncellenir
-   * - ReadingLog'a otomatik eklenir (haftalık dolsun diye)
-   */
   const addPages = () => {
-    // sadece "Okuyorum" iken mantıklı
     if (book.status !== "reading") return;
-
-    // toplam sayfa girilmediyse ilerleme yapamayız
     if (!book.pagesTotal || book.pagesTotal <= 0) return;
 
     const current = book.pagesRead ?? 0;
+
+    if (current >= book.pagesTotal) {
+      Alert.alert(
+        "Tamamlandı",
+        "Bu kitap için tüm sayfalar zaten işaretlenmiş.",
+      );
+      return;
+    }
+
     const next = Math.min(current + step, book.pagesTotal);
+    const diff = next - current;
 
-    // ✅ kitap ilerleme
+    if (diff <= 0) return;
+
     updateBook(book.id, { pagesRead: next });
-
-    // ✅ haftalık log
-    addLog(step);
+    addLog(diff);
   };
 
-  /**
-   * ✅ Progress yüzdesi
-   */
   const progressPercent =
     book.pagesTotal && book.pagesTotal > 0
       ? Math.round(((book.pagesRead ?? 0) / book.pagesTotal) * 100)
@@ -158,30 +159,61 @@ export default function BookDetail() {
 
   return (
     <ScrollView contentContainerStyle={{ padding: 16, gap: 12 }}>
-      {/* HEADER (Kapak + Başlık/Yazar) */}
-      <View style={{ flexDirection: "row", gap: 12 }}>
+      {/* HEADER */}
+      <View
+        style={{
+          flexDirection: "row",
+          gap: 14,
+          padding: 14,
+          borderRadius: 18,
+          borderWidth: 1,
+          borderColor: "#eee",
+          backgroundColor: "#fff",
+        }}
+      >
         <View
           style={{
-            width: 90,
-            height: 130,
+            width: 96,
+            height: 138,
             borderRadius: 14,
             overflow: "hidden",
             backgroundColor: "#f3f3f3",
+            alignItems: "center",
+            justifyContent: "center",
           }}
         >
           {book.thumbnail ? (
             <Image
               source={{ uri: book.thumbnail }}
-              style={{ width: 90, height: 130 }}
+              style={{ width: 96, height: 138 }}
               resizeMode="cover"
             />
-          ) : null}
+          ) : (
+            <View
+              style={{
+                width: "100%",
+                height: "100%",
+                alignItems: "center",
+                justifyContent: "center",
+                backgroundColor: "#f1f1f1",
+              }}
+            >
+              <Text style={{ fontSize: 28 }}>📚</Text>
+              <Text style={{ fontSize: 11, color: "#777", marginTop: 4 }}>
+                No cover
+              </Text>
+            </View>
+          )}
         </View>
 
         <View style={{ flex: 1, gap: 8 }}>
-          <Text style={{ fontSize: 22, fontWeight: "900" }} numberOfLines={3}>
+          <Text
+            style={{ fontSize: 22, fontWeight: "900", color: "#1a1a1a" }}
+            numberOfLines={3}
+          >
             {book.title}
           </Text>
+
           <Text
             style={{ color: "#666", fontSize: 15, fontWeight: "700" }}
             numberOfLines={2}
@@ -189,34 +221,68 @@ export default function BookDetail() {
             {book.author}
           </Text>
 
-          {/* küçük bilgi satırı */}
+          <View
+            style={{
+              alignSelf: "flex-start",
+              paddingHorizontal: 10,
+              paddingVertical: 6,
+              borderRadius: 999,
+              borderWidth: 1,
+              borderColor: "#ddd",
+              backgroundColor: "#fafafa",
+            }}
+          >
+            <Text style={{ fontSize: 12, fontWeight: "700", color: "#444" }}>
+              {statusLabel[book.status]}
+            </Text>
+          </View>
+
           {typeof book.pagesTotal === "number" && book.pagesTotal > 0 ? (
             <Text style={{ color: "#777", fontSize: 12 }}>
-              {book.pagesRead ?? 0} / {book.pagesTotal} sayfa
+              Toplam sayfa: {book.pagesTotal}
             </Text>
           ) : null}
         </View>
       </View>
 
-      {/* STATUS */}
+      {/* INFO */}
       <View
         style={{
-          padding: 12,
-          borderRadius: 12,
+          padding: 14,
+          borderRadius: 14,
           borderWidth: 1,
           borderColor: "#eee",
           backgroundColor: "#fff",
+          gap: 8,
         }}
       >
-        <Text style={{ fontWeight: "800" }}>Durum</Text>
-        <Text style={{ marginTop: 6, color: "#444" }}>
-          {statusLabel[book.status]}
-        </Text>
+        <Text style={{ fontWeight: "800", color: "#222" }}>Kitap Bilgisi</Text>
+
+        <Text style={{ color: "#555" }}>Durum: {statusLabel[book.status]}</Text>
+
+        {typeof book.pagesTotal === "number" && book.pagesTotal > 0 ? (
+          <Text style={{ color: "#555" }}>
+            Sayfa: {book.pagesRead ?? 0} / {book.pagesTotal}
+          </Text>
+        ) : null}
       </View>
 
-      {/* OKUYORUM → PROGRESS */}
+      {/* READING */}
       {book.status === "reading" && (
-        <>
+        <View
+          style={{
+            padding: 14,
+            borderRadius: 14,
+            borderWidth: 1,
+            borderColor: "#eee",
+            backgroundColor: "#fff",
+            gap: 10,
+          }}
+        >
+          <Text style={{ fontWeight: "800", color: "#222" }}>
+            Okuma İlerlemesi
+          </Text>
+
           <ProgressBar
             pagesRead={book.pagesRead}
             pagesTotal={book.pagesTotal}
@@ -236,49 +302,71 @@ export default function BookDetail() {
               alignItems: "center",
             }}
           >
-            <Text style={{ color: "#fff", fontWeight: "800" }}>
+            <Text style={{ color: "#fff", fontWeight: "900" }}>
               +{step} Sayfa Okudum
             </Text>
           </Pressable>
-        </>
+        </View>
       )}
 
-      {/* OKUDUM → PUAN + NOT */}
+      {/* READ */}
       {book.status === "read" && (
         <>
           <View
             style={{
-              padding: 12,
-              borderRadius: 12,
+              padding: 14,
+              borderRadius: 14,
               borderWidth: 1,
               borderColor: "#eee",
               backgroundColor: "#fff",
             }}
           >
-            <Text style={{ fontWeight: "800" }}>Puan</Text>
-            <Text style={{ marginTop: 6, color: "#666" }}>
-              {book.rating ? "★".repeat(book.rating) : "Puan yok"}
+            <Text style={{ fontWeight: "800", color: "#222" }}>Puan</Text>
+            <Text style={{ marginTop: 8, color: "#666", fontSize: 16 }}>
+              {book.rating && book.rating > 0
+                ? "★".repeat(book.rating)
+                : "Puan verilmemiş"}
             </Text>
           </View>
 
           <View
             style={{
-              padding: 12,
-              borderRadius: 12,
+              padding: 14,
+              borderRadius: 14,
               borderWidth: 1,
               borderColor: "#eee",
               backgroundColor: "#fff",
             }}
           >
-            <Text style={{ fontWeight: "800" }}>Not</Text>
-            <Text style={{ marginTop: 6, color: "#666" }}>
-              {book.note?.trim()?.length ? book.note : "Not yok"}
+            <Text style={{ fontWeight: "800", color: "#222" }}>Not</Text>
+            <Text style={{ marginTop: 8, color: "#666", lineHeight: 21 }}>
+              {book.note?.trim()?.length ? book.note : "Henüz not eklenmemiş."}
             </Text>
           </View>
         </>
       )}
 
-      {/* DÜZENLE */}
+      {/* WANT */}
+      {book.status === "want" && (
+        <View
+          style={{
+            padding: 14,
+            borderRadius: 14,
+            borderWidth: 1,
+            borderColor: "#eee",
+            backgroundColor: "#fff",
+          }}
+        >
+          <Text style={{ fontWeight: "800", color: "#222" }}>
+            Okuma Listesi
+          </Text>
+          <Text style={{ marginTop: 8, color: "#666", lineHeight: 21 }}>
+            Bu kitap daha sonra okunmak üzere listene eklendi.
+          </Text>
+        </View>
+      )}
+
+      {/* ACTIONS */}
       <Pressable
         onPress={() =>
           router.push({
@@ -298,7 +386,6 @@ export default function BookDetail() {
         <Text style={{ fontWeight: "900" }}>Düzenle</Text>
       </Pressable>
 
-      {/* DURUM DEĞİŞTİR */}
       <Pressable
         onPress={cycleStatus}
         style={{
@@ -308,12 +395,11 @@ export default function BookDetail() {
           alignItems: "center",
         }}
       >
-        <Text style={{ color: "#fff", fontWeight: "800" }}>
+        <Text style={{ color: "#fff", fontWeight: "900" }}>
           Durumu Değiştir
         </Text>
       </Pressable>
 
-      {/* PAYLAŞ */}
       <Pressable
         onPress={() =>
           router.push({
@@ -331,7 +417,6 @@ export default function BookDetail() {
         <Text style={{ color: "#fff", fontWeight: "900" }}>Paylaş</Text>
       </Pressable>
 
-      {/* SİL */}
       <Pressable
         onPress={confirmDelete}
         style={{
@@ -343,10 +428,9 @@ export default function BookDetail() {
           backgroundColor: "#fff",
         }}
       >
-        <Text style={{ fontWeight: "800", color: "#c00" }}>Kitabı Sil</Text>
+        <Text style={{ fontWeight: "900", color: "#c00" }}>Kitabı Sil</Text>
       </Pressable>
 
-      {/* GERİ */}
       <Pressable
         onPress={() => router.back()}
         style={{
@@ -358,7 +442,7 @@ export default function BookDetail() {
           backgroundColor: "#fff",
         }}
       >
-        <Text style={{ fontWeight: "800" }}>Geri</Text>
+        <Text style={{ fontWeight: "900" }}>Geri</Text>
       </Pressable>
     </ScrollView>
   );

@@ -1,31 +1,46 @@
 import { router } from "expo-router";
 import React, { useMemo } from "react";
-import { Pressable, ScrollView, Text } from "react-native";
+import { Pressable, ScrollView, Text, View } from "react-native";
 import { useBooks } from "../../context/BooksContext";
 
 function Box({
   title,
   subtitle,
+  count,
   onPress,
 }: {
   title: string;
   subtitle: string;
+  count: number;
   onPress: () => void;
 }) {
   return (
     <Pressable
       onPress={onPress}
       style={{
-        padding: 14,
-        borderRadius: 14,
+        padding: 16,
+        borderRadius: 16,
         borderWidth: 1,
         borderColor: "#eee",
         backgroundColor: "#fff",
-        gap: 6,
+        gap: 8,
       }}
     >
-      <Text style={{ fontSize: 16, fontWeight: "900" }}>{title}</Text>
+      <Text style={{ fontSize: 17, fontWeight: "900" }}>{title}</Text>
       <Text style={{ color: "#666" }}>{subtitle}</Text>
+
+      <View
+        style={{
+          alignSelf: "flex-start",
+          marginTop: 4,
+          paddingHorizontal: 10,
+          paddingVertical: 6,
+          borderRadius: 999,
+          backgroundColor: "#f5f5f5",
+        }}
+      >
+        <Text style={{ fontWeight: "800", color: "#111" }}>{count} kitap</Text>
+      </View>
     </Pressable>
   );
 }
@@ -42,45 +57,57 @@ export default function Library() {
   }, [books]);
 
   return (
-    <ScrollView contentContainerStyle={{ padding: 16, gap: 12 }}>
-      <Text style={{ fontSize: 22, fontWeight: "900" }}>Kitaplık</Text>
+    <ScrollView contentContainerStyle={{ padding: 16, gap: 14 }}>
+      <Text style={{ fontSize: 24, fontWeight: "900" }}>Kitaplık</Text>
+      <Text style={{ color: "#666" }}>
+        Kitaplarını durumlarına göre düzenle ve takip et.
+      </Text>
 
       {!isHydrated ? (
-        <Text style={{ color: "#666" }}>Yükleniyor…</Text>
+        <Text style={{ color: "#666", marginTop: 8 }}>Yükleniyor…</Text>
       ) : (
         <>
           <Box
-            title={`📖 Okuyorum (${counts.reading})`}
-            subtitle="Şu an okuduğun kitaplar"
+            title="📖 Okuyorum"
+            subtitle="Şu anda okumakta olduğun kitaplar"
+            count={counts.reading}
             onPress={() => router.push("/lists/reading")}
           />
 
           <Box
-            title={`✅ Okudum (${counts.read})`}
-            subtitle="Bitirdiğin kitaplar"
+            title="✅ Okudum"
+            subtitle="Bitirdiğin ve puanlayabileceğin kitaplar"
+            count={counts.read}
             onPress={() => router.push("/lists/read")}
           />
 
           <Box
-            title={`⭐ Okumak İstiyorum (${counts.want})`}
-            subtitle="Listeye eklediklerin"
+            title="⭐ İstiyorum"
+            subtitle="Sonra okumak için kaydettiklerin"
+            count={counts.want}
             onPress={() => router.push("/lists/want")}
           />
         </>
       )}
 
-      {/* İstersen ekstra hızlı buton */}
       <Pressable
-        onPress={() => router.push("/add-book")}
+        onPress={() =>
+          router.push({
+            pathname: "/add-book",
+            params: { status: "want" },
+          })
+        }
         style={{
           marginTop: 8,
           backgroundColor: "#111",
-          paddingVertical: 12,
+          paddingVertical: 13,
           borderRadius: 12,
           alignItems: "center",
         }}
       >
-        <Text style={{ color: "#fff", fontWeight: "900" }}>+ Kitap Ekle</Text>
+        <Text style={{ color: "#fff", fontWeight: "900" }}>
+          + Yeni Kitap Ekle
+        </Text>
       </Pressable>
     </ScrollView>
   );

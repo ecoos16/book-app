@@ -1,13 +1,12 @@
 {
   "expo": {
-    "name": "kitap-app",
+    "name": "ReadSphere",
     "slug": "kitap-app",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/images/icon.png",
-    "scheme": "kitapapp",
+    "icon": "./assets/images/İCON.png",
+    "scheme": "readsphere",
     "userInterfaceStyle": "automatic",
-    "newArchEnabled": true,
     "ios": {
       "supportsTablet": true
     },
@@ -18,8 +17,8 @@
         "backgroundImage": "./assets/images/android-icon-background.png",
         "monochromeImage": "./assets/images/android-icon-monochrome.png"
       },
-      "edgeToEdgeEnabled": true,
-      "predictiveBackGestureEnabled": false
+      "predictiveBackGestureEnabled": false,
+      "package": "com.ecesuorhan.kitapapp"
     },
     "web": {
       "output": "static",
@@ -43,6 +42,12 @@
     "experiments": {
       "typedRoutes": true,
       "reactCompiler": true
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "dbee6f3a-2556-4412-9490-a8682b5d762f"
+      }
     }
   }
 }

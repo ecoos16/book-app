@@ -2,15 +2,18 @@ import { router, useLocalSearchParams } from "expo-router";
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   Alert,
+  Image,
   Pressable,
   ScrollView,
   Text,
   TextInput,
   View,
 } from "react-native";
+import BookSearchPicker from "../components/BookSearchPicker";
 import { StarRating } from "../components/StarRating";
 import { useBooks } from "../context/BooksContext";
 import type { BookStatus } from "../types/book";
+import type { GoogleBook } from "../types/googleBooks";
 
 /**
  * Durum etiketleri
@@ -24,31 +27,32 @@ const statusLabel: Record<BookStatus, string> = {
 export default function AddBook() {
   const { addBook } = useBooks();
 
-  // ✅ Search ekranından gelen parametreler
   const params = useLocalSearchParams<{
     title?: string;
     author?: string;
     pagesTotal?: string;
     thumbnail?: string;
     googleId?: string;
+    status?: BookStatus;
   }>();
 
-  // Temel alanlar
+  const [selectedGoogleBook, setSelectedGoogleBook] =
+    useState<GoogleBook | null>(null);
+
   const [title, setTitle] = useState("");
   const [author, setAuthor] = useState("");
 
-  // Durum
   const [status, setStatus] = useState<BookStatus>("reading");
 
-  // ✅ Okudum alanları
   const [rating, setRating] = useState<number>(0);
   const [note, setNote] = useState("");
 
-  // ✅ Okuyorum alanları (progress)
-  const [pagesTotalText, setPagesTotalText] = useState(""); // TextInput string tutar
+  const [pagesTotalText, setPagesTotalText] = useState("");
   const [pagesReadText, setPagesReadText] = useState("");
 
-  // ✅ Autofill sadece 1 kere çalışsın (kullanıcı yazarken overwrite etmesin)
+  const [thumbnail, setThumbnail] = useState<string | undefined>(undefined);
+  const [googleId, setGoogleId] = useState<string | undefined>(undefined);
+
   const didHydrate = useRef(false);
 
   useEffect(() => {
@@ -59,60 +63,79 @@ export default function AddBook() {
       typeof params.author === "string" ? params.author : "";
     const incomingPagesTotal =
       typeof params.pagesTotal === "string" ? params.pagesTotal : "";
+    const incomingThumbnail =
+      typeof params.thumbnail === "string" ? params.thumbnail : "";
+    const incomingGoogleId =
+      typeof params.googleId === "string" ? params.googleId : "";
+    const incomingStatus =
+      params.status === "reading" ||
+      params.status === "read" ||
+      params.status === "want"
+        ? params.status
+        : undefined;
 
     const hasIncoming = !!(
       incomingTitle ||
       incomingAuthor ||
-      incomingPagesTotal
+      incomingPagesTotal ||
+      incomingThumbnail ||
+      incomingGoogleId ||
+      incomingStatus
     );
+
     if (!hasIncoming) return;
 
-    // Başlık / yazar doldur
     if (incomingTitle) setTitle(incomingTitle);
     if (incomingAuthor) setAuthor(incomingAuthor);
-
-    // Sayfa bilgisi geldiyse reading'e uygun
-    if (incomingPagesTotal) {
-      setStatus("reading");
-      setPagesTotalText(incomingPagesTotal);
-    }
+    if (incomingPagesTotal) setPagesTotalText(incomingPagesTotal);
+    if (incomingThumbnail) setThumbnail(incomingThumbnail);
+    if (incomingGoogleId) setGoogleId(incomingGoogleId);
+    if (incomingStatus) setStatus(incomingStatus);
 
     didHydrate.current = true;
-  }, [params.title, params.author, params.pagesTotal]);
+  }, [
+    params.title,
+    params.author,
+    params.pagesTotal,
+    params.thumbnail,
+    params.googleId,
+    params.status,
+  ]);
 
-  // Kaydet butonu kontrol
   const canSave = useMemo(() => {
     return title.trim().length > 0 && author.trim().length > 0;
   }, [title, author]);
 
-  /**
-   * Status değişince gereksiz alanları temizleyelim (UX için)
-   */
   const onChangeStatus = (next: BookStatus) => {
     setStatus(next);
 
-    // Okudum değilse rating/note temizle
     if (next !== "read") {
       setRating(0);
       setNote("");
     }
 
-    // Okuyorum değilse sayfa alanlarını temizle
     if (next !== "reading") {
-      setPagesTotalText("");
       setPagesReadText("");
     }
   };
 
-  /**
-   * TextInput'tan gelen sayıları güvenli number'a çeviren helper
-   */
   const toSafeNumber = (t: string) => {
-    const n = Number(t.replace(",", "."));
+    const onlyDigits = t.replace(/[^\d]/g, "");
+    if (!onlyDigits) return undefined;
+
+    const n = Number(onlyDigits);
     if (!Number.isFinite(n)) return undefined;
-    // sayfa sayısı negatif olamaz
-    const v = Math.max(0, Math.floor(n));
-    return v;
+
+    return Math.max(0, Math.floor(n));
+  };
+
+  const handleSelectGoogleBook = (item: GoogleBook) => {
+    setSelectedGoogleBook(item);
+    setTitle(item.title || "");
+    setAuthor(item.authors?.join(", ") || "");
+    setPagesTotalText(item.pageCount ? String(item.pageCount) : "");
+    setThumbnail(item.thumbnail || undefined);
+    setGoogleId(item.id || undefined);
   };
 
   const onSubmit = () => {
@@ -121,43 +144,25 @@ export default function AddBook() {
       return;
     }
 
-    // ✅ Progress alanlarını sadece status=reading ise kaydet
     const pagesTotal =
       status === "reading" ? toSafeNumber(pagesTotalText) : undefined;
     const pagesRead =
       status === "reading" ? toSafeNumber(pagesReadText) : undefined;
 
-    // Eğer toplam sayfa girilmişse ve okunan daha büyükse otomatik sınırla
     const fixedPagesRead =
       typeof pagesTotal === "number" && typeof pagesRead === "number"
         ? Math.min(pagesRead, pagesTotal)
         : pagesRead;
 
-    const safeThumbnail =
-      typeof params.thumbnail === "string" && params.thumbnail.length > 0
-        ? params.thumbnail
-        : undefined;
-
-    const safeGoogleId =
-      typeof params.googleId === "string" && params.googleId.length > 0
-        ? params.googleId
-        : undefined;
-
     addBook({
       title: title.trim(),
       author: author.trim(),
       status,
-
-      // ✅ Kapak / Google referansı (ürün hissi)
-      thumbnail: safeThumbnail,
-      googleId: safeGoogleId,
-
-      // Okudum -> rating/note
+      thumbnail,
+      googleId,
       rating: status === "read" && rating > 0 ? rating : undefined,
       note:
         status === "read" && note.trim().length > 0 ? note.trim() : undefined,
-
-      // Okuyorum -> progress
       pagesTotal:
         status === "reading" && typeof pagesTotal === "number" && pagesTotal > 0
           ? pagesTotal
@@ -174,10 +179,62 @@ export default function AddBook() {
   };
 
   return (
-    <ScrollView contentContainerStyle={{ padding: 16, gap: 12 }}>
+    <ScrollView
+      contentContainerStyle={{ padding: 16, gap: 12 }}
+      keyboardShouldPersistTaps="handled"
+    >
       <Text style={{ fontSize: 22, fontWeight: "900" }}>Kitap Ekle</Text>
 
-      {/* Kitap adı */}
+      <View style={{ gap: 8 }}>
+        <Text style={{ fontWeight: "800" }}>Google Books ile Ara</Text>
+        <BookSearchPicker onSelect={handleSelectGoogleBook} />
+      </View>
+
+      {(selectedGoogleBook || thumbnail || title || author) && (
+        <View
+          style={{
+            borderWidth: 1,
+            borderColor: "#ddd",
+            borderRadius: 12,
+            padding: 12,
+            backgroundColor: "#fff",
+            flexDirection: "row",
+            gap: 12,
+          }}
+        >
+          {thumbnail ? (
+            <Image
+              source={{ uri: thumbnail }}
+              style={{ width: 60, height: 90, borderRadius: 8 }}
+              resizeMode="cover"
+            />
+          ) : (
+            <View
+              style={{
+                width: 60,
+                height: 90,
+                borderRadius: 8,
+                backgroundColor: "#eee",
+              }}
+            />
+          )}
+
+          <View style={{ flex: 1 }}>
+            <Text style={{ fontWeight: "800", fontSize: 16 }}>
+              {title || "Kitap seçilmedi"}
+            </Text>
+            <Text style={{ color: "#666", marginTop: 4 }}>
+              {author || "Yazar bilgisi yok"}
+            </Text>
+            {pagesTotalText ? (
+              <Text style={{ color: "#888", marginTop: 4 }}>
+                {pagesTotalText} sayfa
+              </Text>
+            ) : null}
+          </View>
+        </View>
+      )}
+
       <View style={{ gap: 6 }}>
         <Text style={{ fontWeight: "800" }}>Kitap Adı</Text>
         <TextInput
@@ -194,7 +251,6 @@ export default function AddBook() {
         />
       </View>
 
-      {/* Yazar */}
       <View style={{ gap: 6 }}>
         <Text style={{ fontWeight: "800" }}>Yazar</Text>
         <TextInput
@@ -211,7 +267,6 @@ export default function AddBook() {
         />
       </View>
 
-      {/* Durum seçimi */}
       <View style={{ gap: 8 }}>
         <Text style={{ fontWeight: "800" }}>Durum</Text>
         <View style={{ flexDirection: "row", gap: 8, flexWrap: "wrap" }}>
@@ -241,12 +296,10 @@ export default function AddBook() {
         </View>
       </View>
 
-      {/* ✅ SADECE "Okuyorum" seçiliyse Progress alanları */}
       {status === "reading" && (
         <View style={{ gap: 10 }}>
           <Text style={{ fontWeight: "900" }}>Okuma İlerlemesi</Text>
 
-          {/* Toplam sayfa */}
           <View style={{ gap: 6 }}>
             <Text style={{ fontWeight: "800" }}>Toplam Sayfa</Text>
             <TextInput
@@ -264,7 +317,6 @@ export default function AddBook() {
             />
           </View>
 
-          {/* Okunan sayfa */}
           <View style={{ gap: 6 }}>
             <Text style={{ fontWeight: "800" }}>Okunan Sayfa</Text>
             <TextInput
@@ -283,12 +335,11 @@ export default function AddBook() {
           </View>
 
           <Text style={{ color: "#888", fontSize: 12 }}>
-            (İpucu: Okunan sayfa toplamdan büyükse otomatik düzeltilir)
+            Okunan sayfa toplamdan büyükse otomatik düzeltilir.
           </Text>
         </View>
       )}
 
-      {/* ✅ SADECE "Okudum" seçiliyse Puan + Not */}
       {status === "read" && (
         <>
           <View style={{ gap: 8 }}>
@@ -323,7 +374,6 @@ export default function AddBook() {
         </>
       )}
 
-      {/* Kaydet */}
       <Pressable
         onPress={onSubmit}
         style={{
@@ -337,7 +387,6 @@ export default function AddBook() {
         <Text style={{ color: "#fff", fontWeight: "900" }}>Kaydet</Text>
       </Pressable>
 
-      {/* Vazgeç */}
       <Pressable
         onPress={() => router.back()}
         style={{

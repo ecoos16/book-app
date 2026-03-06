@@ -1,5 +1,6 @@
+import { router } from "expo-router";
 import React from "react";
-import { ScrollView, Text } from "react-native";
+import { Pressable, ScrollView, Text, View } from "react-native";
 import { BooksList } from "../../components/BooksList";
 import { useBooks } from "../../context/BooksContext";
 
@@ -16,9 +17,52 @@ export default function ReadingList() {
   }
 
   return (
-    <ScrollView contentContainerStyle={{ padding: 16 }}>
-      <Text style={{ fontSize: 22, fontWeight: "700" }}>Okuyorum</Text>
-      <BooksList books={books} />
+    <ScrollView contentContainerStyle={{ padding: 16, gap: 14 }}>
+      <Text style={{ fontSize: 22, fontWeight: "900" }}>Okuyorum</Text>
+      <Text style={{ color: "#666" }}>
+        Şu anda aktif olarak okuduğun kitaplar burada görünür.
+      </Text>
+
+      <Pressable
+        onPress={() =>
+          router.push({
+            pathname: "/add-book",
+            params: { status: "reading" },
+          })
+        }
+        style={{
+          backgroundColor: "#111",
+          paddingVertical: 12,
+          borderRadius: 12,
+          alignItems: "center",
+        }}
+      >
+        <Text style={{ color: "#fff", fontWeight: "900" }}>
+          + Okuyorum listesine kitap ekle
+        </Text>
+      </Pressable>
+
+      {books.length === 0 ? (
+        <View
+          style={{
+            padding: 16,
+            borderRadius: 14,
+            borderWidth: 1,
+            borderColor: "#eee",
+            backgroundColor: "#fff",
+          }}
+        >
+          <Text style={{ fontWeight: "800", marginBottom: 6 }}>
+            Henüz bu listede kitap yok
+          </Text>
+          <Text style={{ color: "#666" }}>
+            Yukarıdaki butona basıp kitap ekleyebilirsin. Add Book ekranında API
+            araması varsa oradan seçerek otomatik doldurabilirsin.
+          </Text>
+        </View>
+      ) : (
+        <BooksList books={books} />
+      )}
     </ScrollView>
   );
 }

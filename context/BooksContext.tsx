@@ -112,18 +112,32 @@ export function BooksProvider({ children }: { children: ReactNode }) {
     ).catch(() => {});
   }, [books, isHydrated]);
 
-  // ✅ Kitap ekleme (default + normalize)
+  // ✅ Kitap ekleme (default + normalize + duplicate prevention)
   const addBook: BooksContextValue["addBook"] = (payload) => {
+    const incomingGoogleId =
+      typeof payload.googleId === "string" && payload.googleId.length > 0
+        ? payload.googleId
+        : undefined;
+
+    // ✅ Duplicate check: aynı googleId ile kitap varsa yeni ekleme
+    if (incomingGoogleId) {
+      const existing = books.find((b) => b.googleId === incomingGoogleId);
+      if (existing) {
+        // yeni id üretmiyoruz, mevcut id döndürüyoruz
+        return existing.id;
+      }
+    }
+
     const id = makeId();
 
     const newBook: Book = normalizeBook({
       id,
       createdAt: Date.now(),
 
-      // ✅ payload'tan gelenler (title/author/status/pages/rating/note/shareText/thumbnail/googleId vs.)
+      // payload'tan gelenler
       ...payload,
 
-      // ✅ sosyal default (payload gelmese de)
+      // sosyal defaults
       likes: payload.likes ?? 0,
       isLiked: payload.isLiked ?? false,
       comments: payload.comments ?? [],

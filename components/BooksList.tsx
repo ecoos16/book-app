@@ -3,11 +3,8 @@ import React, { useMemo, useState } from "react";
 import { Alert, Image, Pressable, Text, TextInput, View } from "react-native";
 import { useBooks } from "../context/BooksContext";
 import type { Book, BookStatus } from "../types/book";
-import { ProgressBar } from "./ProgressBar"; // ✅ Progress bar component
+import { ProgressBar } from "./ProgressBar";
 
-/**
- * Status label'ları (UI Türkçe)
- */
 const statusLabel: Record<BookStatus, string> = {
   reading: "Okuyorum",
   read: "Okudum",
@@ -17,66 +14,59 @@ const statusLabel: Record<BookStatus, string> = {
 type SortKey = "newest" | "oldest" | "ratingDesc" | "az";
 
 export function BooksList({ books }: { books: Book[] }) {
-  /**
-   * ✅ removeBook: sil
-   * ✅ updateBook: güncelle (status/progress/not/puan)
-   */
   const { removeBook, updateBook } = useBooks();
 
-  // Arama ve sıralama state
   const [query, setQuery] = useState("");
   const [sortKey, setSortKey] = useState<SortKey>("newest");
 
-  /**
-   * ✅ Filtre + Sıralama
-   */
   const filteredSorted = useMemo(() => {
     const q = query.trim().toLowerCase();
+
     let arr = books;
 
-    // 🔎 filter
-    if (q.length) {
+    if (q.length > 0) {
       arr = arr.filter((b) => {
-        const t = (b.title ?? "").toLowerCase();
-        const a = (b.author ?? "").toLowerCase();
-        return t.includes(q) || a.includes(q);
+        const title = (b.title ?? "").toLowerCase();
+        const author = (b.author ?? "").toLowerCase();
+        return title.includes(q) || author.includes(q);
       });
     }
 
-    // ↕️ sort
     const copy = [...arr];
+
     copy.sort((a, b) => {
-      if (sortKey === "newest") return b.createdAt - a.createdAt;
-      if (sortKey === "oldest") return a.createdAt - b.createdAt;
+      const aCreated =
+        typeof a.createdAt === "number"
+          ? a.createdAt
+          : new Date(a.createdAt).getTime() || 0;
+
+      const bCreated =
+        typeof b.createdAt === "number"
+          ? b.createdAt
+          : new Date(b.createdAt).getTime() || 0;
+
+      if (sortKey === "newest") return bCreated - aCreated;
+      if (sortKey === "oldest") return aCreated - bCreated;
 
       if (sortKey === "ratingDesc") {
         const ra = a.rating ?? 0;
         const rb = b.rating ?? 0;
         if (rb !== ra) return rb - ra;
-        return b.createdAt - a.createdAt; // eşitse yeni öne
+        return bCreated - aCreated;
       }
 
-      // az
       return (a.title ?? "").localeCompare(b.title ?? "", "tr");
     });
 
     return copy;
   }, [books, query, sortKey]);
 
-  /**
-   * ✅ Durum değiştirirken "yan alanları" temizleyelim:
-   * - Okuyorum -> progress açık, rating/note gereksiz
-   * - Okudum   -> rating/note açık, progress gereksiz
-   * - İstiyorum-> hepsi gereksiz (sade)
-   */
   const setStatusClean = (b: Book, next: BookStatus) => {
     if (next === "reading") {
       updateBook(b.id, {
         status: "reading",
-        // Okuyorum'a geçince "okudum verilerini" temizlemek mantıklı
         rating: undefined,
         note: undefined,
-        // pagesTotal/pagesRead kullanıcı sonra edit'ten girebilir
       });
       return;
     }
@@ -84,27 +74,34 @@ export function BooksList({ books }: { books: Book[] }) {
     if (next === "read") {
       updateBook(b.id, {
         status: "read",
-        // Okudum'a geçince progress temizlenebilir
-        pagesTotal: undefined,
         pagesRead: undefined,
       });
       return;
     }
 
-    // want
     updateBook(b.id, {
       status: "want",
-      // İstiyorum'a geçince hepsini temizleyelim
       rating: undefined,
       note: undefined,
-      pagesTotal: undefined,
       pagesRead: undefined,
     });
   };
 
-  /**
-   * Uzun basınca çıkan aksiyon menüsü
-   */
+  const confirmDelete = (b: Book) => {
+    Alert.alert(
+      "Kitabı sil",
+      `"${b.title}" kitabını silmek istediğine emin misin?`,
+      [
+        { text: "Vazgeç", style: "cancel" },
+        {
+          text: "Sil",
+          style: "destructive",
+          onPress: () => removeBook(b.id),
+        },
+      ],
+    );
+  };
+
   const openActions = (b: Book) => {
     Alert.alert(b.title, "Ne yapmak istiyorsun?", [
       {
@@ -123,48 +120,53 @@ export function BooksList({ books }: { books: Book[] }) {
             params: { id: b.id },
           }),
       },
-      { text: "—", style: "cancel" },
-
       {
-        text: `Durum → Okuyorum`,
+        text: "Durum → Okuyorum",
         onPress: () => setStatusClean(b, "reading"),
       },
       {
-        text: `Durum → Okudum`,
+        text: "Durum → Okudum",
         onPress: () => setStatusClean(b, "read"),
       },
       {
-        text: `Durum → İstiyorum`,
+        text: "Durum → İstiyorum",
         onPress: () => setStatusClean(b, "want"),
       },
-
-      { text: "Sil", style: "destructive", onPress: () => removeBook(b.id) },
-      { text: "Vazgeç", style: "cancel" },
+      {
+        text: "Sil",
+        style: "destructive",
+        onPress: () => confirmDelete(b),
+      },
+      {
+        text: "Vazgeç",
+        style: "cancel",
+      },
     ]);
   };
 
+  const isSearching = query.trim().length > 0;
+  const isEmptyLibrary = books.length === 0;
+  const isNoSearchResult = books.length > 0 && filteredSorted.length === 0;
+
   return (
     <View style={{ gap: 10, marginTop: 12 }}>
-      {/* ------------------------------------------------ */}
-      {/* 🔎 Arama */}
-      {/* ------------------------------------------------ */}
       <TextInput
         value={query}
         onChangeText={setQuery}
-        placeholder="Ara (kitap / yazar)"
+        placeholder="Kitap veya yazar ara"
+        autoCorrect={false}
+        autoCapitalize="none"
         style={{
           borderWidth: 1,
           borderColor: "#ddd",
-          borderRadius: 12,
-          paddingHorizontal: 12,
-          paddingVertical: 10,
+          borderRadius: 14,
+          paddingHorizontal: 14,
+          paddingVertical: 11,
           backgroundColor: "#fff",
+          fontSize: 15,
         }}
       />
 
-      {/* ------------------------------------------------ */}
-      {/* ↕️ Sıralama */}
-      {/* ------------------------------------------------ */}
       <View style={{ flexDirection: "row", gap: 8, flexWrap: "wrap" }}>
         <SortChip
           label="Yeni"
@@ -188,140 +190,236 @@ export function BooksList({ books }: { books: Book[] }) {
         />
       </View>
 
-      {/* ------------------------------------------------ */}
-      {/* Liste */}
-      {/* ------------------------------------------------ */}
-      {filteredSorted.length === 0 ? (
-        <Text style={{ marginTop: 8, color: "#666" }}>
-          {books.length === 0 ? "Henüz burada kitap yok." : "Sonuç bulunamadı."}
-        </Text>
-      ) : (
-        filteredSorted.map((b) => (
-          <Pressable
-            key={b.id}
-            // Normal tık -> detay
-            onPress={() =>
-              router.push({
-                pathname: "/book/[id]" as const,
-                params: { id: b.id },
-              })
-            }
-            // Uzun bas -> aksiyon menüsü
-            onLongPress={() => openActions(b)}
-            delayLongPress={250}
+      {isEmptyLibrary && !isSearching ? (
+        <View
+          style={{
+            marginTop: 18,
+            borderWidth: 1,
+            borderColor: "#eee",
+            borderRadius: 18,
+            paddingVertical: 28,
+            paddingHorizontal: 20,
+            backgroundColor: "#fff",
+            alignItems: "center",
+          }}
+        >
+          <Text style={{ fontSize: 40 }}>📚</Text>
+          <Text
             style={{
-              borderWidth: 1,
-              borderColor: "#eee",
-              borderRadius: 14,
-              padding: 12,
-              backgroundColor: "#fff",
-              gap: 8,
+              marginTop: 10,
+              fontSize: 17,
+              fontWeight: "800",
+              color: "#222",
             }}
           >
-            {/* ✅ Kapak + title + status chip */}
-            <View style={{ flexDirection: "row", gap: 12 }}>
-              {/* Kapak */}
-              <View
-                style={{
-                  width: 52,
-                  height: 74,
-                  borderRadius: 10,
-                  overflow: "hidden",
-                  backgroundColor: "#f3f3f3",
-                }}
-              >
-                {b.thumbnail ? (
-                  <Image
-                    source={{ uri: b.thumbnail }}
-                    style={{ width: 52, height: 74 }}
-                    resizeMode="cover"
-                  />
-                ) : null}
-              </View>
+            Henüz kitap eklemedin
+          </Text>
+          <Text
+            style={{
+              marginTop: 6,
+              color: "#666",
+              textAlign: "center",
+              lineHeight: 20,
+            }}
+          >
+            İlk kitabını ekleyerek kitaplığını oluşturmaya başlayabilirsin.
+          </Text>
+        </View>
+      ) : null}
 
-              {/* Sağ taraf */}
-              <View style={{ flex: 1, gap: 6 }}>
-                {/* title + status chip */}
-                <View style={{ flexDirection: "row", alignItems: "center" }}>
-                  <Text
-                    style={{ fontSize: 16, fontWeight: "800", flex: 1 }}
-                    numberOfLines={2}
-                  >
-                    {b.title}
-                  </Text>
+      {isNoSearchResult ? (
+        <View
+          style={{
+            marginTop: 18,
+            borderWidth: 1,
+            borderColor: "#eee",
+            borderRadius: 18,
+            paddingVertical: 28,
+            paddingHorizontal: 20,
+            backgroundColor: "#fff",
+            alignItems: "center",
+          }}
+        >
+          <Text style={{ fontSize: 36 }}>🔎</Text>
+          <Text
+            style={{
+              marginTop: 10,
+              fontSize: 17,
+              fontWeight: "800",
+              color: "#222",
+            }}
+          >
+            Sonuç bulunamadı
+          </Text>
+          <Text
+            style={{
+              marginTop: 6,
+              color: "#666",
+              textAlign: "center",
+              lineHeight: 20,
+            }}
+          >
+            Farklı bir kitap adı ya da yazar ismi deneyebilirsin.
+          </Text>
+        </View>
+      ) : null}
 
-                  <View
-                    style={{
-                      paddingHorizontal: 10,
-                      paddingVertical: 6,
-                      borderRadius: 999,
-                      borderWidth: 1,
-                      borderColor: "#ddd",
-                      marginLeft: 8,
-                    }}
-                  >
-                    <Text
-                      style={{ fontSize: 12, fontWeight: "700", color: "#444" }}
+      {!isEmptyLibrary && !isNoSearchResult
+        ? filteredSorted.map((b) => (
+            <Pressable
+              key={b.id}
+              onPress={() =>
+                router.push({
+                  pathname: "/book/[id]" as const,
+                  params: { id: b.id },
+                })
+              }
+              onLongPress={() => openActions(b)}
+              delayLongPress={250}
+              style={{
+                borderWidth: 1,
+                borderColor: "#eee",
+                borderRadius: 16,
+                padding: 12,
+                backgroundColor: "#fff",
+                gap: 10,
+              }}
+            >
+              <View style={{ flexDirection: "row", gap: 12 }}>
+                <View
+                  style={{
+                    width: 56,
+                    height: 80,
+                    borderRadius: 10,
+                    overflow: "hidden",
+                    backgroundColor: "#f3f3f3",
+                    alignItems: "center",
+                    justifyContent: "center",
+                  }}
+                >
+                  {b.thumbnail ? (
+                    <Image
+                      source={{ uri: b.thumbnail }}
+                      style={{ width: 56, height: 80 }}
+                      resizeMode="cover"
+                    />
+                  ) : (
+                    <View
+                      style={{
+                        width: "100%",
+                        height: "100%",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        backgroundColor: "#f1f1f1",
+                      }}
                     >
-                      {statusLabel[b.status]}
-                    </Text>
-                  </View>
+                      <Text style={{ fontSize: 22 }}>📚</Text>
+                      <Text
+                        style={{
+                          fontSize: 10,
+                          color: "#777",
+                          marginTop: 2,
+                        }}
+                      >
+                        No cover
+                      </Text>
+                    </View>
+                  )}
                 </View>
 
-                {/* author */}
-                <Text style={{ color: "#666" }} numberOfLines={1}>
-                  {b.author}
-                </Text>
+                <View style={{ flex: 1, gap: 6 }}>
+                  <View
+                    style={{ flexDirection: "row", alignItems: "flex-start" }}
+                  >
+                    <Text
+                      style={{
+                        fontSize: 16,
+                        fontWeight: "800",
+                        flex: 1,
+                        color: "#1a1a1a",
+                      }}
+                      numberOfLines={2}
+                    >
+                      {b.title}
+                    </Text>
+
+                    <View
+                      style={{
+                        paddingHorizontal: 10,
+                        paddingVertical: 6,
+                        borderRadius: 999,
+                        borderWidth: 1,
+                        borderColor: "#ddd",
+                        marginLeft: 8,
+                        backgroundColor: "#fafafa",
+                      }}
+                    >
+                      <Text
+                        style={{
+                          fontSize: 12,
+                          fontWeight: "700",
+                          color: "#444",
+                        }}
+                      >
+                        {statusLabel[b.status]}
+                      </Text>
+                    </View>
+                  </View>
+
+                  <Text
+                    style={{ color: "#666", fontSize: 14 }}
+                    numberOfLines={1}
+                  >
+                    {b.author}
+                  </Text>
+
+                  {typeof b.pagesTotal === "number" && b.pagesTotal > 0 ? (
+                    <Text style={{ color: "#888", fontSize: 12 }}>
+                      {b.pagesRead ?? 0} / {b.pagesTotal} sayfa
+                    </Text>
+                  ) : null}
+                </View>
               </View>
-            </View>
 
-            {/* ------------------------------------------------ */}
-            {/* ✅ Okuyorum -> Progress bar */}
-            {/* ------------------------------------------------ */}
-            {b.status === "reading" && (
-              <ProgressBar pagesRead={b.pagesRead} pagesTotal={b.pagesTotal} />
-            )}
+              {b.status === "reading" && (
+                <ProgressBar
+                  pagesRead={b.pagesRead}
+                  pagesTotal={b.pagesTotal}
+                />
+              )}
 
-            {/* ------------------------------------------------ */}
-            {/* ✅ Okudum -> Rating + Note */}
-            {/* ------------------------------------------------ */}
-            {b.status === "read" && (
-              <View style={{ flexDirection: "row", alignItems: "center" }}>
-                <Text style={{ color: "#666" }}>
-                  {b.rating ? "★".repeat(b.rating) : "☆"}
+              {b.status === "read" && (
+                <View style={{ flexDirection: "row", alignItems: "center" }}>
+                  <Text style={{ color: "#666", fontSize: 13 }}>
+                    {b.rating && b.rating > 0
+                      ? "★".repeat(b.rating)
+                      : "Puan verilmemiş"}
+                  </Text>
+
+                  <Text style={{ color: "#aaa" }}> • </Text>
+
+                  <Text style={{ color: "#666", flex: 1 }} numberOfLines={1}>
+                    {b.note?.trim()?.length ? b.note : "Henüz not eklenmemiş"}
+                  </Text>
+                </View>
+              )}
+
+              {b.status === "want" && (
+                <Text style={{ color: "#888", fontSize: 12 }}>
+                  Okuma listene eklediğin kitap
                 </Text>
+              )}
 
-                <Text style={{ color: "#aaa" }}> • </Text>
-
-                <Text style={{ color: "#666", flex: 1 }} numberOfLines={1}>
-                  {b.note?.trim()?.length ? b.note : "Not yok"}
-                </Text>
-              </View>
-            )}
-
-            {/* ------------------------------------------------ */}
-            {/* ✅ İstiyorum -> Sade satır */}
-            {/* ------------------------------------------------ */}
-            {b.status === "want" && (
-              <Text style={{ color: "#888", fontSize: 12 }}>
-                (Okumak istediğin kitap)
+              <Text style={{ color: "#aaa", fontSize: 12 }}>
+                Uzun bas: düzenle / sil / durum değiştir
               </Text>
-            )}
-
-            {/* ipucu */}
-            <Text style={{ color: "#aaa", fontSize: 12 }}>
-              (Uzun bas: düzenle / sil / durum değiştir)
-            </Text>
-          </Pressable>
-        ))
-      )}
+            </Pressable>
+          ))
+        : null}
     </View>
   );
 }
 
-/**
- * Sıralama chip component'i
- */
 function SortChip({
   label,
   active,

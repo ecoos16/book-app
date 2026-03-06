@@ -2,6 +2,7 @@ import { router, useLocalSearchParams } from "expo-router";
 import React, { useMemo, useState } from "react";
 import {
   Alert,
+  Image,
   Pressable,
   ScrollView,
   Text,
@@ -12,9 +13,6 @@ import { StarRating } from "../../components/StarRating";
 import { useBooks } from "../../context/BooksContext";
 import type { BookStatus } from "../../types/book";
 
-/**
- * Durum etiketleri (UI'da görünen Türkçe karşılıklar)
- */
 const statusLabel: Record<BookStatus, string> = {
   reading: "Okuyorum",
   read: "Okudum",
@@ -22,146 +20,135 @@ const statusLabel: Record<BookStatus, string> = {
 };
 
 export default function EditBook() {
-  /**
-   * URL'den id alıyoruz: /edit-book/[id]
-   */
   const { id } = useLocalSearchParams<{ id: string }>();
-
-  /**
-   * Context'ten:
-   * - getById: kitabı bul
-   * - updateBook: güncelle
-   */
   const { getById, updateBook } = useBooks();
 
   const book = id ? getById(id) : undefined;
 
-  /**
-   * ✅ Form state'leri
-   * book varsa mevcut değerlerle başlatıyoruz
-   */
   const [title, setTitle] = useState(book?.title ?? "");
   const [author, setAuthor] = useState(book?.author ?? "");
   const [status, setStatus] = useState<BookStatus>(book?.status ?? "reading");
 
-  // ✅ Okudum alanları
   const [note, setNote] = useState(book?.note ?? "");
   const [rating, setRating] = useState<number>(book?.rating ?? 0);
 
-  // ✅ Okuyorum alanları (progress)
-  // TextInput string tuttuğu için sayıları string olarak saklıyoruz
   const [pagesTotalText, setPagesTotalText] = useState(
-    book?.pagesTotal ? String(book.pagesTotal) : "",
+    typeof book?.pagesTotal === "number" ? String(book.pagesTotal) : "",
   );
   const [pagesReadText, setPagesReadText] = useState(
-    book?.pagesRead ? String(book.pagesRead) : "",
+    typeof book?.pagesRead === "number" ? String(book.pagesRead) : "",
   );
 
-  /**
-   * Kaydet butonunun aktifliği:
-   * title ve author boş olmamalı
-   */
-  const canSave = useMemo(
-    () => title.trim().length > 0 && author.trim().length > 0,
-    [title, author],
-  );
+  const canSave = useMemo(() => {
+    return title.trim().length > 0 && author.trim().length > 0;
+  }, [title, author]);
 
-  /**
-   * Kitap bulunamazsa güvenli ekran
-   */
   if (!book) {
     return (
       <ScrollView contentContainerStyle={{ padding: 16 }}>
-        <Text style={{ fontSize: 18, fontWeight: "700" }}>
-          Kitap bulunamadı
-        </Text>
-
-        <Pressable
-          onPress={() => router.back()}
+        <View
           style={{
-            marginTop: 12,
-            paddingVertical: 12,
-            borderRadius: 12,
+            marginTop: 20,
             borderWidth: 1,
-            borderColor: "#ddd",
+            borderColor: "#eee",
+            borderRadius: 18,
+            paddingVertical: 30,
+            paddingHorizontal: 20,
+            backgroundColor: "#fff",
             alignItems: "center",
           }}
         >
-          <Text style={{ fontWeight: "700" }}>Geri</Text>
-        </Pressable>
+          <Text style={{ fontSize: 40 }}>📚</Text>
+          <Text
+            style={{
+              marginTop: 10,
+              fontSize: 18,
+              fontWeight: "800",
+              color: "#222",
+            }}
+          >
+            Kitap bulunamadı
+          </Text>
+          <Text
+            style={{
+              marginTop: 6,
+              color: "#666",
+              textAlign: "center",
+              lineHeight: 20,
+            }}
+          >
+            Bu kayıt silinmiş olabilir veya geçersiz bir bağlantı açılmış
+            olabilir.
+          </Text>
+
+          <Pressable
+            onPress={() => router.back()}
+            style={{
+              marginTop: 16,
+              paddingVertical: 12,
+              paddingHorizontal: 24,
+              borderRadius: 12,
+              borderWidth: 1,
+              borderColor: "#ddd",
+              alignItems: "center",
+              backgroundColor: "#fff",
+            }}
+          >
+            <Text style={{ fontWeight: "800" }}>Geri</Text>
+          </Pressable>
+        </View>
       </ScrollView>
     );
   }
 
-  /**
-   * ✅ TextInput’tan gelen sayıları güvenli number’a çevirir
-   * - NaN ise undefined
-   * - negatif ise 0
-   * - küsurat girilirse floor ile tamsayıya indirir
-   */
   const toSafeNumber = (t: string) => {
-    const n = Number(t.replace(",", "."));
+    const onlyDigits = t.replace(/[^\d]/g, "");
+    if (!onlyDigits) return undefined;
+
+    const n = Number(onlyDigits);
     if (!Number.isFinite(n)) return undefined;
+
     return Math.max(0, Math.floor(n));
   };
 
-  /**
-   * ✅ Status değişince UX:
-   * - Okudum değilse: rating/note temizle
-   * - Okuyorum değilse: pagesTotal/pagesRead temizle
-   */
   const onChangeStatus = (next: BookStatus) => {
     setStatus(next);
 
-    // Okudum değilse -> rating/note temizle
     if (next !== "read") {
       setRating(0);
       setNote("");
     }
 
-    // Okuyorum değilse -> progress temizle
     if (next !== "reading") {
-      setPagesTotalText("");
       setPagesReadText("");
     }
   };
 
-  /**
-   * ✅ Kaydet
-   * Status’a göre doğru alanları güncelleriz
-   */
   const onSave = () => {
     if (!canSave) {
       Alert.alert("Eksik bilgi", "Kitap adı ve yazar zorunlu.");
       return;
     }
 
-    // ✅ Progress alanlarını sadece Okuyorum seçiliyse kullan
-    const pagesTotal =
-      status === "reading" ? toSafeNumber(pagesTotalText) : undefined;
-    const pagesRead =
+    const safePagesTotal = toSafeNumber(pagesTotalText);
+    const safePagesRead =
       status === "reading" ? toSafeNumber(pagesReadText) : undefined;
 
-    // Okunan sayfa toplamdan büyükse otomatik sınırla
     const fixedPagesRead =
-      typeof pagesTotal === "number" && typeof pagesRead === "number"
-        ? Math.min(pagesRead, pagesTotal)
-        : pagesRead;
+      typeof safePagesTotal === "number" && typeof safePagesRead === "number"
+        ? Math.min(safePagesRead, safePagesTotal)
+        : safePagesRead;
 
     updateBook(book.id, {
-      // temel alanlar
       title: title.trim(),
       author: author.trim(),
       status,
-
-      // ✅ Okudum ise rating/note kaydet, değilse temizle
-      note: status === "read" && note.trim().length ? note.trim() : undefined,
+      note:
+        status === "read" && note.trim().length > 0 ? note.trim() : undefined,
       rating: status === "read" && rating > 0 ? rating : undefined,
-
-      // ✅ Okuyorum ise progress kaydet, değilse temizle
       pagesTotal:
-        status === "reading" && typeof pagesTotal === "number" && pagesTotal > 0
-          ? pagesTotal
+        typeof safePagesTotal === "number" && safePagesTotal > 0
+          ? safePagesTotal
           : undefined,
       pagesRead:
         status === "reading" &&
@@ -176,11 +163,95 @@ export default function EditBook() {
 
   return (
     <ScrollView contentContainerStyle={{ padding: 16, gap: 12 }}>
-      <Text style={{ fontSize: 22, fontWeight: "800" }}>Kitabı Düzenle</Text>
+      <Text style={{ fontSize: 22, fontWeight: "900" }}>Kitabı Düzenle</Text>
 
-      {/* Kitap adı */}
+      <View
+        style={{
+          flexDirection: "row",
+          gap: 14,
+          padding: 14,
+          borderRadius: 18,
+          borderWidth: 1,
+          borderColor: "#eee",
+          backgroundColor: "#fff",
+        }}
+      >
+        <View
+          style={{
+            width: 88,
+            height: 128,
+            borderRadius: 12,
+            overflow: "hidden",
+            backgroundColor: "#f3f3f3",
+            alignItems: "center",
+            justifyContent: "center",
+          }}
+        >
+          {book.thumbnail ? (
+            <Image
+              source={{ uri: book.thumbnail }}
+              style={{ width: 88, height: 128 }}
+              resizeMode="cover"
+            />
+          ) : (
+            <View
+              style={{
+                width: "100%",
+                height: "100%",
+                alignItems: "center",
+                justifyContent: "center",
+                backgroundColor: "#f1f1f1",
+              }}
+            >
+              <Text style={{ fontSize: 26 }}>📚</Text>
+              <Text style={{ fontSize: 10, color: "#777", marginTop: 4 }}>
+                No cover
+              </Text>
+            </View>
+          )}
+        </View>
+
+        <View style={{ flex: 1, gap: 8 }}>
+          <Text
+            style={{ fontSize: 18, fontWeight: "900", color: "#1a1a1a" }}
+            numberOfLines={3}
+          >
+            {title || "Kitap adı"}
+          </Text>
+
+          <Text
+            style={{ color: "#666", fontSize: 14, fontWeight: "700" }}
+            numberOfLines={2}
+          >
+            {author || "Yazar"}
+          </Text>
+
+          <View
+            style={{
+              alignSelf: "flex-start",
+              paddingHorizontal: 10,
+              paddingVertical: 6,
+              borderRadius: 999,
+              borderWidth: 1,
+              borderColor: "#ddd",
+              backgroundColor: "#fafafa",
+            }}
+          >
+            <Text style={{ fontSize: 12, fontWeight: "700", color: "#444" }}>
+              {statusLabel[status]}
+            </Text>
+          </View>
+
+          {pagesTotalText ? (
+            <Text style={{ color: "#777", fontSize: 12 }}>
+              Toplam sayfa: {pagesTotalText}
+            </Text>
+          ) : null}
+        </View>
+      </View>
+
       <View style={{ gap: 6 }}>
-        <Text style={{ fontWeight: "700" }}>Kitap Adı</Text>
+        <Text style={{ fontWeight: "800" }}>Kitap Adı</Text>
         <TextInput
           value={title}
           onChangeText={setTitle}
@@ -195,9 +266,8 @@ export default function EditBook() {
         />
       </View>
 
-      {/* Yazar */}
       <View style={{ gap: 6 }}>
-        <Text style={{ fontWeight: "700" }}>Yazar</Text>
+        <Text style={{ fontWeight: "800" }}>Yazar</Text>
         <TextInput
           value={author}
           onChangeText={setAuthor}
@@ -212,9 +282,8 @@ export default function EditBook() {
         />
       </View>
 
-      {/* Durum seçimi */}
       <View style={{ gap: 8 }}>
-        <Text style={{ fontWeight: "700" }}>Durum</Text>
+        <Text style={{ fontWeight: "800" }}>Durum</Text>
 
         <View style={{ flexDirection: "row", gap: 8, flexWrap: "wrap" }}>
           {(["reading", "read", "want"] as BookStatus[]).map((s) => {
@@ -236,7 +305,7 @@ export default function EditBook() {
                 <Text
                   style={{
                     color: active ? "#fff" : "#111",
-                    fontWeight: "700",
+                    fontWeight: "800",
                   }}
                 >
                   {statusLabel[s]}
@@ -247,32 +316,29 @@ export default function EditBook() {
         </View>
       </View>
 
-      {/* ✅ SADECE "Okuyorum" seçiliyse Progress alanları */}
+      <View style={{ gap: 6 }}>
+        <Text style={{ fontWeight: "800" }}>Toplam Sayfa</Text>
+        <TextInput
+          value={pagesTotalText}
+          onChangeText={setPagesTotalText}
+          placeholder="Örn: 320"
+          keyboardType="number-pad"
+          style={{
+            borderWidth: 1,
+            borderColor: "#ddd",
+            borderRadius: 12,
+            padding: 12,
+            backgroundColor: "#fff",
+          }}
+        />
+      </View>
+
       {status === "reading" && (
         <View style={{ gap: 10 }}>
           <Text style={{ fontWeight: "900" }}>Okuma İlerlemesi</Text>
 
-          {/* Toplam sayfa */}
           <View style={{ gap: 6 }}>
-            <Text style={{ fontWeight: "700" }}>Toplam Sayfa</Text>
-            <TextInput
-              value={pagesTotalText}
-              onChangeText={setPagesTotalText}
-              placeholder="Örn: 320"
-              keyboardType="number-pad"
-              style={{
-                borderWidth: 1,
-                borderColor: "#ddd",
-                borderRadius: 12,
-                padding: 12,
-                backgroundColor: "#fff",
-              }}
-            />
-          </View>
-
-          {/* Okunan sayfa */}
-          <View style={{ gap: 6 }}>
-            <Text style={{ fontWeight: "700" }}>Okunan Sayfa</Text>
+            <Text style={{ fontWeight: "800" }}>Okunan Sayfa</Text>
             <TextInput
               value={pagesReadText}
               onChangeText={setPagesReadText}
@@ -289,16 +355,15 @@ export default function EditBook() {
           </View>
 
           <Text style={{ color: "#888", fontSize: 12 }}>
-            (Okunan sayfa toplamdan büyükse otomatik düzeltilir)
+            Okunan sayfa toplamdan büyükse otomatik düzeltilir.
           </Text>
         </View>
       )}
 
-      {/* ✅ SADECE "Okudum" seçiliyse Puan + Not */}
       {status === "read" && (
         <>
           <View style={{ gap: 8 }}>
-            <Text style={{ fontWeight: "700" }}>Puan</Text>
+            <Text style={{ fontWeight: "800" }}>Puan</Text>
             <StarRating value={rating} onChange={setRating} />
 
             <Pressable
@@ -310,7 +375,7 @@ export default function EditBook() {
           </View>
 
           <View style={{ gap: 6 }}>
-            <Text style={{ fontWeight: "700" }}>Not</Text>
+            <Text style={{ fontWeight: "800" }}>Not</Text>
             <TextInput
               value={note}
               onChangeText={setNote}
@@ -330,7 +395,26 @@ export default function EditBook() {
         </>
       )}
 
-      {/* Kaydet */}
+      {status === "want" && (
+        <View
+          style={{
+            padding: 14,
+            borderRadius: 14,
+            borderWidth: 1,
+            borderColor: "#eee",
+            backgroundColor: "#fff",
+          }}
+        >
+          <Text style={{ fontWeight: "800", color: "#222" }}>
+            Okuma listesi notu
+          </Text>
+          <Text style={{ marginTop: 8, color: "#666", lineHeight: 21 }}>
+            Bu kitap daha sonra okumak üzere kaydedilecek. Toplam sayfa bilgisi
+            korunabilir.
+          </Text>
+        </View>
+      )}
+
       <Pressable
         onPress={onSave}
         style={{
@@ -344,7 +428,6 @@ export default function EditBook() {
         <Text style={{ color: "#fff", fontWeight: "800" }}>Kaydet</Text>
       </Pressable>
 
-      {/* Geri */}
       <Pressable
         onPress={() => router.back()}
         style={{
