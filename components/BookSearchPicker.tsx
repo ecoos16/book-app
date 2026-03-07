@@ -31,7 +31,7 @@ export default function BookSearchPicker({ onSelect }: Props) {
   }, [query]);
 
   useEffect(() => {
-    if (debouncedQuery.length < 3) {
+    if (debouncedQuery.length < 2) {
       setResults([]);
       return;
     }
@@ -68,7 +68,7 @@ export default function BookSearchPicker({ onSelect }: Props) {
       <TextInput
         value={query}
         onChangeText={setQuery}
-        placeholder="Kitap ara..."
+        placeholder="Kitap ara"
         autoCorrect={false}
         autoCapitalize="none"
         style={{
@@ -83,7 +83,7 @@ export default function BookSearchPicker({ onSelect }: Props) {
 
       {loading && <ActivityIndicator />}
 
-      {!loading && debouncedQuery.length >= 3 && results.length === 0 ? (
+      {!loading && debouncedQuery.length >= 2 && results.length === 0 ? (
         <Text style={{ color: "#666" }}>Sonuç bulunamadı.</Text>
       ) : null}
 
@@ -120,9 +120,32 @@ export default function BookSearchPicker({ onSelect }: Props) {
             )}
 
             <View style={{ flex: 1 }}>
-              <Text style={{ fontSize: 16, fontWeight: "700" }}>
-                {item.title || "Başlıksız"}
-              </Text>
+              <View
+                style={{
+                  flexDirection: "row",
+                  alignItems: "flex-start",
+                  gap: 8,
+                }}
+              >
+                <Text style={{ fontSize: 16, fontWeight: "700", flex: 1 }}>
+                  {item.title || "Başlıksız"}
+                </Text>
+
+                {item.source ? (
+                  <View
+                    style={{
+                      paddingHorizontal: 8,
+                      paddingVertical: 4,
+                      borderRadius: 999,
+                      backgroundColor: "#f2f2f2",
+                    }}
+                  >
+                    <Text style={{ fontSize: 11, color: "#555" }}>
+                      {item.source === "google" ? "Google" : "OpenLibrary"}
+                    </Text>
+                  </View>
+                ) : null}
+              </View>
 
               <Text style={{ color: "#666", marginTop: 4 }}>
                 {item.authors?.join(", ") || "Yazar bilinmiyor"}

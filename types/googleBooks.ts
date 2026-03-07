@@ -1,5 +1,5 @@
 export type GoogleBook = {
-  id: string; // volumeId
+  id: string;
   title: string;
   authors: string[];
   description?: string;
@@ -8,4 +8,5 @@ export type GoogleBook = {
   thumbnail?: string;
   publishedDate?: string;
   language?: string;
+  source?: "google" | "openlibrary";
 };
