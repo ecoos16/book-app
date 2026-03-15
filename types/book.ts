@@ -1,59 +1,97 @@
 // types/book.ts
 
 /**
- * ✅ Kitap statüleri
+ * Kitabın kullanıcı kitaplığındaki durumu
+ *
+ * reading  -> şu an okunuyor
+ * read     -> bitirildi
+ * want     -> daha sonra okunacak
  */
 export type BookStatus = "reading" | "read" | "want";
 
 /**
- * ✅ Yorum modeli (local)
+ * Kitap altında tutulacak yorum modeli
  */
 export type BookComment = {
+  /**
+   * Yoruma ait benzersiz id
+   */
   id: string;
+
+  /**
+   * Yorum metni
+   */
   text: string;
+
+  /**
+   * Yorum oluşturulma zamanı
+   * timestamp (number)
+   */
   createdAt: number;
 
-  // İleride gerçek user sistemine hazır olsun
+  /**
+   * Yorumu yazan kullanıcı bilgileri
+   * Şimdilik opsiyonel, ileride auth sistemi gelirse kullanılabilir
+   */
   userId?: string;
   userName?: string;
   userAvatar?: string;
 };
 
 /**
- * ✅ Ana Book modeli (tek kaynak)
- * Ürün seviyesinde genişletilmiş versiyon
+ * Uygulamadaki temel kitap modeli
  */
 export type Book = {
+  /**
+   * Kitabın uygulama içindeki benzersiz id'si
+   */
   id: string;
 
-  // 🔹 Temel bilgi
+  /**
+   * Temel bilgiler
+   */
   title: string;
   author: string;
 
-  // ✅ Ürün hissi için kapak ve kaynak bilgisi
-  thumbnail?: string; // Google Books thumbnail URL
-  googleId?: string; // Google Books volumeId
+  /**
+   * Kapak ve dış veri kaynağı bilgileri
+   */
+  thumbnail?: string;
+  googleId?: string;
 
-  // 🔹 Durum
+  /**
+   * Kitabın kullanıcı kitaplığındaki durumu
+   */
   status: BookStatus;
 
-  // 🔹 Okuma ilerleme (Okuyorum)
+  /**
+   * Okuma ilerleme alanları
+   */
   pagesTotal?: number;
   pagesRead?: number;
 
-  // 🔹 Bitince (Okudum)
-  rating?: number; // 1-5
+  /**
+   * Kitap bitirildiyse kullanılacak değerlendirme alanları
+   */
+  rating?: number;
   note?: string;
 
-  // 🔹 Paylaşım (feed)
+  /**
+   * Paylaşım alanları
+   * Kitap feed ya da paylaşım akışında gösterilecekse kullanılabilir
+   */
   sharedAt?: number;
   shareText?: string;
 
-  // 🔹 Sosyal (local)
-  likes?: number; // default: 0
-  isLiked?: boolean; // default: false
-  comments?: BookComment[]; // default: []
+  /**
+   * Sosyal alanlar
+   */
+  likes?: number;
+  isLiked?: boolean;
+  comments?: BookComment[];
 
-  // 🔹 Meta
+  /**
+   * Kayıt oluşturulma zamanı
+   */
   createdAt: number;
 };

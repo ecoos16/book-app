@@ -1,8 +1,8 @@
-// app/share/[id].tsx
 import { router, useLocalSearchParams } from "expo-router";
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import {
   Alert,
+  Image,
   Pressable,
   ScrollView,
   Text,
@@ -10,260 +10,261 @@ import {
   View,
 } from "react-native";
 import { useBooks } from "../../context/BooksContext";
+import { usePosts } from "../../context/PostsContext";
+import { CURRENT_USER } from "../../data/mockUsers";
+import { buttonStyle } from "../../utils/pressableStyles";
 
-export default function ShareBook() {
-  /**
-   * ✅ Route param: /share/[id]
-   */
-  const { id } = useLocalSearchParams<{ id: string }>();
+export default function ShareBookScreen() {
+  const { id, postId } = useLocalSearchParams<{
+    id: string;
+    postId?: string;
+  }>();
 
-  /**
-   * ✅ Context: kitabı bul + güncelle
-   */
-  const { getById, updateBook } = useBooks();
+  const { getById } = useBooks();
+  const { addPost, getByBookId, getById: getPostById, updatePost } = usePosts();
 
-  /**
-   * ✅ Kitabı getir
-   */
   const book = id ? getById(id) : undefined;
+  const editingPost = postId ? getPostById(postId) : undefined;
 
-  /**
-   * ✅ Kitap yoksa güvenli ekran
-   */
+  const [text, setText] = useState("");
+
+  useEffect(() => {
+    if (editingPost) {
+      setText(editingPost.shareText ?? "");
+    }
+  }, [editingPost]);
+
   if (!book) {
     return (
-      <ScrollView contentContainerStyle={{ padding: 16, gap: 12 }}>
-        <Text style={{ fontSize: 18, fontWeight: "900" }}>
-          Kitap bulunamadı
-        </Text>
-
-        <Pressable
-          onPress={() => router.back()}
+      <ScrollView contentContainerStyle={{ padding: 16 }}>
+        <View
           style={{
-            paddingVertical: 12,
-            borderRadius: 12,
             borderWidth: 1,
-            borderColor: "#ddd",
-            alignItems: "center",
+            borderColor: "#eee",
+            borderRadius: 18,
+            paddingVertical: 30,
+            paddingHorizontal: 20,
             backgroundColor: "#fff",
+            alignItems: "center",
           }}
         >
-          <Text style={{ fontWeight: "900" }}>Geri</Text>
-        </Pressable>
+          <Text style={{ fontSize: 40 }}>📚</Text>
+
+          <Text
+            style={{
+              marginTop: 10,
+              fontSize: 18,
+              fontWeight: "800",
+              color: "#222",
+            }}
+          >
+            Kitap bulunamadı
+          </Text>
+
+          <Text
+            style={{
+              marginTop: 6,
+              color: "#666",
+              textAlign: "center",
+              lineHeight: 20,
+            }}
+          >
+            Bu kitap silinmiş olabilir veya geçersiz bir bağlantı açılmış
+            olabilir.
+          </Text>
+
+          <Pressable
+            onPress={() => router.back()}
+            style={buttonStyle("secondary", { marginTop: 16, minWidth: 120 })}
+          >
+            <Text style={{ fontWeight: "800" }}>Geri</Text>
+          </Pressable>
+        </View>
       </ScrollView>
     );
   }
 
-  /**
-   * ✅ Daha önce paylaşılmış mı?
-   * sharedAt varsa "paylaşılmış" sayıyoruz
-   */
-  const alreadyShared = typeof book.sharedAt === "number";
+  const safeBook = book;
 
-  /**
-   * ✅ Otomatik öneri metni
-   * - not/puan varsa daha "gerçek" olur
-   * - yoksa basit bir şablon
-   */
-  const suggestedText = useMemo(() => {
-    const stars = book.rating ? "★".repeat(book.rating) : "";
-    const note = book.note?.trim();
+  const existingPosts = useMemo(() => {
+    return getByBookId(safeBook.id);
+  }, [safeBook.id, getByBookId]);
 
-    if (note?.length) {
-      return `${book.title} • ${book.author}\n${stars ? stars + "\n" : ""}\n“${note}”`;
-    }
+  function handleSubmit() {
+    const trimmed = text.trim();
 
-    return `${book.title} • ${book.author}\n\nYeni bitirdim, tavsiye ederim.`;
-  }, [book.author, book.note, book.rating, book.title]);
-
-  /**
-   * ✅ Input state
-   * - daha önce paylaşılmışsa shareText ile başlar
-   * - yoksa öneri metni ile başlar (kullanıcı isterse değiştirir)
-   */
-  const [shareText, setShareText] = useState<string>(
-    (book.shareText ?? "").trim().length
-      ? (book.shareText ?? "")
-      : suggestedText,
-  );
-
-  /**
-   * ✅ Buton aktif mi?
-   */
-  const canSubmit = useMemo(() => shareText.trim().length > 0, [shareText]);
-
-  /**
-   * ✅ Paylaş / Güncelle
-   * - sharedAt set edince "paylaşıldı" sayılır
-   * - ilk kez paylaşılıyorsa likes/isLiked/comments default kurulur
-   */
-  const onSubmit = () => {
-    const text = shareText.trim();
-
-    if (!text.length) {
-      Alert.alert("Boş olmaz", "Paylaşım metni yazmalısın.");
+    if (!trimmed) {
+      Alert.alert("Eksik bilgi", "Lütfen paylaşım metni yaz.");
       return;
     }
 
-    /**
-     * ✅ İlk paylaşım mı?
-     */
-    const firstShare = typeof book.sharedAt !== "number";
+    if (editingPost) {
+      updatePost(editingPost.id, {
+        shareText: trimmed,
+      });
 
-    updateBook(book.id, {
-      // paylaşım bilgileri
-      shareText: text,
-      sharedAt: Date.now(),
+      Alert.alert("Güncellendi", "Paylaşımın güncellendi.", [
+        {
+          text: "Tamam",
+          onPress: () => router.back(),
+        },
+      ]);
+      return;
+    }
 
-      // ✅ sosyal alanlar: ilk paylaşımda başlat
-      likes: firstShare ? 0 : (book.likes ?? 0),
-      isLiked: firstShare ? false : (book.isLiked ?? false),
-      comments: firstShare ? (book.comments ?? []) : (book.comments ?? []),
+    addPost({
+      bookId: safeBook.id,
+      bookTitle: safeBook.title,
+      bookAuthor: safeBook.author,
+      bookThumbnail: safeBook.thumbnail,
+      userId: CURRENT_USER.id,
+      userName: CURRENT_USER.name,
+      userAvatar: CURRENT_USER.avatar,
+      shareText: trimmed,
     });
 
-    /**
-     * ✅ Home'a dön
-     */
-    router.replace("/(tabs)/home");
-  };
+    setText("");
 
-  /**
-   * ✅ Paylaşımı kaldır
-   * - sharedAt + shareText temizlenir
-   * - istersen sosyal alanları da temizleyebilirsin (ben temizliyorum)
-   */
-  const onUnshare = () => {
-    Alert.alert(
-      "Paylaşım kaldırılsın mı?",
-      "Bu paylaşım Ana Sayfa'dan kaldırılacak.",
-      [
-        { text: "Vazgeç", style: "cancel" },
-        {
-          text: "Kaldır",
-          style: "destructive",
-          onPress: () => {
-            updateBook(book.id, {
-              sharedAt: undefined,
-              shareText: undefined,
-
-              // ✅ sosyal alanları da sıfırla (istersen kaldırabilirsin)
-              likes: undefined,
-              isLiked: undefined,
-              comments: undefined,
-            });
-
-            router.replace("/(tabs)/home");
-          },
-        },
-      ],
-    );
-  };
+    Alert.alert("Paylaşıldı", "Paylaşımın topluluk akışına eklendi.", [
+      {
+        text: "Tamam",
+        onPress: () => router.back(),
+      },
+    ]);
+  }
 
   return (
-    <ScrollView contentContainerStyle={{ padding: 16, gap: 12 }}>
-      <Text style={{ fontSize: 22, fontWeight: "900" }}>
-        {alreadyShared ? "Paylaşımı Düzenle" : "Paylaş"}
-      </Text>
-
-      {/* ------------------------------------------------ */}
-      {/* ✅ Kitap Kartı */}
-      {/* ------------------------------------------------ */}
+    <ScrollView contentContainerStyle={{ padding: 16, gap: 14 }}>
       <View
         style={{
-          padding: 12,
-          borderRadius: 12,
+          flexDirection: "row",
+          gap: 12,
+          padding: 14,
+          borderRadius: 16,
           borderWidth: 1,
           borderColor: "#eee",
           backgroundColor: "#fff",
-          gap: 6,
+          alignItems: "center",
         }}
       >
-        <Text style={{ fontWeight: "900", fontSize: 16 }}>{book.title}</Text>
-        <Text style={{ color: "#666" }}>{book.author}</Text>
+        <View
+          style={{
+            width: 60,
+            height: 88,
+            borderRadius: 10,
+            overflow: "hidden",
+            backgroundColor: "#f3f3f3",
+            alignItems: "center",
+            justifyContent: "center",
+          }}
+        >
+          {safeBook.thumbnail ? (
+            <Image
+              source={{ uri: safeBook.thumbnail }}
+              style={{ width: 60, height: 88 }}
+              resizeMode="cover"
+            />
+          ) : (
+            <Text style={{ fontSize: 22 }}>📚</Text>
+          )}
+        </View>
 
-        {/* ✅ Ek küçük bilgi (puan/not varsa) */}
-        <Text style={{ color: "#666" }}>
-          {book.rating ? "★".repeat(book.rating) : "☆"}
-          {book.note?.trim()?.length ? " • Not var" : " • Not yok"}
-        </Text>
+        <View style={{ flex: 1, gap: 4 }}>
+          <Text style={{ fontWeight: "900", fontSize: 16 }} numberOfLines={2}>
+            {safeBook.title}
+          </Text>
+
+          <Text style={{ color: "#666" }} numberOfLines={1}>
+            {safeBook.author}
+          </Text>
+
+          <Text style={{ color: "#888", fontSize: 12 }}>
+            {editingPost
+              ? "Paylaşımını düzenliyorsun"
+              : "Bu kitap hakkında düşüncelerini paylaş"}
+          </Text>
+        </View>
       </View>
 
-      {/* ------------------------------------------------ */}
-      {/* ✅ Paylaşım Metni */}
-      {/* ------------------------------------------------ */}
-      <View style={{ gap: 6 }}>
-        <Text style={{ fontWeight: "900" }}>Paylaşım Notu</Text>
+      <View
+        style={{
+          padding: 14,
+          borderRadius: 16,
+          borderWidth: 1,
+          borderColor: "#eee",
+          backgroundColor: "#fff",
+          gap: 10,
+        }}
+      >
+        <Text style={{ fontWeight: "800", color: "#222" }}>
+          {editingPost ? "Paylaşımı Düzenle" : "Paylaşım Metni"}
+        </Text>
+
         <TextInput
-          value={shareText}
-          onChangeText={setShareText}
-          placeholder="Bu kitap hakkında ne düşünüyorsun?"
+          value={text}
+          onChangeText={setText}
+          placeholder="Bu kitap sende nasıl bir etki bıraktı?"
           multiline
+          textAlignVertical="top"
           style={{
+            minHeight: 140,
             borderWidth: 1,
             borderColor: "#ddd",
             borderRadius: 12,
             padding: 12,
-            minHeight: 140,
-            textAlignVertical: "top",
             backgroundColor: "#fff",
           }}
         />
       </View>
 
-      {/* ------------------------------------------------ */}
-      {/* ✅ Paylaş / Güncelle */}
-      {/* ------------------------------------------------ */}
-      <Pressable
-        onPress={onSubmit}
-        disabled={!canSubmit}
-        style={{
-          backgroundColor: canSubmit ? "#111" : "#999",
-          paddingVertical: 12,
-          borderRadius: 12,
-          alignItems: "center",
-        }}
-      >
+      <Pressable onPress={handleSubmit} style={buttonStyle("primary")}>
         <Text style={{ color: "#fff", fontWeight: "900" }}>
-          {alreadyShared ? "Güncelle" : "Paylaş"}
+          {editingPost ? "Güncelle" : "Paylaş"}
         </Text>
       </Pressable>
 
-      {/* ------------------------------------------------ */}
-      {/* ✅ Paylaşımı Kaldır (sadece paylaşıldıysa) */}
-      {/* ------------------------------------------------ */}
-      {alreadyShared && (
-        <Pressable
-          onPress={onUnshare}
+      {!editingPost && (
+        <View
           style={{
-            paddingVertical: 12,
-            borderRadius: 12,
-            alignItems: "center",
+            padding: 14,
+            borderRadius: 16,
             borderWidth: 1,
-            borderColor: "#ffdddd",
+            borderColor: "#eee",
             backgroundColor: "#fff",
+            gap: 8,
           }}
         >
-          <Text style={{ fontWeight: "900", color: "#c00" }}>
-            Paylaşımı Kaldır
+          <Text style={{ fontWeight: "800", color: "#222" }}>
+            Bu kitaba ait önceki paylaşımlar
           </Text>
-        </Pressable>
+
+          {existingPosts.length === 0 ? (
+            <Text style={{ color: "#666" }}>Henüz paylaşım yok.</Text>
+          ) : (
+            existingPosts.map((post) => (
+              <View
+                key={post.id}
+                style={{
+                  padding: 10,
+                  borderRadius: 12,
+                  backgroundColor: "#fafafa",
+                  gap: 4,
+                }}
+              >
+                <Text style={{ fontWeight: "800", color: "#222" }}>
+                  {post.userName}
+                </Text>
+                <Text style={{ color: "#555", lineHeight: 20 }}>
+                  {post.shareText}
+                </Text>
+              </View>
+            ))
+          )}
+        </View>
       )}
 
-      {/* ------------------------------------------------ */}
-      {/* ✅ Vazgeç */}
-      {/* ------------------------------------------------ */}
-      <Pressable
-        onPress={() => router.back()}
-        style={{
-          paddingVertical: 12,
-          borderRadius: 12,
-          alignItems: "center",
-          borderWidth: 1,
-          borderColor: "#ddd",
-          backgroundColor: "#fff",
-        }}
-      >
-        <Text style={{ fontWeight: "900" }}>Vazgeç</Text>
+      <Pressable onPress={() => router.back()} style={buttonStyle("secondary")}>
+        <Text style={{ fontWeight: "900" }}>Geri</Text>
       </Pressable>
     </ScrollView>
   );

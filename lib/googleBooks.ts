@@ -1,17 +1,50 @@
+// lib/googleBooks.ts
+
 import { GoogleBook } from "../types/googleBooks";
 
+/**
+ * Google Books ana endpoint
+ */
 const GOOGLE_BASE_URL = "https://www.googleapis.com/books/v1/volumes";
+
+/**
+ * Google başarısız olursa fallback olarak OpenLibrary
+ */
 const OPENLIBRARY_BASE_URL = "https://openlibrary.org/search.json";
 
+/**
+ * Ortam değişkenlerinden alınan Google Books API key'leri
+ * Boş olanları filter(Boolean) ile çıkarıyoruz
+ */
 const GOOGLE_KEYS = [
   process.env.EXPO_PUBLIC_GOOGLE_BOOKS_KEY_1,
   process.env.EXPO_PUBLIC_GOOGLE_BOOKS_KEY_2,
   process.env.EXPO_PUBLIC_GOOGLE_BOOKS_KEY_3,
 ].filter(Boolean) as string[];
 
+/**
+ * Basit in-memory cache
+ * Aynı arama kısa süre içinde tekrar yapılırsa API'ye yeniden gitmeyiz
+ */
 const cache = new Map<string, { at: number; data: GoogleBook[] }>();
+
+/**
+ * Cache süresi: 5 dakika
+ */
 const CACHE_TTL_MS = 5 * 60 * 1000;
 
+/**
+ * Güvenli string temizleme yardımcı fonksiyonu
+ * Gelen değer string değilse fallback döner
+ */
+function normalizeText(value: unknown, fallback = "") {
+  return typeof value === "string" && value.trim() ? value.trim() : fallback;
+}
+
+/**
+ * Google Books imageLinks içinden en uygun thumbnail'i seçer
+ * http gelirse https'e çevirir
+ */
 function pickGoogleThumbnail(images?: Record<string, string>) {
   if (!images) return undefined;
 
@@ -26,15 +59,21 @@ function pickGoogleThumbnail(images?: Record<string, string>) {
   return url ? url.replace("http://", "https://") : undefined;
 }
 
+/**
+ * Google Books API'den gelen tek bir item'ı
+ * uygulamanın kullandığı GoogleBook tipine dönüştürür
+ */
 function mapGoogleVolume(item: any): GoogleBook {
   const v = item?.volumeInfo ?? {};
 
   return {
-    id: item?.id ?? `google-${Date.now()}`,
-    title: v.title ?? "Bilinmeyen Kitap",
-    authors: Array.isArray(v.authors) ? v.authors : [],
+    id: normalizeText(item?.id, `google-${Date.now()}`),
+    title: normalizeText(v.title, "Bilinmeyen Kitap"),
+    authors: Array.isArray(v.authors) ? v.authors.filter(Boolean) : [],
     description: typeof v.description === "string" ? v.description : undefined,
-    categories: Array.isArray(v.categories) ? v.categories : undefined,
+    categories: Array.isArray(v.categories)
+      ? v.categories.filter(Boolean)
+      : undefined,
     pageCount: typeof v.pageCount === "number" ? v.pageCount : undefined,
     thumbnail: pickGoogleThumbnail(v.imageLinks),
     publishedDate:
@@ -44,19 +83,26 @@ function mapGoogleVolume(item: any): GoogleBook {
   };
 }
 
+/**
+ * OpenLibrary'den gelen tek bir kaydı
+ * ortak GoogleBook tipine dönüştürür
+ */
 function mapOpenLibraryDoc(doc: any): GoogleBook {
   const coverId = doc?.cover_i;
+
   const thumbnail = coverId
     ? `https://covers.openlibrary.org/b/id/${coverId}-M.jpg`
     : undefined;
 
   return {
     id: doc?.key ? `openlib-${doc.key}` : `openlib-${Date.now()}`,
-    title: doc?.title ?? "Bilinmeyen Kitap",
-    authors: Array.isArray(doc?.author_name) ? doc.author_name : [],
+    title: normalizeText(doc?.title, "Bilinmeyen Kitap"),
+    authors: Array.isArray(doc?.author_name)
+      ? doc.author_name.filter(Boolean)
+      : [],
     description: undefined,
     categories: Array.isArray(doc?.subject)
-      ? doc.subject.slice(0, 5)
+      ? doc.subject.filter(Boolean).slice(0, 5)
       : undefined,
     pageCount:
       typeof doc?.number_of_pages_median === "number"
@@ -71,6 +117,9 @@ function mapOpenLibraryDoc(doc: any): GoogleBook {
   };
 }
 
+/**
+ * Belirli bir Google API key ile arama yapar
+ */
 async function searchGoogleWithKey(
   query: string,
   key: string,
@@ -85,19 +134,30 @@ async function searchGoogleWithKey(
 
   const res = await fetch(url, { signal });
 
+  /**
+   * Google rate limit verirse özel hata fırlat
+   */
   if (res.status === 429) {
     throw new Error("RATE_LIMIT");
   }
 
+  /**
+   * Başka başarısız durumlar
+   */
   if (!res.ok) {
     throw new Error(`GOOGLE_${res.status}`);
   }
 
   const data = await res.json();
   const items = Array.isArray(data.items) ? data.items : [];
+
   return items.map(mapGoogleVolume);
 }
 
+/**
+ * Elimizde birden fazla API key varsa
+ * paralel deneyip ilk başarılı sonucu alır
+ */
 async function searchGoogleParallel(
   query: string,
   maxResults = 10,
@@ -107,9 +167,14 @@ async function searchGoogleParallel(
 
   const wrappedPromises = GOOGLE_KEYS.map((key) =>
     searchGoogleWithKey(query, key, maxResults, signal).then((results) => {
+      /**
+       * Boş sonuç da başarısız kabul edilsin ki
+       * diğer key'ler denenebilsin
+       */
       if (!results.length) {
         throw new Error("EMPTY_RESULTS");
       }
+
       return results;
     }),
   );
@@ -123,6 +188,10 @@ async function searchGoogleParallel(
   }
 }
 
+/**
+ * Google Books sonuç vermezse
+ * OpenLibrary üzerinden arama yap
+ */
 async function searchOpenLibraryBooks(
   query: string,
   maxResults = 10,
@@ -140,9 +209,19 @@ async function searchOpenLibraryBooks(
 
   const data = await res.json();
   const docs = Array.isArray(data.docs) ? data.docs : [];
+
   return docs.map(mapOpenLibraryDoc);
 }
 
+/**
+ * Uygulamanın dışarı açtığı ana kitap arama fonksiyonu
+ *
+ * Özellikler:
+ * - min karakter kontrolü
+ * - cache
+ * - abort desteği
+ * - önce Google, olmazsa OpenLibrary fallback
+ */
 export async function searchGoogleBooks(
   query: string,
   maxResults = 10,
@@ -150,19 +229,34 @@ export async function searchGoogleBooks(
 ): Promise<GoogleBook[]> {
   const q = query.trim();
 
+  /**
+   * Çok kısa sorgularda boş dön
+   */
   if (q.length < 2) return [];
 
+  /**
+   * Cache key oluştur
+   */
   const cacheKey = `${q.toLowerCase()}__${maxResults}`;
   const cached = cache.get(cacheKey);
 
+  /**
+   * Cache süresi dolmadıysa direkt cache dön
+   */
   if (cached && Date.now() - cached.at < CACHE_TTL_MS) {
     return cached.data;
   }
 
+  /**
+   * İstek başlamadan abort olduysa hata fırlat
+   */
   if (signal?.aborted) {
     throw new DOMException("Aborted", "AbortError");
   }
 
+  /**
+   * Önce Google Books tarafını dene
+   */
   const googleResults = await searchGoogleParallel(q, maxResults, signal);
 
   if (googleResults.length > 0) {
@@ -170,11 +264,17 @@ export async function searchGoogleBooks(
     return googleResults;
   }
 
+  /**
+   * Google sonuç vermezse OpenLibrary dene
+   */
   try {
     const openResults = await searchOpenLibraryBooks(q, maxResults, signal);
     cache.set(cacheKey, { at: Date.now(), data: openResults });
     return openResults;
   } catch (error: any) {
+    /**
+     * Abort hatasıysa aynen yukarı fırlat
+     */
     if (error?.name === "AbortError") {
       throw error;
     }

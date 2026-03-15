@@ -9,6 +9,7 @@ import { Stack } from "expo-router";
  * Böylece her sayfa global state erişebilir.
  */
 import { BooksProvider } from "../context/BooksContext";
+import { PostsProvider } from "../context/PostsContext";
 import { ReadingGoalProvider } from "../context/ReadingGoalContext";
 import { ReadingLogProvider } from "../context/ReadingLogContext";
 import { UserProvider } from "../context/UserContext";
@@ -20,19 +21,15 @@ console.log("✅ RootLayout render edildi");
 
 export default function RootLayout() {
   return (
-    /**
-     * Provider sırası teknik olarak fark etmez
-     * ama okunabilirlik için mantıklı sırada yazıyoruz
-     */
-
     <UserProvider>
       <BooksProvider>
-        <ReadingGoalProvider>
-          <ReadingLogProvider>
-            {/* Tüm sayfalar burada render edilir */}
-            <Stack screenOptions={{ headerShown: false }} />
-          </ReadingLogProvider>
-        </ReadingGoalProvider>
+        <PostsProvider>
+          <ReadingGoalProvider>
+            <ReadingLogProvider>
+              <Stack screenOptions={{ headerShown: false }} />
+            </ReadingLogProvider>
+          </ReadingGoalProvider>
+        </PostsProvider>
       </BooksProvider>
     </UserProvider>
   );

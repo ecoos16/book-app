@@ -1,57 +1,50 @@
-import React, { useMemo } from "react";
+import React from "react";
 import { Text, View } from "react-native";
 
-/**
- * ProgressBar:
- * pagesRead / pagesTotal -> yüzde hesaplar ve bar çizer.
- */
-export function ProgressBar({
-  pagesRead,
-  pagesTotal,
-}: {
+type ProgressBarProps = {
   pagesRead?: number;
   pagesTotal?: number;
-}) {
-  // ✅ Güvenli sayılar (negatif / undefined gelirse 0 yap)
-  const read = Math.max(0, pagesRead ?? 0);
-  const total = Math.max(0, pagesTotal ?? 0);
+  height?: number;
+  showLabel?: boolean;
+};
 
-  // ✅ total 0 ise progress hesaplamayız
-  const percent = useMemo(() => {
-    if (total <= 0) return 0;
-    // okunan sayfa toplamdan fazla girilirse %100'e sabitle
-    const p = Math.round((Math.min(read, total) / total) * 100);
-    return Math.max(0, Math.min(100, p));
-  }, [read, total]);
+export function ProgressBar({
+  pagesRead = 0,
+  pagesTotal,
+  height = 10,
+  showLabel = true,
+}: ProgressBarProps) {
+  const safeTotal =
+    typeof pagesTotal === "number" && pagesTotal > 0 ? pagesTotal : 0;
+  const safeRead =
+    typeof pagesRead === "number" && pagesRead >= 0 ? pagesRead : 0;
 
-  // total yoksa bar göstermeyelim
-  if (total <= 0) {
-    return (
-      <Text style={{ color: "#888", fontSize: 12 }}>(Sayfa bilgisi yok)</Text>
-    );
-  }
+  const percent =
+    safeTotal > 0 ? Math.min(100, Math.round((safeRead / safeTotal) * 100)) : 0;
 
   return (
     <View style={{ gap: 6 }}>
-      {/* Yüzde yazısı */}
-      <Text style={{ color: "#666", fontWeight: "800", fontSize: 12 }}>
-        {read}/{total} • %{percent}
-      </Text>
+      {showLabel && safeTotal > 0 ? (
+        <Text style={{ color: "#666", fontSize: 12 }}>
+          {safeRead} / {safeTotal} sayfa • %{percent}
+        </Text>
+      ) : null}
 
-      {/* Bar */}
       <View
         style={{
-          height: 10,
+          width: "100%",
+          height,
+          backgroundColor: "#ececec",
           borderRadius: 999,
-          backgroundColor: "#eee",
           overflow: "hidden",
         }}
       >
         <View
           style={{
-            height: "100%",
             width: `${percent}%`,
+            height: "100%",
             backgroundColor: "#111",
+            borderRadius: 999,
           }}
         />
       </View>

@@ -1,4 +1,3 @@
-// app/book/[id].tsx
 import { router, useLocalSearchParams } from "expo-router";
 import React from "react";
 import { Alert, Image, Pressable, ScrollView, Text, View } from "react-native";
@@ -8,6 +7,7 @@ import { useBooks } from "../../context/BooksContext";
 import { useReadingGoal } from "../../context/ReadingGoalContext";
 import { useReadingLog } from "../../context/ReadingLogContext";
 import type { BookStatus } from "../../types/book";
+import { buttonStyle } from "../../utils/pressableStyles";
 
 const statusLabel: Record<BookStatus, string> = {
   reading: "Okuyorum",
@@ -40,6 +40,7 @@ export default function BookDetail() {
           }}
         >
           <Text style={{ fontSize: 40 }}>📚</Text>
+
           <Text
             style={{
               marginTop: 10,
@@ -50,6 +51,7 @@ export default function BookDetail() {
           >
             Kitap bulunamadı
           </Text>
+
           <Text
             style={{
               marginTop: 6,
@@ -64,16 +66,7 @@ export default function BookDetail() {
 
           <Pressable
             onPress={() => router.back()}
-            style={{
-              marginTop: 16,
-              paddingVertical: 12,
-              paddingHorizontal: 24,
-              borderRadius: 12,
-              borderWidth: 1,
-              borderColor: "#ddd",
-              alignItems: "center",
-              backgroundColor: "#fff",
-            }}
+            style={buttonStyle("secondary", { marginTop: 16, minWidth: 120 })}
           >
             <Text style={{ fontWeight: "800" }}>Geri</Text>
           </Pressable>
@@ -109,6 +102,7 @@ export default function BookDetail() {
         status: "reading",
         rating: undefined,
         note: undefined,
+        pagesRead: book.pagesRead ?? 0,
       });
       return;
     }
@@ -116,7 +110,10 @@ export default function BookDetail() {
     if (next === "read") {
       updateBook(book.id, {
         status: "read",
-        pagesRead: undefined,
+        pagesRead:
+          typeof book.pagesTotal === "number" && book.pagesTotal > 0
+            ? book.pagesTotal
+            : book.pagesRead,
       });
       return;
     }
@@ -158,8 +155,7 @@ export default function BookDetail() {
       : 0;
 
   return (
-    <ScrollView contentContainerStyle={{ padding: 16, gap: 12 }}>
-      {/* HEADER */}
+    <ScrollView contentContainerStyle={{ padding: 16, gap: 14 }}>
       <View
         style={{
           flexDirection: "row",
@@ -173,8 +169,8 @@ export default function BookDetail() {
       >
         <View
           style={{
-            width: 96,
-            height: 138,
+            width: 100,
+            height: 144,
             borderRadius: 14,
             overflow: "hidden",
             backgroundColor: "#f3f3f3",
@@ -185,7 +181,7 @@ export default function BookDetail() {
           {book.thumbnail ? (
             <Image
               source={{ uri: book.thumbnail }}
-              style={{ width: 96, height: 138 }}
+              style={{ width: 100, height: 144 }}
               resizeMode="cover"
             />
           ) : (
@@ -245,7 +241,6 @@ export default function BookDetail() {
         </View>
       </View>
 
-      {/* INFO */}
       <View
         style={{
           padding: 14,
@@ -264,10 +259,11 @@ export default function BookDetail() {
           <Text style={{ color: "#555" }}>
             Sayfa: {book.pagesRead ?? 0} / {book.pagesTotal}
           </Text>
-        ) : null}
+        ) : (
+          <Text style={{ color: "#777" }}>Sayfa bilgisi eklenmemiş.</Text>
+        )}
       </View>
 
-      {/* READING */}
       {book.status === "reading" && (
         <View
           style={{
@@ -276,7 +272,7 @@ export default function BookDetail() {
             borderWidth: 1,
             borderColor: "#eee",
             backgroundColor: "#fff",
-            gap: 10,
+            gap: 12,
           }}
         >
           <Text style={{ fontWeight: "800", color: "#222" }}>
@@ -295,12 +291,9 @@ export default function BookDetail() {
           <Pressable
             onPress={addPages}
             disabled={!book.pagesTotal}
-            style={{
-              backgroundColor: book.pagesTotal ? "#111" : "#999",
-              paddingVertical: 12,
-              borderRadius: 12,
-              alignItems: "center",
-            }}
+            style={buttonStyle("primary", {
+              opacity: book.pagesTotal ? 1 : 0.6,
+            })}
           >
             <Text style={{ color: "#fff", fontWeight: "900" }}>
               +{step} Sayfa Okudum
@@ -309,7 +302,6 @@ export default function BookDetail() {
         </View>
       )}
 
-      {/* READ */}
       {book.status === "read" && (
         <>
           <View
@@ -319,10 +311,12 @@ export default function BookDetail() {
               borderWidth: 1,
               borderColor: "#eee",
               backgroundColor: "#fff",
+              gap: 8,
             }}
           >
             <Text style={{ fontWeight: "800", color: "#222" }}>Puan</Text>
-            <Text style={{ marginTop: 8, color: "#666", fontSize: 16 }}>
+
+            <Text style={{ color: "#666", fontSize: 16 }}>
               {book.rating && book.rating > 0
                 ? "★".repeat(book.rating)
                 : "Puan verilmemiş"}
@@ -336,17 +330,18 @@ export default function BookDetail() {
               borderWidth: 1,
               borderColor: "#eee",
               backgroundColor: "#fff",
+              gap: 8,
             }}
           >
             <Text style={{ fontWeight: "800", color: "#222" }}>Not</Text>
-            <Text style={{ marginTop: 8, color: "#666", lineHeight: 21 }}>
+
+            <Text style={{ color: "#666", lineHeight: 21 }}>
               {book.note?.trim()?.length ? book.note : "Henüz not eklenmemiş."}
             </Text>
           </View>
         </>
       )}
 
-      {/* WANT */}
       {book.status === "want" && (
         <View
           style={{
@@ -355,18 +350,19 @@ export default function BookDetail() {
             borderWidth: 1,
             borderColor: "#eee",
             backgroundColor: "#fff",
+            gap: 8,
           }}
         >
           <Text style={{ fontWeight: "800", color: "#222" }}>
             Okuma Listesi
           </Text>
-          <Text style={{ marginTop: 8, color: "#666", lineHeight: 21 }}>
+
+          <Text style={{ color: "#666", lineHeight: 21 }}>
             Bu kitap daha sonra okunmak üzere listene eklendi.
           </Text>
         </View>
       )}
 
-      {/* ACTIONS */}
       <Pressable
         onPress={() =>
           router.push({
@@ -374,27 +370,12 @@ export default function BookDetail() {
             params: { id: book.id },
           })
         }
-        style={{
-          backgroundColor: "#fff",
-          paddingVertical: 12,
-          borderRadius: 12,
-          alignItems: "center",
-          borderWidth: 1,
-          borderColor: "#ddd",
-        }}
+        style={buttonStyle("secondary")}
       >
         <Text style={{ fontWeight: "900" }}>Düzenle</Text>
       </Pressable>
 
-      <Pressable
-        onPress={cycleStatus}
-        style={{
-          backgroundColor: "#111",
-          paddingVertical: 12,
-          borderRadius: 12,
-          alignItems: "center",
-        }}
-      >
+      <Pressable onPress={cycleStatus} style={buttonStyle("primary")}>
         <Text style={{ color: "#fff", fontWeight: "900" }}>
           Durumu Değiştir
         </Text>
@@ -407,41 +388,16 @@ export default function BookDetail() {
             params: { id: book.id },
           })
         }
-        style={{
-          backgroundColor: "#111",
-          paddingVertical: 12,
-          borderRadius: 12,
-          alignItems: "center",
-        }}
+        style={buttonStyle("primary")}
       >
         <Text style={{ color: "#fff", fontWeight: "900" }}>Paylaş</Text>
       </Pressable>
 
-      <Pressable
-        onPress={confirmDelete}
-        style={{
-          paddingVertical: 12,
-          borderRadius: 12,
-          alignItems: "center",
-          borderWidth: 1,
-          borderColor: "#ffdddd",
-          backgroundColor: "#fff",
-        }}
-      >
+      <Pressable onPress={confirmDelete} style={buttonStyle("danger")}>
         <Text style={{ fontWeight: "900", color: "#c00" }}>Kitabı Sil</Text>
       </Pressable>
 
-      <Pressable
-        onPress={() => router.back()}
-        style={{
-          paddingVertical: 12,
-          borderRadius: 12,
-          alignItems: "center",
-          borderWidth: 1,
-          borderColor: "#ddd",
-          backgroundColor: "#fff",
-        }}
-      >
+      <Pressable onPress={() => router.back()} style={buttonStyle("secondary")}>
         <Text style={{ fontWeight: "900" }}>Geri</Text>
       </Pressable>
     </ScrollView>
