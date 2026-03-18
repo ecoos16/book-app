@@ -54,13 +54,11 @@ type BooksContextValue = {
 
 /**
  * AsyncStorage anahtarı
- * Değiştirirsen eski kayıtlar görünmeyebilir
  */
 const STORAGE_KEY = "BOOKS_V1";
 
 /**
  * React Context
- * Başlangıçta null, çünkü provider dışında kullanılırsa hata vereceğiz
  */
 const BooksContext = createContext<BooksContextValue | null>(null);
 
@@ -72,8 +70,7 @@ function makeId() {
 }
 
 /**
- * String normalize yardımcı fonksiyonu
- * Duplicate kontrolünde büyük/küçük harf ve boşluk farklarını azaltmak için kullanılır
+ * Duplicate kontrolü için normalize yardımcı fonksiyon
  */
 function normalizeText(value: unknown) {
   if (typeof value !== "string") return "";
@@ -83,10 +80,6 @@ function normalizeText(value: unknown) {
 
 /**
  * Kitap kaydını güvenli ortak yapıya çevirir
- *
- * Amaç:
- * - eski kayıtlar eksik alanla geldiyse UI kırılmasın
- * - her kitap ortak güvenli yapıya dönsün
  */
 function normalizeBook(b: any): Book {
   const safePagesTotal =
@@ -113,9 +106,6 @@ function normalizeBook(b: any): Book {
       b?.status === "reading" || b?.status === "read" || b?.status === "want"
         ? b.status
         : "reading",
-    /**
-     * createdAt hem number hem string gelebilir ama burada number standardı kullanıyoruz
-     */
 
     createdAt:
       typeof b?.createdAt === "number"
@@ -127,7 +117,6 @@ function normalizeBook(b: any): Book {
     /**
      * Opsiyonel alanlar
      */
-
     thumbnail:
       typeof b?.thumbnail === "string" && b.thumbnail.length > 0
         ? b.thumbnail
@@ -162,7 +151,6 @@ function normalizeBook(b: any): Book {
 
 /**
  * Provider
- * Uygulamanın kitap state'ini yönetir ve alt bileşenlere dağıtır
  */
 export function BooksProvider({ children }: { children: ReactNode }) {
   /**
@@ -201,7 +189,6 @@ export function BooksProvider({ children }: { children: ReactNode }) {
       } catch {
         /**
          * Hata olursa uygulama kırılmasın
-         * Boş liste ile başlat
          */
         setBooks([]);
       } finally {
@@ -216,7 +203,6 @@ export function BooksProvider({ children }: { children: ReactNode }) {
 
   /**
    * books değiştiğinde storage'a kaydet
-   * hydrate olmadan çalıştırmıyoruz ki boş state eski verilerin üstüne yazılmasın
    */
   useEffect(() => {
     if (!isHydrated) return;
@@ -231,10 +217,6 @@ export function BooksProvider({ children }: { children: ReactNode }) {
 
   /**
    * Yeni kitap ekleme
-   *
-   * Duplicate kontrol sırası:
-   * 1. googleId varsa önce buna göre bak
-   * 2. googleId yoksa title + author eşleşmesine göre bak
    */
   const addBook: BooksContextValue["addBook"] = (payload) => {
     const incomingGoogleId =
@@ -243,7 +225,7 @@ export function BooksProvider({ children }: { children: ReactNode }) {
         : undefined;
 
     /**
-     * 1) Önce googleId ile duplicate kontrolü
+     * Önce googleId ile duplicate kontrolü
      */
     if (incomingGoogleId) {
       const existingByGoogleId = books.find(
@@ -256,10 +238,7 @@ export function BooksProvider({ children }: { children: ReactNode }) {
     }
 
     /**
-     * 2) Eğer googleId ile eşleşme yoksa
-     * title + author ile de duplicate kontrolü yap
-     *
-     * Bu özellikle manuel eklenen kitaplar için faydalı
+     * Sonra title + author ile kontrol
      */
     const normalizedIncomingTitle = normalizeText(payload.title);
     const normalizedIncomingAuthor = normalizeText(payload.author);
@@ -284,10 +263,6 @@ export function BooksProvider({ children }: { children: ReactNode }) {
       id,
       createdAt: Date.now(),
       ...payload,
-
-      /**
-       * Sosyal alanların varsayılanları
-       */
       likes: payload.likes ?? 0,
       isLiked: payload.isLiked ?? false,
       comments: payload.comments ?? [],
@@ -302,7 +277,7 @@ export function BooksProvider({ children }: { children: ReactNode }) {
   };
 
   /**
-   * Kitap güncelleme
+   * Kitap güncelle
    */
   const updateBook: BooksContextValue["updateBook"] = (id, patch) => {
     setBooks((prev) =>
@@ -311,7 +286,7 @@ export function BooksProvider({ children }: { children: ReactNode }) {
   };
 
   /**
-   * Kitap silme
+   * Kitap sil
    */
   const removeBook: BooksContextValue["removeBook"] = (id) => {
     setBooks((prev) => prev.filter((b) => b.id !== id).map(normalizeBook));
@@ -344,7 +319,6 @@ export function BooksProvider({ children }: { children: ReactNode }) {
 
   /**
    * Context value
-   * useMemo ile sarıyoruz ki gereksiz render biraz azalsın
    */
   const value = useMemo<BooksContextValue>(
     () => ({
@@ -367,7 +341,6 @@ export function BooksProvider({ children }: { children: ReactNode }) {
 
 /**
  * Context hook
- * Provider dışında kullanılırsa net hata verir
  */
 export function useBooks() {
   const ctx = useContext(BooksContext);

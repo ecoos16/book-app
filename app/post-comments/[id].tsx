@@ -8,6 +8,7 @@ import {
   TextInput,
   View,
 } from "react-native";
+import { useChat } from "../../context/ChatContext";
 import { usePosts } from "../../context/PostsContext";
 import { CURRENT_USER } from "../../data/mockUsers";
 import { buttonStyle, pillButtonStyle } from "../../utils/pressableStyles";
@@ -35,6 +36,11 @@ export default function PostCommentsScreen() {
    * Post işlemleri
    */
   const { getById, addComment, removeComment, removePost } = usePosts();
+
+  /**
+   * Chat işlemleri
+   */
+  const { getOrCreateConversationByParticipant } = useChat();
 
   /**
    * İlgili paylaşımı bul
@@ -151,6 +157,31 @@ export default function PostCommentsScreen() {
     router.back();
   }
 
+  /**
+   * Paylaşım sahibine mesaj gönder
+   */
+  function handleMessagePostOwner() {
+    if (safePost.userId === CURRENT_USER.id) return;
+
+    const conversationId = getOrCreateConversationByParticipant({
+      id: safePost.userId,
+      name: safePost.userName,
+      avatar: safePost.userAvatar,
+    });
+
+    const prefillText = `${
+      safePost.bookTitle || "Paylaşımın"
+    } hakkında yazdığını gördüm, yorumun ilgimi çekti.`;
+
+    router.push({
+      pathname: "/chat/[id]",
+      params: {
+        id: conversationId,
+        prefill: prefillText,
+      },
+    });
+  }
+
   return (
     <ScrollView contentContainerStyle={{ padding: 16, gap: 14 }}>
       {/* ================= PAYLAŞIM KARTI ================= */}
@@ -206,7 +237,7 @@ export default function PostCommentsScreen() {
           {safePost.shareText}
         </Text>
 
-        {/* Post aksiyonları */}
+        {/* ================= POST AKSİYONLARI ================= */}
         <View
           style={{
             flexDirection: "row",
@@ -229,6 +260,17 @@ export default function PostCommentsScreen() {
               💬 {safePost.comments.length}
             </Text>
           </View>
+
+          {!isMine && (
+            <Pressable
+              onPress={handleMessagePostOwner}
+              style={pillButtonStyle("secondary")}
+            >
+              <Text style={{ fontWeight: "800", color: "#333" }}>
+                ✉️ Mesaj Gönder
+              </Text>
+            </Pressable>
+          )}
 
           {isMine && (
             <>
@@ -315,6 +357,7 @@ export default function PostCommentsScreen() {
           placeholder="Bu paylaşım hakkında bir şey yaz..."
           multiline
           textAlignVertical="top"
+          maxLength={500}
           style={{
             minHeight: 110,
             borderWidth: 1,
@@ -322,6 +365,7 @@ export default function PostCommentsScreen() {
             borderRadius: 12,
             padding: 12,
             backgroundColor: "#fff",
+            color: "#222",
           }}
         />
 
@@ -348,62 +392,71 @@ export default function PostCommentsScreen() {
         {sortedComments.length === 0 ? (
           <Text style={{ color: "#666" }}>Henüz yorum yok.</Text>
         ) : (
-          sortedComments.map((comment) => (
-            <View
-              key={comment.id}
-              style={{
-                padding: 12,
-                borderRadius: 12,
-                backgroundColor: "#fafafa",
-                gap: 6,
-              }}
-            >
+          sortedComments.map((comment) => {
+            const canDeleteComment =
+              comment.userId === CURRENT_USER.id || isMine;
+
+            return (
               <View
+                key={comment.id}
                 style={{
-                  flexDirection: "row",
-                  justifyContent: "space-between",
-                  gap: 12,
+                  padding: 12,
+                  borderRadius: 12,
+                  backgroundColor: "#fafafa",
+                  gap: 6,
                 }}
               >
-                <View style={{ flexDirection: "row", gap: 8, flex: 1 }}>
-                  <Image
-                    source={{
-                      uri:
-                        comment.userAvatar ??
-                        "https://ui-avatars.com/api/?name=User",
-                    }}
-                    style={{
-                      width: 32,
-                      height: 32,
-                      borderRadius: 16,
-                      backgroundColor: "#f1f1f1",
-                    }}
-                  />
+                <View
+                  style={{
+                    flexDirection: "row",
+                    justifyContent: "space-between",
+                    gap: 12,
+                  }}
+                >
+                  <View style={{ flexDirection: "row", gap: 8, flex: 1 }}>
+                    <Image
+                      source={{
+                        uri:
+                          comment.userAvatar ??
+                          "https://ui-avatars.com/api/?name=User",
+                      }}
+                      style={{
+                        width: 32,
+                        height: 32,
+                        borderRadius: 16,
+                        backgroundColor: "#f1f1f1",
+                      }}
+                    />
 
-                  <View style={{ flex: 1 }}>
-                    <Text style={{ fontWeight: "800", color: "#222" }}>
-                      {comment.userName}
-                    </Text>
+                    <View style={{ flex: 1 }}>
+                      <Text style={{ fontWeight: "800", color: "#222" }}>
+                        {comment.userName}
+                      </Text>
 
-                    <Text style={{ color: "#888", fontSize: 12 }}>
-                      {formatDate(comment.createdAt)}
-                    </Text>
+                      <Text style={{ color: "#888", fontSize: 12 }}>
+                        {formatDate(comment.createdAt)}
+                      </Text>
+                    </View>
                   </View>
+
+                  {canDeleteComment && (
+                    <Pressable
+                      onPress={() => handleDeleteComment(comment.id)}
+                      style={pillButtonStyle("danger")}
+                    >
+                      <Text style={{ color: "#c00", fontWeight: "800" }}>
+                        Sil
+                      </Text>
+                    </Pressable>
+                  )}
                 </View>
 
-                <Pressable
-                  onPress={() => handleDeleteComment(comment.id)}
-                  style={pillButtonStyle("danger")}
-                >
-                  <Text style={{ color: "#c00", fontWeight: "800" }}>Sil</Text>
-                </Pressable>
+                <Text style={{ color: "#555", lineHeight: 20 }}>
+                  {comment.text}
+                </Text>
               </View>
-
-              <Text style={{ color: "#555", lineHeight: 20 }}>
-                {comment.text}
-              </Text>
-            </View>
-          ))
+            );
+          })
         )}
       </View>
 

@@ -1,3 +1,5 @@
+// context/PostsContext.tsx
+
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import React, {
   createContext,
@@ -10,6 +12,9 @@ import React, {
 import { MOCK_USERS } from "../data/mockUsers";
 import type { Post, PostComment } from "../types/post";
 
+/**
+ * Yeni post oluştururken gereken alanlar
+ */
 type CreatePostInput = {
   bookId: string;
   bookTitle: string;
@@ -23,6 +28,9 @@ type CreatePostInput = {
   shareText: string;
 };
 
+/**
+ * Yeni yorum eklerken gereken alanlar
+ */
 type AddCommentInput = {
   postId: string;
   text: string;
@@ -31,6 +39,9 @@ type AddCommentInput = {
   userAvatar?: string;
 };
 
+/**
+ * Context dışına açılan fonksiyon ve veriler
+ */
 type PostsContextValue = {
   posts: Post[];
   isHydrated: boolean;
@@ -51,14 +62,23 @@ type PostsContextValue = {
   clearAll: () => Promise<void>;
 };
 
+/**
+ * Storage anahtarı
+ */
 const STORAGE_KEY = "POSTS_V2";
 
 const PostsContext = createContext<PostsContextValue | null>(null);
 
+/**
+ * Basit id üretici
+ */
 function makeId() {
   return `${Date.now()}_${Math.random().toString(16).slice(2)}`;
 }
 
+/**
+ * Yorum verisini güvenli hale getir
+ */
 function normalizeComment(c: any): PostComment {
   return {
     id: typeof c?.id === "string" ? c.id : makeId(),
@@ -78,6 +98,9 @@ function normalizeComment(c: any): PostComment {
   };
 }
 
+/**
+ * Post verisini güvenli hale getir
+ */
 function normalizePost(p: any): Post {
   return {
     id: typeof p?.id === "string" ? p.id : makeId(),
@@ -115,6 +138,9 @@ function normalizePost(p: any): Post {
   };
 }
 
+/**
+ * Başlangıç topluluk postları
+ */
 function createSeedPosts(): Post[] {
   const now = Date.now();
 
@@ -182,6 +208,10 @@ export function PostsProvider({ children }: { children: ReactNode }) {
   const [posts, setPosts] = useState<Post[]>([]);
   const [isHydrated, setIsHydrated] = useState(false);
 
+  /**
+   * Storage'dan verileri yükle
+   * Veri yoksa seed postları kullan
+   */
   useEffect(() => {
     let mounted = true;
 
@@ -214,6 +244,9 @@ export function PostsProvider({ children }: { children: ReactNode }) {
     };
   }, []);
 
+  /**
+   * Değişiklikleri storage'a yaz
+   */
   useEffect(() => {
     if (!isHydrated) return;
 
@@ -223,6 +256,9 @@ export function PostsProvider({ children }: { children: ReactNode }) {
     ).catch(() => {});
   }, [posts, isHydrated]);
 
+  /**
+   * Yeni post ekle
+   */
   const addPost: PostsContextValue["addPost"] = (input) => {
     const id = makeId();
 
@@ -239,16 +275,25 @@ export function PostsProvider({ children }: { children: ReactNode }) {
     return id;
   };
 
+  /**
+   * Post güncelle
+   */
   const updatePost: PostsContextValue["updatePost"] = (id, patch) => {
     setPosts((prev) =>
       prev.map((p) => (p.id === id ? normalizePost({ ...p, ...patch }) : p)),
     );
   };
 
+  /**
+   * Post sil
+   */
   const removePost: PostsContextValue["removePost"] = (id) => {
     setPosts((prev) => prev.filter((p) => p.id !== id));
   };
 
+  /**
+   * Like toggle
+   */
   const toggleLike: PostsContextValue["toggleLike"] = (id) => {
     setPosts((prev) =>
       prev.map((p) => {
@@ -266,6 +311,9 @@ export function PostsProvider({ children }: { children: ReactNode }) {
     );
   };
 
+  /**
+   * Posta yorum ekle
+   */
   const addComment: PostsContextValue["addComment"] = ({
     postId,
     text,
@@ -297,6 +345,9 @@ export function PostsProvider({ children }: { children: ReactNode }) {
     );
   };
 
+  /**
+   * Post yorumunu sil
+   */
   const removeComment: PostsContextValue["removeComment"] = (
     postId,
     commentId,
@@ -313,15 +364,28 @@ export function PostsProvider({ children }: { children: ReactNode }) {
     );
   };
 
+  /**
+   * Tek post getir
+   */
   const getById: PostsContextValue["getById"] = (id) =>
     posts.find((p) => p.id === id);
 
+  /**
+   * BookId'ye göre postları getir
+   */
   const getByBookId: PostsContextValue["getByBookId"] = (bookId) =>
     posts.filter((p) => p.bookId === bookId);
 
+  /**
+   * Kullanıcıya göre postları getir
+   */
   const getByUserId: PostsContextValue["getByUserId"] = (userId) =>
     posts.filter((p) => p.userId === userId);
 
+  /**
+   * Tüm postları temizle
+   * Seed postlara geri döndür
+   */
   const clearAll: PostsContextValue["clearAll"] = async () => {
     const seed = createSeedPosts();
     setPosts(seed);

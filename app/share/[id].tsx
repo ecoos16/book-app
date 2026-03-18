@@ -15,25 +15,45 @@ import { CURRENT_USER } from "../../data/mockUsers";
 import { buttonStyle } from "../../utils/pressableStyles";
 
 export default function ShareBookScreen() {
+  /**
+   * Route parametreleri
+   * id     -> kitap id
+   * postId -> varsa mevcut paylaşımı düzenleme modu
+   */
   const { id, postId } = useLocalSearchParams<{
     id: string;
     postId?: string;
   }>();
 
+  /**
+   * Context verileri
+   */
   const { getById } = useBooks();
   const { addPost, getByBookId, getById: getPostById, updatePost } = usePosts();
 
+  /**
+   * İlgili kitap ve düzenlenecek paylaşım
+   */
   const book = id ? getById(id) : undefined;
   const editingPost = postId ? getPostById(postId) : undefined;
 
+  /**
+   * Text input state
+   */
   const [text, setText] = useState("");
 
+  /**
+   * Düzenleme modunda mevcut paylaşım metnini input'a doldur
+   */
   useEffect(() => {
     if (editingPost) {
       setText(editingPost.shareText ?? "");
     }
   }, [editingPost]);
 
+  /**
+   * Kitap bulunamadıysa fallback ekranı
+   */
   if (!book) {
     return (
       <ScrollView contentContainerStyle={{ padding: 16 }}>
@@ -86,10 +106,17 @@ export default function ShareBookScreen() {
 
   const safeBook = book;
 
+  /**
+   * Aynı kitaba ait mevcut paylaşımlar
+   * Düzenleme ekranında değilken göstermek için kullanıyoruz
+   */
   const existingPosts = useMemo(() => {
     return getByBookId(safeBook.id);
   }, [safeBook.id, getByBookId]);
 
+  /**
+   * Paylaş / güncelle butonu
+   */
   function handleSubmit() {
     const trimmed = text.trim();
 
@@ -98,6 +125,9 @@ export default function ShareBookScreen() {
       return;
     }
 
+    /**
+     * Düzenleme modu
+     */
     if (editingPost) {
       updatePost(editingPost.id, {
         shareText: trimmed,
@@ -112,6 +142,9 @@ export default function ShareBookScreen() {
       return;
     }
 
+    /**
+     * Yeni paylaşım modu
+     */
     addPost({
       bookId: safeBook.id,
       bookTitle: safeBook.title,
@@ -135,6 +168,7 @@ export default function ShareBookScreen() {
 
   return (
     <ScrollView contentContainerStyle={{ padding: 16, gap: 14 }}>
+      {/* ================= KİTAP KARTI ================= */}
       <View
         style={{
           flexDirection: "row",
@@ -186,6 +220,7 @@ export default function ShareBookScreen() {
         </View>
       </View>
 
+      {/* ================= PAYLAŞIM METNİ ================= */}
       <View
         style={{
           padding: 14,
@@ -206,6 +241,7 @@ export default function ShareBookScreen() {
           placeholder="Bu kitap sende nasıl bir etki bıraktı?"
           multiline
           textAlignVertical="top"
+          maxLength={700}
           style={{
             minHeight: 140,
             borderWidth: 1,
@@ -213,16 +249,23 @@ export default function ShareBookScreen() {
             borderRadius: 12,
             padding: 12,
             backgroundColor: "#fff",
+            color: "#222",
           }}
         />
+
+        <Text style={{ color: "#888", fontSize: 12 }}>
+          {text.trim().length}/700 karakter
+        </Text>
       </View>
 
+      {/* ================= AKSİYON BUTONU ================= */}
       <Pressable onPress={handleSubmit} style={buttonStyle("primary")}>
         <Text style={{ color: "#fff", fontWeight: "900" }}>
           {editingPost ? "Güncelle" : "Paylaş"}
         </Text>
       </Pressable>
 
+      {/* ================= ÖNCEKİ PAYLAŞIMLAR ================= */}
       {!editingPost && (
         <View
           style={{
@@ -263,6 +306,7 @@ export default function ShareBookScreen() {
         </View>
       )}
 
+      {/* ================= GERİ ================= */}
       <Pressable onPress={() => router.back()} style={buttonStyle("secondary")}>
         <Text style={{ fontWeight: "900" }}>Geri</Text>
       </Pressable>

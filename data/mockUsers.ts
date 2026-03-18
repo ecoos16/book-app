@@ -1,11 +1,21 @@
-export const CURRENT_USER = {
+// data/mockUsers.ts
+
+import type { ChatParticipant } from "../types/chat";
+
+/**
+ * Uygulamadaki aktif mock kullanıcı
+ */
+export const CURRENT_USER: ChatParticipant = {
   id: "u_me",
   name: "Ecesu",
   avatar:
     "https://ui-avatars.com/api/?name=Ecesu&background=111111&color=ffffff",
 };
 
-export const MOCK_USERS = [
+/**
+ * Yeni sohbet başlatırken gösterilecek diğer mock kullanıcılar
+ */
+export const MOCK_USERS: ChatParticipant[] = [
   {
     id: "u1",
     name: "Eylül",

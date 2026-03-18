@@ -1,12 +1,24 @@
+// types/post.ts
+
+/**
+ * Post altındaki yorum modeli
+ */
 export type PostComment = {
   id: string;
   text: string;
   createdAt: number;
+
+  /**
+   * Yorumu yazan kullanıcı bilgileri
+   */
   userId: string;
   userName: string;
   userAvatar?: string;
 };
 
+/**
+ * Topluluk paylaşım modeli
+ */
 export type Post = {
   id: string;
 
@@ -18,7 +30,7 @@ export type Post = {
 
   /**
    * Kitap snapshot bilgisi
-   * Feed'de doğrudan göstermek için tutulur
+   * Feed içinde doğrudan göstermek için tutulur
    */
   bookTitle: string;
   bookAuthor: string;
@@ -47,4 +59,10 @@ export type Post = {
   likes: number;
   isLiked?: boolean;
   comments: PostComment[];
+
+  /**
+   * İleride posttan başlatılmış sohbet bağlamı için alan bırakıyoruz
+   * Şimdilik opsiyonel
+   */
+  sourceType?: "manual" | "book-share";
 };

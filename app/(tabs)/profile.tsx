@@ -538,6 +538,16 @@ export default function Profile() {
             <StatBox label="Bitti" value={userCardSummary.finishedBooks} />
             <StatBox label="Listemde" value={userCardSummary.wishlistCount} />
           </View>
+
+          {/* Mesajlar butonu */}
+          <Pressable
+            onPress={() => router.push("/chat")}
+            style={buttonStyle("secondary")}
+          >
+            <Text style={{ fontWeight: "900", color: "#111" }}>
+              💬 Mesajlara Git
+            </Text>
+          </Pressable>
         </View>
       </View>
 

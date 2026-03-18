@@ -25,13 +25,11 @@ export type BookComment = {
 
   /**
    * Yorum oluşturulma zamanı
-   * timestamp (number)
    */
   createdAt: number;
 
   /**
    * Yorumu yazan kullanıcı bilgileri
-   * Şimdilik opsiyonel, ileride auth sistemi gelirse kullanılabilir
    */
   userId?: string;
   userName?: string;
@@ -71,14 +69,14 @@ export type Book = {
   pagesRead?: number;
 
   /**
-   * Kitap bitirildiyse kullanılacak değerlendirme alanları
+   * Kitap bitirildiyse değerlendirme alanları
    */
   rating?: number;
   note?: string;
 
   /**
    * Paylaşım alanları
-   * Kitap feed ya da paylaşım akışında gösterilecekse kullanılabilir
+   * Eski akışlarla uyumluluk için tutuluyor
    */
   sharedAt?: number;
   shareText?: string;

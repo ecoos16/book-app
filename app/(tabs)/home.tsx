@@ -2,10 +2,14 @@ import { router } from "expo-router";
 import React, { useMemo, useState } from "react";
 import { Image, Pressable, ScrollView, Text, View } from "react-native";
 import { useBooks } from "../../context/BooksContext";
+import { useChat } from "../../context/ChatContext";
 import { usePosts } from "../../context/PostsContext";
 import { CURRENT_USER } from "../../data/mockUsers";
 import { buttonStyle, pillButtonStyle } from "../../utils/pressableStyles";
 
+/**
+ * Zaman farkını kısa formatta gösterir
+ */
 function formatTimeAgo(timestamp: number) {
   const diffMs = Date.now() - timestamp;
   const minutes = Math.floor(diffMs / (1000 * 60));
@@ -19,35 +23,93 @@ function formatTimeAgo(timestamp: number) {
 }
 
 export default function Home() {
+  /**
+   * Books ve posts context verileri
+   */
   const { books } = useBooks();
   const { posts, isHydrated, toggleLike, removePost } = usePosts();
 
   /**
-   * Home içinden silme onayı için
+   * Chat context
+   * Post sahibine mesaj atarken kullanıyoruz
+   */
+  const { getOrCreateConversationByParticipant } = useChat();
+
+  /**
+   * Silme onayı state
    */
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
 
+  /**
+   * Son eklenen 3 kitap
+   */
   const last3 = useMemo(() => books.slice(0, 3), [books]);
 
+  /**
+   * Postları yeni -> eski sırala
+   */
   const sortedPosts = useMemo(() => {
     return [...posts].sort((a, b) => b.createdAt - a.createdAt);
   }, [posts]);
 
+  /**
+   * Kullanıcının kendi postları
+   */
   const myPosts = useMemo(() => {
     return sortedPosts.filter((p) => p.userId === CURRENT_USER.id);
   }, [sortedPosts]);
 
+  /**
+   * Topluluk postları
+   */
   const communityPosts = useMemo(() => {
     return sortedPosts;
   }, [sortedPosts]);
 
+  /**
+   * BookId ile local kitap bul
+   */
   function getLocalBook(bookId: string) {
     return books.find((b) => b.id === bookId);
   }
 
+  /**
+   * Post sil
+   */
   function handleDeletePost(postId: string) {
     removePost(postId);
     setConfirmDeleteId(null);
+  }
+
+  /**
+   * Post sahibine mesaj at
+   * prefill ile hazır mesajı input alanına taşır
+   */
+  function handleMessagePostOwner(post: {
+    userId: string;
+    userName: string;
+    userAvatar?: string;
+    bookTitle?: string;
+  }) {
+    if (post.userId === CURRENT_USER.id) return;
+
+    const conversationId = getOrCreateConversationByParticipant({
+      id: post.userId,
+      name: post.userName,
+      avatar: post.userAvatar,
+    });
+
+    const prefillText = `${
+      post.bookTitle || "Paylaşımın"
+    } hakkında yazdığını gördüm, yorumun ilgimi çekti.`;
+
+    router.push({
+      pathname: "/chat/[id]",
+      params: {
+        id: conversationId,
+        prefill: prefillText,
+      },
+    });
   }
 
   return (
@@ -235,7 +297,7 @@ export default function Home() {
                       gap: 10,
                     }}
                   >
-                    {/* Üst bilgi */}
+                    {/* ================= ÜST BİLGİ ================= */}
                     <View
                       style={{
                         flexDirection: "row",
@@ -269,7 +331,7 @@ export default function Home() {
                       </View>
                     </View>
 
-                    {/* Kitap alanı */}
+                    {/* ================= KİTAP ALANI ================= */}
                     <Pressable
                       onPress={() => {
                         if (localBook) {
@@ -342,7 +404,7 @@ export default function Home() {
                       </View>
                     </Pressable>
 
-                    {/* Paylaşım metni */}
+                    {/* ================= PAYLAŞIM METNİ ================= */}
                     <Pressable
                       onPress={() =>
                         router.push({
@@ -366,7 +428,7 @@ export default function Home() {
                       </Text>
                     </Pressable>
 
-                    {/* Alt aksiyonlar */}
+                    {/* ================= ALT AKSİYONLAR ================= */}
                     <View
                       style={{
                         flexDirection: "row",
@@ -397,6 +459,22 @@ export default function Home() {
                           💬 {post.comments.length}
                         </Text>
                       </Pressable>
+
+                      {!isMine && (
+                        <Pressable
+                          onPress={() =>
+                            handleMessagePostOwner({
+                              userId: post.userId,
+                              userName: post.userName,
+                              userAvatar: post.userAvatar,
+                              bookTitle: displayTitle,
+                            })
+                          }
+                          style={pillButtonStyle("secondary")}
+                        >
+                          <Text style={{ fontWeight: "900" }}>✉️ Mesaj</Text>
+                        </Pressable>
+                      )}
 
                       {isMine && (
                         <>
@@ -433,7 +511,7 @@ export default function Home() {
                       )}
                     </View>
 
-                    {/* Silme onayı */}
+                    {/* ================= SİLME ONAYI ================= */}
                     {isMine && confirmDeleteId === post.id && (
                       <View
                         style={{

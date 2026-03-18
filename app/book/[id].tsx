@@ -1,29 +1,71 @@
+// app/book/[id].tsx
+
 import { router, useLocalSearchParams } from "expo-router";
-import React from "react";
+import React, { useMemo } from "react";
 import { Alert, Image, Pressable, ScrollView, Text, View } from "react-native";
 
 import { ProgressBar } from "../../components/ProgressBar";
 import { useBooks } from "../../context/BooksContext";
+import { useChat } from "../../context/ChatContext";
+import { usePosts } from "../../context/PostsContext";
 import { useReadingGoal } from "../../context/ReadingGoalContext";
 import { useReadingLog } from "../../context/ReadingLogContext";
+import { CURRENT_USER } from "../../data/mockUsers";
 import type { BookStatus } from "../../types/book";
-import { buttonStyle } from "../../utils/pressableStyles";
+import { buttonStyle, pillButtonStyle } from "../../utils/pressableStyles";
 
+/**
+ * Kitap durum etiketleri
+ */
 const statusLabel: Record<BookStatus, string> = {
   reading: "Okuyorum",
   read: "Okudum",
   want: "İstiyorum",
 };
 
+/**
+ * Metni daha güvenli karşılaştırmak için normalize eder
+ * Örn:
+ * "1984 " -> "1984"
+ * " George Orwell " -> "george orwell"
+ */
+function normalizeText(value: unknown) {
+  if (typeof value !== "string") return "";
+
+  return value.trim().toLocaleLowerCase("tr").replace(/\s+/g, " ");
+}
+
+/**
+ * Avatar yoksa isimden baş harf çıkarır
+ */
+function getInitial(name?: string) {
+  if (!name?.trim()) return "U";
+  return name.trim().charAt(0).toUpperCase();
+}
+
 export default function BookDetail() {
+  /**
+   * Route parametresi
+   */
   const { id } = useLocalSearchParams<{ id: string }>();
 
+  /**
+   * Context verileri
+   */
   const { getById, removeBook, updateBook } = useBooks();
+  const { posts } = usePosts();
+  const { getOrCreateConversationByParticipant } = useChat();
   const { step } = useReadingGoal();
   const { addLog } = useReadingLog();
 
+  /**
+   * Kitabı bul
+   */
   const book = id ? getById(id) : undefined;
 
+  /**
+   * Kitap bulunamazsa fallback ekranı
+   */
   if (!book) {
     return (
       <ScrollView contentContainerStyle={{ padding: 16 }}>
@@ -75,6 +117,85 @@ export default function BookDetail() {
     );
   }
 
+  /**
+   * Aynı kitaba ait paylaşımları bul
+   *
+   * Eşleşme mantığı:
+   * 1) bookId birebir aynıysa
+   * 2) ya da title + author normalize edilince eşleşiyorsa
+   * 3) includes ile biraz daha toleranslı davranır
+   */
+  const relatedPeople = useMemo(() => {
+    const normalizedBookTitle = normalizeText(book.title);
+    const normalizedBookAuthor = normalizeText(book.author);
+
+    const matchingPosts = posts.filter((post) => {
+      const sameBookId = post.bookId === book.id;
+
+      const normalizedPostTitle = normalizeText(post.bookTitle);
+      const normalizedPostAuthor = normalizeText(post.bookAuthor);
+
+      const sameTitle =
+        normalizedPostTitle === normalizedBookTitle ||
+        normalizedPostTitle.includes(normalizedBookTitle) ||
+        normalizedBookTitle.includes(normalizedPostTitle);
+
+      const sameAuthor =
+        normalizedPostAuthor === normalizedBookAuthor ||
+        normalizedPostAuthor.includes(normalizedBookAuthor) ||
+        normalizedBookAuthor.includes(normalizedPostAuthor);
+
+      const sameTitleAndAuthor = sameTitle && sameAuthor;
+
+      return sameBookId || sameTitleAndAuthor;
+    });
+
+    /**
+     * Aynı kullanıcı birden fazla paylaşım yaptıysa
+     * sadece en güncel olanı göster
+     */
+    const uniqueUsersMap = new Map<
+      string,
+      {
+        userId: string;
+        userName: string;
+        userAvatar?: string;
+        latestPostId: string;
+        latestShareText: string;
+        latestCreatedAt: number;
+      }
+    >();
+
+    matchingPosts.forEach((post) => {
+      const existing = uniqueUsersMap.get(post.userId);
+
+      if (!existing || post.createdAt > existing.latestCreatedAt) {
+        uniqueUsersMap.set(post.userId, {
+          userId: post.userId,
+          userName: post.userName,
+          userAvatar: post.userAvatar,
+          latestPostId: post.id,
+          latestShareText: post.shareText,
+          latestCreatedAt: post.createdAt,
+        });
+      }
+    });
+
+    return Array.from(uniqueUsersMap.values()).sort(
+      (a, b) => b.latestCreatedAt - a.latestCreatedAt,
+    );
+  }, [book.id, book.title, book.author, posts]);
+
+  /**
+   * Kendim dışındaki kullanıcılar
+   */
+  const otherReaders = useMemo(() => {
+    return relatedPeople.filter((person) => person.userId !== CURRENT_USER.id);
+  }, [relatedPeople]);
+
+  /**
+   * Kitabı sil
+   */
   const confirmDelete = () => {
     Alert.alert("Kitabı sil", `"${book.title}" silinecek. Emin misin?`, [
       { text: "Vazgeç", style: "cancel" },
@@ -89,6 +210,10 @@ export default function BookDetail() {
     ]);
   };
 
+  /**
+   * Durumu sırayla değiştir
+   * reading -> read -> want -> reading
+   */
   const cycleStatus = () => {
     const next: BookStatus =
       book.status === "reading"
@@ -126,6 +251,9 @@ export default function BookDetail() {
     });
   };
 
+  /**
+   * Hızlı sayfa ekleme
+   */
   const addPages = () => {
     if (book.status !== "reading") return;
     if (!book.pagesTotal || book.pagesTotal <= 0) return;
@@ -149,6 +277,47 @@ export default function BookDetail() {
     addLog(diff);
   };
 
+  /**
+   * Bu kitabı paylaşan kullanıcıya mesaj gönder
+   * Sohbet ekranına hazır metin de taşınır
+   */
+  const handleMessageReader = (person: {
+    userId: string;
+    userName: string;
+    userAvatar?: string;
+  }) => {
+    const conversationId = getOrCreateConversationByParticipant({
+      id: person.userId,
+      name: person.userName,
+      avatar: person.userAvatar,
+    });
+
+    const prefillText = `${
+      book.title || "Bu kitap"
+    } hakkında paylaşımını gördüm, konuşmak istedim.`;
+
+    router.push({
+      pathname: "/chat/[id]",
+      params: {
+        id: conversationId,
+        prefill: prefillText,
+      },
+    });
+  };
+
+  /**
+   * İlgili paylaşımı aç
+   */
+  const handleOpenRelatedPost = (postId: string) => {
+    router.push({
+      pathname: "/post-comments/[id]" as const,
+      params: { id: postId },
+    });
+  };
+
+  /**
+   * İlerleme yüzdesi
+   */
   const progressPercent =
     book.pagesTotal && book.pagesTotal > 0
       ? Math.round(((book.pagesRead ?? 0) / book.pagesTotal) * 100)
@@ -156,6 +325,7 @@ export default function BookDetail() {
 
   return (
     <ScrollView contentContainerStyle={{ padding: 16, gap: 14 }}>
+      {/* ================= KİTAP KARTI ================= */}
       <View
         style={{
           flexDirection: "row",
@@ -241,6 +411,7 @@ export default function BookDetail() {
         </View>
       </View>
 
+      {/* ================= KİTAP BİLGİSİ ================= */}
       <View
         style={{
           padding: 14,
@@ -264,6 +435,7 @@ export default function BookDetail() {
         )}
       </View>
 
+      {/* ================= OKUMA İLERLEMESİ ================= */}
       {book.status === "reading" && (
         <View
           style={{
@@ -302,6 +474,7 @@ export default function BookDetail() {
         </View>
       )}
 
+      {/* ================= OKUNDU ALANI ================= */}
       {book.status === "read" && (
         <>
           <View
@@ -342,6 +515,7 @@ export default function BookDetail() {
         </>
       )}
 
+      {/* ================= OKUMA LİSTESİ ================= */}
       {book.status === "want" && (
         <View
           style={{
@@ -363,6 +537,126 @@ export default function BookDetail() {
         </View>
       )}
 
+      {/* ================= AYNI KİTABI PAYLAŞANLAR ================= */}
+      <View
+        style={{
+          padding: 14,
+          borderRadius: 14,
+          borderWidth: 1,
+          borderColor: "#eee",
+          backgroundColor: "#fff",
+          gap: 10,
+        }}
+      >
+        <Text style={{ fontWeight: "800", color: "#222" }}>
+          Bu Kitabı Paylaşanlar
+        </Text>
+
+        {relatedPeople.length === 0 ? (
+          <Text style={{ color: "#666", lineHeight: 21 }}>
+            Bu kitapla ilgili henüz topluluk paylaşımı bulunamadı.
+          </Text>
+        ) : (
+          <>
+            <Text style={{ color: "#666", lineHeight: 21 }}>
+              Toplulukta bu kitapla ilgili {relatedPeople.length} kullanıcı
+              paylaşım yapmış.
+            </Text>
+
+            {otherReaders.length === 0 ? (
+              <Text style={{ color: "#666", lineHeight: 21 }}>
+                Şu an yalnızca senin paylaşımın görünüyor.
+              </Text>
+            ) : (
+              otherReaders.map((person) => (
+                <View
+                  key={person.userId}
+                  style={{
+                    padding: 12,
+                    borderRadius: 12,
+                    borderWidth: 1,
+                    borderColor: "#eee",
+                    backgroundColor: "#fafafa",
+                    gap: 10,
+                  }}
+                >
+                  <View
+                    style={{
+                      flexDirection: "row",
+                      gap: 10,
+                      alignItems: "center",
+                    }}
+                  >
+                    {person.userAvatar ? (
+                      <Image
+                        source={{ uri: person.userAvatar }}
+                        style={{
+                          width: 42,
+                          height: 42,
+                          borderRadius: 21,
+                          backgroundColor: "#f1f1f1",
+                        }}
+                      />
+                    ) : (
+                      <View
+                        style={{
+                          width: 42,
+                          height: 42,
+                          borderRadius: 21,
+                          backgroundColor: "#e5e7eb",
+                          alignItems: "center",
+                          justifyContent: "center",
+                        }}
+                      >
+                        <Text style={{ fontWeight: "800", color: "#374151" }}>
+                          {getInitial(person.userName)}
+                        </Text>
+                      </View>
+                    )}
+
+                    <View style={{ flex: 1 }}>
+                      <Text style={{ fontWeight: "800", color: "#111" }}>
+                        {person.userName}
+                      </Text>
+
+                      <Text
+                        style={{ color: "#666", fontSize: 13, lineHeight: 18 }}
+                        numberOfLines={2}
+                      >
+                        “{person.latestShareText || "Paylaşım metni yok"}”
+                      </Text>
+                    </View>
+                  </View>
+
+                  <View
+                    style={{
+                      flexDirection: "row",
+                      gap: 10,
+                      flexWrap: "wrap",
+                    }}
+                  >
+                    <Pressable
+                      onPress={() => handleMessageReader(person)}
+                      style={pillButtonStyle("secondary")}
+                    >
+                      <Text style={{ fontWeight: "800" }}>✉️ Mesaj Gönder</Text>
+                    </Pressable>
+
+                    <Pressable
+                      onPress={() => handleOpenRelatedPost(person.latestPostId)}
+                      style={pillButtonStyle("secondary")}
+                    >
+                      <Text style={{ fontWeight: "800" }}>📣 Paylaşımı Aç</Text>
+                    </Pressable>
+                  </View>
+                </View>
+              ))
+            )}
+          </>
+        )}
+      </View>
+
+      {/* ================= AKSİYONLAR ================= */}
       <Pressable
         onPress={() =>
           router.push({
