@@ -40,7 +40,7 @@ type AddCommentInput = {
 };
 
 /**
- * Context dışına açılan fonksiyon ve veriler
+ * Context dışına açılan yapı
  */
 type PostsContextValue = {
   posts: Post[];
@@ -63,7 +63,7 @@ type PostsContextValue = {
 };
 
 /**
- * Storage anahtarı
+ * Storage key
  */
 const STORAGE_KEY = "POSTS_V2";
 
@@ -132,6 +132,7 @@ function normalizePost(p: any): Post {
 
     likes: typeof p?.likes === "number" ? p.likes : 0,
     isLiked: typeof p?.isLiked === "boolean" ? p.isLiked : false,
+
     comments: Array.isArray(p?.comments)
       ? p.comments.map(normalizeComment)
       : [],
@@ -139,69 +140,44 @@ function normalizePost(p: any): Post {
 }
 
 /**
- * Başlangıç topluluk postları
+ * Seed postları üret
+ * İlk açılışta boş bir topluluk görünmemesi için
  */
-function createSeedPosts(): Post[] {
+function buildSeedPosts(): Post[] {
   const now = Date.now();
 
-  return [
+  return MOCK_USERS.slice(0, 3).map((user, index) =>
     normalizePost({
-      id: "seed_post_1",
-      bookId: "seed_book_1",
-      bookTitle: "Kürk Mantolu Madonna",
-      bookAuthor: "Sabahattin Ali",
-      bookThumbnail:
-        "https://covers.openlibrary.org/b/title/K%C3%BCrk%20Mantolu%20Madonna-M.jpg",
-      userId: MOCK_USERS[0].id,
-      userName: MOCK_USERS[0].name,
-      userAvatar: MOCK_USERS[0].avatar,
-      shareText: "Bitirince uzun süre etkisinden çıkamadım. Dili çok akıcıydı.",
-      createdAt: now - 1000 * 60 * 45,
-      likes: 12,
-      isLiked: false,
-      comments: [
-        {
-          id: "seed_comment_1",
-          text: "Ben de çok sevmiştim.",
-          createdAt: now - 1000 * 60 * 30,
-          userId: MOCK_USERS[2].id,
-          userName: MOCK_USERS[2].name,
-          userAvatar: MOCK_USERS[2].avatar,
-        },
-      ],
-    }),
-    normalizePost({
-      id: "seed_post_2",
-      bookId: "seed_book_2",
-      bookTitle: "1984",
-      bookAuthor: "George Orwell",
-      bookThumbnail: "https://covers.openlibrary.org/b/title/1984-M.jpg",
-      userId: MOCK_USERS[1].id,
-      userName: MOCK_USERS[1].name,
-      userAvatar: MOCK_USERS[1].avatar,
-      shareText: "Bazı cümleler gerçekten bugünü anlatıyor gibi hissettirdi.",
-      createdAt: now - 1000 * 60 * 60 * 3,
-      likes: 9,
+      id: `seed_post_${user.id}`,
+      bookId: `seed_book_${index}`,
+      bookTitle:
+        index === 0
+          ? "Kürk Mantolu Madonna"
+          : index === 1
+            ? "Hamnet"
+            : "The Midnight Library",
+      bookAuthor:
+        index === 0
+          ? "Sabahattin Ali"
+          : index === 1
+            ? "Maggie O'Farrell"
+            : "Matt Haig",
+      bookThumbnail: undefined,
+      userId: user.id,
+      userName: user.name,
+      userAvatar: user.avatar,
+      shareText:
+        index === 0
+          ? "Bitirince uzun süre etkisinden çıkamadım."
+          : index === 1
+            ? "Dili çok güçlüydü, bazı bölümlerde durup düşündüm."
+            : "Yazarın verdiği his çok sakindi.",
+      createdAt: now - index * 1000 * 60 * 60 * 24,
+      likes: [13, 4, 7][index] ?? 0,
       isLiked: false,
       comments: [],
     }),
-    normalizePost({
-      id: "seed_post_3",
-      bookId: "seed_book_3",
-      bookTitle: "Simyacı",
-      bookAuthor: "Paulo Coelho",
-      bookThumbnail:
-        "https://covers.openlibrary.org/b/title/Simyac%C4%B1-M.jpg",
-      userId: MOCK_USERS[3].id,
-      userName: MOCK_USERS[3].name,
-      userAvatar: MOCK_USERS[3].avatar,
-      shareText: "Başlangıcı biraz yavaş ama sonlara doğru çok akıyor.",
-      createdAt: now - 1000 * 60 * 60 * 8,
-      likes: 5,
-      isLiked: false,
-      comments: [],
-    }),
-  ];
+  );
 }
 
 export function PostsProvider({ children }: { children: ReactNode }) {
@@ -209,8 +185,8 @@ export function PostsProvider({ children }: { children: ReactNode }) {
   const [isHydrated, setIsHydrated] = useState(false);
 
   /**
-   * Storage'dan verileri yükle
-   * Veri yoksa seed postları kullan
+   * İlk açılışta storage'dan postları yükle
+   * Veri yoksa seed postlarla başlat
    */
   useEffect(() => {
     let mounted = true;
@@ -223,17 +199,17 @@ export function PostsProvider({ children }: { children: ReactNode }) {
 
         if (raw) {
           const parsed = JSON.parse(raw) as unknown;
+          const safePosts = Array.isArray(parsed)
+            ? parsed.map(normalizePost)
+            : [];
 
-          if (Array.isArray(parsed)) {
-            setPosts((parsed as any[]).map(normalizePost));
-          } else {
-            setPosts(createSeedPosts());
-          }
+          safePosts.sort((a, b) => b.createdAt - a.createdAt);
+          setPosts(safePosts);
         } else {
-          setPosts(createSeedPosts());
+          setPosts(buildSeedPosts());
         }
       } catch {
-        setPosts(createSeedPosts());
+        setPosts(buildSeedPosts());
       } finally {
         if (mounted) setIsHydrated(true);
       }
@@ -245,25 +221,20 @@ export function PostsProvider({ children }: { children: ReactNode }) {
   }, []);
 
   /**
-   * Değişiklikleri storage'a yaz
+   * Postlar değiştikçe storage'a yaz
    */
   useEffect(() => {
     if (!isHydrated) return;
 
-    AsyncStorage.setItem(
-      STORAGE_KEY,
-      JSON.stringify(posts.map(normalizePost)),
-    ).catch(() => {});
+    AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(posts)).catch(() => {});
   }, [posts, isHydrated]);
 
   /**
    * Yeni post ekle
    */
   const addPost: PostsContextValue["addPost"] = (input) => {
-    const id = makeId();
-
     const newPost = normalizePost({
-      id,
+      id: makeId(),
       ...input,
       createdAt: Date.now(),
       likes: 0,
@@ -271,8 +242,8 @@ export function PostsProvider({ children }: { children: ReactNode }) {
       comments: [],
     });
 
-    setPosts((prev) => [newPost, ...prev]);
-    return id;
+    setPosts((prev) => [newPost, ...prev].map(normalizePost));
+    return newPost.id;
   };
 
   /**
@@ -288,65 +259,59 @@ export function PostsProvider({ children }: { children: ReactNode }) {
    * Post sil
    */
   const removePost: PostsContextValue["removePost"] = (id) => {
-    setPosts((prev) => prev.filter((p) => p.id !== id));
+    setPosts((prev) => prev.filter((p) => p.id !== id).map(normalizePost));
   };
 
   /**
    * Like toggle
+   *
+   * isLiked true ise like sayısını 1 azalt
+   * false ise 1 artır
    */
   const toggleLike: PostsContextValue["toggleLike"] = (id) => {
     setPosts((prev) =>
       prev.map((p) => {
         if (p.id !== id) return p;
 
-        const liked = p.isLiked ?? false;
-        const likes = p.likes ?? 0;
+        const nextLiked = !p.isLiked;
+        const nextLikes = Math.max(0, (p.likes ?? 0) + (nextLiked ? 1 : -1));
 
         return normalizePost({
           ...p,
-          isLiked: !liked,
-          likes: liked ? Math.max(0, likes - 1) : likes + 1,
+          isLiked: nextLiked,
+          likes: nextLikes,
         });
       }),
     );
   };
 
   /**
-   * Posta yorum ekle
+   * Yorum ekle
    */
-  const addComment: PostsContextValue["addComment"] = ({
-    postId,
-    text,
-    userId,
-    userName,
-    userAvatar,
-  }) => {
-    const trimmed = text.trim();
-    if (!trimmed) return;
+  const addComment: PostsContextValue["addComment"] = (input) => {
+    const newComment = normalizeComment({
+      id: makeId(),
+      text: input.text,
+      userId: input.userId,
+      userName: input.userName,
+      userAvatar: input.userAvatar,
+      createdAt: Date.now(),
+    });
 
     setPosts((prev) =>
       prev.map((p) => {
-        if (p.id !== postId) return p;
-
-        const nextComment = normalizeComment({
-          id: makeId(),
-          text: trimmed,
-          createdAt: Date.now(),
-          userId,
-          userName,
-          userAvatar,
-        });
+        if (p.id !== input.postId) return p;
 
         return normalizePost({
           ...p,
-          comments: [...p.comments, nextComment],
+          comments: [...(p.comments ?? []), newComment],
         });
       }),
     );
   };
 
   /**
-   * Post yorumunu sil
+   * Yorum sil
    */
   const removeComment: PostsContextValue["removeComment"] = (
     postId,
@@ -358,7 +323,7 @@ export function PostsProvider({ children }: { children: ReactNode }) {
 
         return normalizePost({
           ...p,
-          comments: p.comments.filter((c) => c.id !== commentId),
+          comments: (p.comments ?? []).filter((c) => c.id !== commentId),
         });
       }),
     );
@@ -371,30 +336,33 @@ export function PostsProvider({ children }: { children: ReactNode }) {
     posts.find((p) => p.id === id);
 
   /**
-   * BookId'ye göre postları getir
+   * Aynı kitaba ait postları getir
    */
   const getByBookId: PostsContextValue["getByBookId"] = (bookId) =>
     posts.filter((p) => p.bookId === bookId);
 
   /**
-   * Kullanıcıya göre postları getir
+   * Kullanıcının postlarını getir
    */
   const getByUserId: PostsContextValue["getByUserId"] = (userId) =>
     posts.filter((p) => p.userId === userId);
 
   /**
    * Tüm postları temizle
-   * Seed postlara geri döndür
    */
   const clearAll: PostsContextValue["clearAll"] = async () => {
-    const seed = createSeedPosts();
-    setPosts(seed);
+    setPosts([]);
 
     try {
       await AsyncStorage.removeItem(STORAGE_KEY);
-    } catch {}
+    } catch {
+      // sessiz geç
+    }
   };
 
+  /**
+   * Context value
+   */
   const value = useMemo<PostsContextValue>(
     () => ({
       posts,
@@ -418,6 +386,9 @@ export function PostsProvider({ children }: { children: ReactNode }) {
   );
 }
 
+/**
+ * Context hook
+ */
 export function usePosts() {
   const ctx = useContext(PostsContext);
 

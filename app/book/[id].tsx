@@ -1,5 +1,6 @@
 // app/book/[id].tsx
 
+import { Ionicons } from "@expo/vector-icons";
 import { router, useLocalSearchParams } from "expo-router";
 import React, { useMemo } from "react";
 import { Alert, Image, Pressable, ScrollView, Text, View } from "react-native";
@@ -12,7 +13,28 @@ import { useReadingGoal } from "../../context/ReadingGoalContext";
 import { useReadingLog } from "../../context/ReadingLogContext";
 import { CURRENT_USER } from "../../data/mockUsers";
 import type { BookStatus } from "../../types/book";
-import { buttonStyle, pillButtonStyle } from "../../utils/pressableStyles";
+
+/**
+ * ReadSphere ortak renk paleti
+ * Home / Library / Profile / Chat ile aynı tasarım dilini korur.
+ */
+const COLORS = {
+  bg: "#fbf9f5",
+  card: "#fffdf9",
+  border: "#ece7df",
+  text: "#2f2a24",
+  muted: "#7a7268",
+  primary: "#7d5739",
+  primaryDark: "#6b4a2f",
+  primarySoft: "#f3e2d2",
+  greenSoft: "#dfe7cf",
+  peachSoft: "#f7dfcc",
+  graySoft: "#f3efe8",
+  whiteSoft: "#fff7f4",
+  dangerSoft: "#fff4f4",
+  dangerBorder: "#ffd8d8",
+  dangerText: "#a22b2b",
+};
 
 /**
  * Kitap durum etiketleri
@@ -25,9 +47,6 @@ const statusLabel: Record<BookStatus, string> = {
 
 /**
  * Metni daha güvenli karşılaştırmak için normalize eder
- * Örn:
- * "1984 " -> "1984"
- * " George Orwell " -> "george orwell"
  */
 function normalizeText(value: unknown) {
   if (typeof value !== "string") return "";
@@ -36,11 +55,117 @@ function normalizeText(value: unknown) {
 }
 
 /**
- * Avatar yoksa isimden baş harf çıkarır
+ * Avatar yoksa isimden ilk harf çıkarır
  */
 function getInitial(name?: string) {
   if (!name?.trim()) return "U";
   return name.trim().charAt(0).toUpperCase();
+}
+
+/**
+ * Ortak section kartı
+ */
+function SectionCard({
+  title,
+  children,
+}: {
+  title: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <View
+      style={{
+        padding: 16,
+        borderRadius: 22,
+        borderWidth: 1,
+        borderColor: COLORS.border,
+        backgroundColor: COLORS.card,
+        gap: 12,
+      }}
+    >
+      <Text
+        style={{
+          fontWeight: "900",
+          color: COLORS.text,
+          fontSize: 17,
+        }}
+      >
+        {title}
+      </Text>
+
+      {children}
+    </View>
+  );
+}
+
+/**
+ * Yumuşak pill buton
+ */
+function SoftPillButton({
+  label,
+  icon,
+  onPress,
+  variant = "secondary",
+}: {
+  label: string;
+  icon?: keyof typeof Ionicons.glyphMap;
+  onPress: () => void;
+  variant?: "secondary" | "primary" | "danger";
+}) {
+  const backgroundColor =
+    variant === "primary"
+      ? COLORS.primary
+      : variant === "danger"
+        ? COLORS.dangerSoft
+        : COLORS.graySoft;
+
+  const borderColor =
+    variant === "primary"
+      ? COLORS.primary
+      : variant === "danger"
+        ? COLORS.dangerBorder
+        : COLORS.border;
+
+  const textColor =
+    variant === "primary"
+      ? COLORS.whiteSoft
+      : variant === "danger"
+        ? COLORS.dangerText
+        : COLORS.text;
+
+  return (
+    <Pressable
+      onPress={onPress}
+      style={({ pressed }) => ({
+        paddingHorizontal: 14,
+        paddingVertical: 11,
+        borderRadius: 999,
+        borderWidth: 1,
+        borderColor,
+        backgroundColor: pressed
+          ? variant === "primary"
+            ? COLORS.primaryDark
+            : "#ece6dc"
+          : backgroundColor,
+        flexDirection: "row",
+        alignItems: "center",
+        justifyContent: "center",
+        gap: 8,
+        transform: [{ scale: pressed ? 0.985 : 1 }],
+      })}
+    >
+      {!!icon && <Ionicons name={icon} size={16} color={textColor} />}
+      <Text
+        style={{
+          color: textColor,
+          fontWeight: "900",
+          fontSize: 14,
+        }}
+      >
+        {label}
+      </Text>
+    </Pressable>
+  );
 }
 
 export default function BookDetail() {
@@ -59,36 +184,50 @@ export default function BookDetail() {
   const { addLog } = useReadingLog();
 
   /**
-   * Kitabı bul
+   * İlgili kitabı bul
    */
   const book = id ? getById(id) : undefined;
 
   /**
-   * Kitap bulunamazsa fallback ekranı
+   * Kitap bulunamazsa güvenli boş durum
    */
   if (!book) {
     return (
-      <ScrollView contentContainerStyle={{ padding: 16 }}>
+      <ScrollView
+        style={{ flex: 1, backgroundColor: COLORS.bg }}
+        contentContainerStyle={{ padding: 16 }}
+      >
         <View
           style={{
             marginTop: 20,
             borderWidth: 1,
-            borderColor: "#eee",
-            borderRadius: 18,
-            paddingVertical: 30,
-            paddingHorizontal: 20,
-            backgroundColor: "#fff",
+            borderColor: COLORS.border,
+            borderRadius: 24,
+            paddingVertical: 32,
+            paddingHorizontal: 22,
+            backgroundColor: COLORS.card,
             alignItems: "center",
+            gap: 10,
           }}
         >
-          <Text style={{ fontSize: 40 }}>📚</Text>
+          <View
+            style={{
+              width: 64,
+              height: 64,
+              borderRadius: 32,
+              backgroundColor: COLORS.primarySoft,
+              alignItems: "center",
+              justifyContent: "center",
+            }}
+          >
+            <Ionicons name="book-outline" size={28} color={COLORS.primary} />
+          </View>
 
           <Text
             style={{
-              marginTop: 10,
-              fontSize: 18,
-              fontWeight: "800",
-              color: "#222",
+              fontSize: 20,
+              fontWeight: "900",
+              color: COLORS.text,
             }}
           >
             Kitap bulunamadı
@@ -96,34 +235,29 @@ export default function BookDetail() {
 
           <Text
             style={{
-              marginTop: 6,
-              color: "#666",
+              color: COLORS.muted,
               textAlign: "center",
-              lineHeight: 20,
+              lineHeight: 21,
             }}
           >
             Bu kitap silinmiş olabilir veya geçersiz bir bağlantı açılmış
             olabilir.
           </Text>
 
-          <Pressable
-            onPress={() => router.back()}
-            style={buttonStyle("secondary", { marginTop: 16, minWidth: 120 })}
-          >
-            <Text style={{ fontWeight: "800" }}>Geri</Text>
-          </Pressable>
+          <View style={{ marginTop: 8, minWidth: 140 }}>
+            <SoftPillButton
+              label="Geri"
+              icon="arrow-back-outline"
+              onPress={() => router.back()}
+            />
+          </View>
         </View>
       </ScrollView>
     );
   }
 
   /**
-   * Aynı kitaba ait paylaşımları bul
-   *
-   * Eşleşme mantığı:
-   * 1) bookId birebir aynıysa
-   * 2) ya da title + author normalize edilince eşleşiyorsa
-   * 3) includes ile biraz daha toleranslı davranır
+   * Aynı kitaba ait paylaşım yapan kullanıcıları bul
    */
   const relatedPeople = useMemo(() => {
     const normalizedBookTitle = normalizeText(book.title);
@@ -145,14 +279,12 @@ export default function BookDetail() {
         normalizedPostAuthor.includes(normalizedBookAuthor) ||
         normalizedBookAuthor.includes(normalizedPostAuthor);
 
-      const sameTitleAndAuthor = sameTitle && sameAuthor;
-
-      return sameBookId || sameTitleAndAuthor;
+      return sameBookId || (sameTitle && sameAuthor);
     });
 
     /**
-     * Aynı kullanıcı birden fazla paylaşım yaptıysa
-     * sadece en güncel olanı göster
+     * Aynı kişi birden fazla paylaşım yaptıysa
+     * en yeni paylaşımı temsilci olarak tut
      */
     const uniqueUsersMap = new Map<
       string,
@@ -187,14 +319,14 @@ export default function BookDetail() {
   }, [book.id, book.title, book.author, posts]);
 
   /**
-   * Kendim dışındaki kullanıcılar
+   * Kendim dışındaki okurlar
    */
   const otherReaders = useMemo(() => {
     return relatedPeople.filter((person) => person.userId !== CURRENT_USER.id);
   }, [relatedPeople]);
 
   /**
-   * Kitabı sil
+   * Kitabı silme onayı
    */
   const confirmDelete = () => {
     Alert.alert("Kitabı sil", `"${book.title}" silinecek. Emin misin?`, [
@@ -279,7 +411,6 @@ export default function BookDetail() {
 
   /**
    * Bu kitabı paylaşan kullanıcıya mesaj gönder
-   * Sohbet ekranına hazır metin de taşınır
    */
   const handleMessageReader = (person: {
     userId: string;
@@ -306,7 +437,7 @@ export default function BookDetail() {
   };
 
   /**
-   * İlgili paylaşımı aç
+   * İlgili paylaşım ekranına git
    */
   const handleOpenRelatedPost = (postId: string) => {
     router.push({
@@ -324,26 +455,30 @@ export default function BookDetail() {
       : 0;
 
   return (
-    <ScrollView contentContainerStyle={{ padding: 16, gap: 14 }}>
-      {/* ================= KİTAP KARTI ================= */}
+    <ScrollView
+      style={{ flex: 1, backgroundColor: COLORS.bg }}
+      contentContainerStyle={{ padding: 16, gap: 14, paddingBottom: 120 }}
+    >
+      {/* ================= ÜST KİTAP KARTI ================= */}
       <View
         style={{
           flexDirection: "row",
           gap: 14,
-          padding: 14,
-          borderRadius: 18,
+          padding: 16,
+          borderRadius: 24,
           borderWidth: 1,
-          borderColor: "#eee",
-          backgroundColor: "#fff",
+          borderColor: COLORS.border,
+          backgroundColor: COLORS.card,
         }}
       >
+        {/* Kapak alanı */}
         <View
           style={{
-            width: 100,
-            height: 144,
-            borderRadius: 14,
+            width: 102,
+            height: 148,
+            borderRadius: 16,
             overflow: "hidden",
-            backgroundColor: "#f3f3f3",
+            backgroundColor: COLORS.primarySoft,
             alignItems: "center",
             justifyContent: "center",
           }}
@@ -351,7 +486,7 @@ export default function BookDetail() {
           {book.thumbnail ? (
             <Image
               source={{ uri: book.thumbnail }}
-              style={{ width: 100, height: 144 }}
+              style={{ width: 102, height: 148 }}
               resizeMode="cover"
             />
           ) : (
@@ -361,50 +496,62 @@ export default function BookDetail() {
                 height: "100%",
                 alignItems: "center",
                 justifyContent: "center",
-                backgroundColor: "#f1f1f1",
+                gap: 6,
               }}
             >
-              <Text style={{ fontSize: 28 }}>📚</Text>
-              <Text style={{ fontSize: 11, color: "#777", marginTop: 4 }}>
-                No cover
+              <Ionicons name="book-outline" size={28} color={COLORS.primary} />
+              <Text style={{ fontSize: 11, color: COLORS.muted }}>
+                Kapak yok
               </Text>
             </View>
           )}
         </View>
 
+        {/* Sağ bilgi alanı */}
         <View style={{ flex: 1, gap: 8 }}>
           <Text
-            style={{ fontSize: 22, fontWeight: "900", color: "#1a1a1a" }}
+            style={{ fontSize: 24, fontWeight: "900", color: COLORS.text }}
             numberOfLines={3}
           >
             {book.title}
           </Text>
 
           <Text
-            style={{ color: "#666", fontSize: 15, fontWeight: "700" }}
+            style={{
+              color: COLORS.muted,
+              fontSize: 15,
+              fontWeight: "700",
+            }}
             numberOfLines={2}
           >
             {book.author}
           </Text>
 
+          {/* Durum rozeti */}
           <View
             style={{
               alignSelf: "flex-start",
-              paddingHorizontal: 10,
-              paddingVertical: 6,
+              paddingHorizontal: 12,
+              paddingVertical: 7,
               borderRadius: 999,
               borderWidth: 1,
-              borderColor: "#ddd",
-              backgroundColor: "#fafafa",
+              borderColor: COLORS.border,
+              backgroundColor: COLORS.graySoft,
             }}
           >
-            <Text style={{ fontSize: 12, fontWeight: "700", color: "#444" }}>
+            <Text
+              style={{
+                fontSize: 12,
+                fontWeight: "900",
+                color: COLORS.primary,
+              }}
+            >
               {statusLabel[book.status]}
             </Text>
           </View>
 
           {typeof book.pagesTotal === "number" && book.pagesTotal > 0 ? (
-            <Text style={{ color: "#777", fontSize: 12 }}>
+            <Text style={{ color: COLORS.muted, fontSize: 12 }}>
               Toplam sayfa: {book.pagesTotal}
             </Text>
           ) : null}
@@ -412,159 +559,85 @@ export default function BookDetail() {
       </View>
 
       {/* ================= KİTAP BİLGİSİ ================= */}
-      <View
-        style={{
-          padding: 14,
-          borderRadius: 14,
-          borderWidth: 1,
-          borderColor: "#eee",
-          backgroundColor: "#fff",
-          gap: 8,
-        }}
-      >
-        <Text style={{ fontWeight: "800", color: "#222" }}>Kitap Bilgisi</Text>
-
-        <Text style={{ color: "#555" }}>Durum: {statusLabel[book.status]}</Text>
+      <SectionCard title="Kitap Bilgisi">
+        <Text style={{ color: COLORS.text }}>
+          Durum:{" "}
+          <Text style={{ fontWeight: "900" }}>{statusLabel[book.status]}</Text>
+        </Text>
 
         {typeof book.pagesTotal === "number" && book.pagesTotal > 0 ? (
-          <Text style={{ color: "#555" }}>
+          <Text style={{ color: COLORS.muted }}>
             Sayfa: {book.pagesRead ?? 0} / {book.pagesTotal}
           </Text>
         ) : (
-          <Text style={{ color: "#777" }}>Sayfa bilgisi eklenmemiş.</Text>
+          <Text style={{ color: COLORS.muted }}>Sayfa bilgisi eklenmemiş.</Text>
         )}
-      </View>
+      </SectionCard>
 
       {/* ================= OKUMA İLERLEMESİ ================= */}
       {book.status === "reading" && (
-        <View
-          style={{
-            padding: 14,
-            borderRadius: 14,
-            borderWidth: 1,
-            borderColor: "#eee",
-            backgroundColor: "#fff",
-            gap: 12,
-          }}
-        >
-          <Text style={{ fontWeight: "800", color: "#222" }}>
-            Okuma İlerlemesi
-          </Text>
-
+        <SectionCard title="Okuma İlerlemesi">
           <ProgressBar
             pagesRead={book.pagesRead}
             pagesTotal={book.pagesTotal}
           />
 
-          <Text style={{ textAlign: "center", color: "#666" }}>
+          <Text style={{ textAlign: "center", color: COLORS.muted }}>
             %{progressPercent} tamamlandı
           </Text>
 
-          <Pressable
+          <SoftPillButton
+            label={`+${step} Sayfa Okudum`}
+            icon="add-outline"
             onPress={addPages}
-            disabled={!book.pagesTotal}
-            style={buttonStyle("primary", {
-              opacity: book.pagesTotal ? 1 : 0.6,
-            })}
-          >
-            <Text style={{ color: "#fff", fontWeight: "900" }}>
-              +{step} Sayfa Okudum
-            </Text>
-          </Pressable>
-        </View>
+            variant="primary"
+          />
+        </SectionCard>
       )}
 
       {/* ================= OKUNDU ALANI ================= */}
       {book.status === "read" && (
         <>
-          <View
-            style={{
-              padding: 14,
-              borderRadius: 14,
-              borderWidth: 1,
-              borderColor: "#eee",
-              backgroundColor: "#fff",
-              gap: 8,
-            }}
-          >
-            <Text style={{ fontWeight: "800", color: "#222" }}>Puan</Text>
-
-            <Text style={{ color: "#666", fontSize: 16 }}>
+          <SectionCard title="Puan">
+            <Text style={{ color: COLORS.text, fontSize: 16 }}>
               {book.rating && book.rating > 0
                 ? "★".repeat(book.rating)
                 : "Puan verilmemiş"}
             </Text>
-          </View>
+          </SectionCard>
 
-          <View
-            style={{
-              padding: 14,
-              borderRadius: 14,
-              borderWidth: 1,
-              borderColor: "#eee",
-              backgroundColor: "#fff",
-              gap: 8,
-            }}
-          >
-            <Text style={{ fontWeight: "800", color: "#222" }}>Not</Text>
-
-            <Text style={{ color: "#666", lineHeight: 21 }}>
+          <SectionCard title="Not">
+            <Text style={{ color: COLORS.muted, lineHeight: 22 }}>
               {book.note?.trim()?.length ? book.note : "Henüz not eklenmemiş."}
             </Text>
-          </View>
+          </SectionCard>
         </>
       )}
 
-      {/* ================= OKUMA LİSTESİ ================= */}
+      {/* ================= WANT ALANI ================= */}
       {book.status === "want" && (
-        <View
-          style={{
-            padding: 14,
-            borderRadius: 14,
-            borderWidth: 1,
-            borderColor: "#eee",
-            backgroundColor: "#fff",
-            gap: 8,
-          }}
-        >
-          <Text style={{ fontWeight: "800", color: "#222" }}>
-            Okuma Listesi
-          </Text>
-
-          <Text style={{ color: "#666", lineHeight: 21 }}>
+        <SectionCard title="Okuma Listesi">
+          <Text style={{ color: COLORS.muted, lineHeight: 22 }}>
             Bu kitap daha sonra okunmak üzere listene eklendi.
           </Text>
-        </View>
+        </SectionCard>
       )}
 
-      {/* ================= AYNI KİTABI PAYLAŞANLAR ================= */}
-      <View
-        style={{
-          padding: 14,
-          borderRadius: 14,
-          borderWidth: 1,
-          borderColor: "#eee",
-          backgroundColor: "#fff",
-          gap: 10,
-        }}
-      >
-        <Text style={{ fontWeight: "800", color: "#222" }}>
-          Bu Kitabı Paylaşanlar
-        </Text>
-
+      {/* ================= BU KİTABI PAYLAŞANLAR ================= */}
+      <SectionCard title="Bu Kitabı Paylaşanlar">
         {relatedPeople.length === 0 ? (
-          <Text style={{ color: "#666", lineHeight: 21 }}>
+          <Text style={{ color: COLORS.muted, lineHeight: 22 }}>
             Bu kitapla ilgili henüz topluluk paylaşımı bulunamadı.
           </Text>
         ) : (
           <>
-            <Text style={{ color: "#666", lineHeight: 21 }}>
+            <Text style={{ color: COLORS.muted, lineHeight: 22 }}>
               Toplulukta bu kitapla ilgili {relatedPeople.length} kullanıcı
               paylaşım yapmış.
             </Text>
 
             {otherReaders.length === 0 ? (
-              <Text style={{ color: "#666", lineHeight: 21 }}>
+              <Text style={{ color: COLORS.muted, lineHeight: 22 }}>
                 Şu an yalnızca senin paylaşımın görünüyor.
               </Text>
             ) : (
@@ -572,14 +645,15 @@ export default function BookDetail() {
                 <View
                   key={person.userId}
                   style={{
-                    padding: 12,
-                    borderRadius: 12,
+                    padding: 14,
+                    borderRadius: 18,
                     borderWidth: 1,
-                    borderColor: "#eee",
-                    backgroundColor: "#fafafa",
-                    gap: 10,
+                    borderColor: COLORS.border,
+                    backgroundColor: COLORS.graySoft,
+                    gap: 12,
                   }}
                 >
+                  {/* Kullanıcı satırı */}
                   <View
                     style={{
                       flexDirection: "row",
@@ -591,36 +665,42 @@ export default function BookDetail() {
                       <Image
                         source={{ uri: person.userAvatar }}
                         style={{
-                          width: 42,
-                          height: 42,
-                          borderRadius: 21,
-                          backgroundColor: "#f1f1f1",
+                          width: 44,
+                          height: 44,
+                          borderRadius: 22,
+                          backgroundColor: COLORS.primarySoft,
                         }}
                       />
                     ) : (
                       <View
                         style={{
-                          width: 42,
-                          height: 42,
-                          borderRadius: 21,
-                          backgroundColor: "#e5e7eb",
+                          width: 44,
+                          height: 44,
+                          borderRadius: 22,
+                          backgroundColor: COLORS.primarySoft,
                           alignItems: "center",
                           justifyContent: "center",
                         }}
                       >
-                        <Text style={{ fontWeight: "800", color: "#374151" }}>
+                        <Text
+                          style={{ fontWeight: "900", color: COLORS.primary }}
+                        >
                           {getInitial(person.userName)}
                         </Text>
                       </View>
                     )}
 
                     <View style={{ flex: 1 }}>
-                      <Text style={{ fontWeight: "800", color: "#111" }}>
+                      <Text style={{ fontWeight: "900", color: COLORS.text }}>
                         {person.userName}
                       </Text>
 
                       <Text
-                        style={{ color: "#666", fontSize: 13, lineHeight: 18 }}
+                        style={{
+                          color: COLORS.muted,
+                          fontSize: 13,
+                          lineHeight: 18,
+                        }}
                         numberOfLines={2}
                       >
                         “{person.latestShareText || "Paylaşım metni yok"}”
@@ -628,6 +708,7 @@ export default function BookDetail() {
                     </View>
                   </View>
 
+                  {/* Aksiyonlar */}
                   <View
                     style={{
                       flexDirection: "row",
@@ -635,65 +716,68 @@ export default function BookDetail() {
                       flexWrap: "wrap",
                     }}
                   >
-                    <Pressable
+                    <SoftPillButton
+                      label="Mesaj Gönder"
+                      icon="mail-outline"
                       onPress={() => handleMessageReader(person)}
-                      style={pillButtonStyle("secondary")}
-                    >
-                      <Text style={{ fontWeight: "800" }}>✉️ Mesaj Gönder</Text>
-                    </Pressable>
+                    />
 
-                    <Pressable
+                    <SoftPillButton
+                      label="Paylaşımı Aç"
+                      icon="chatbubble-ellipses-outline"
                       onPress={() => handleOpenRelatedPost(person.latestPostId)}
-                      style={pillButtonStyle("secondary")}
-                    >
-                      <Text style={{ fontWeight: "800" }}>📣 Paylaşımı Aç</Text>
-                    </Pressable>
+                    />
                   </View>
                 </View>
               ))
             )}
           </>
         )}
-      </View>
+      </SectionCard>
 
-      {/* ================= AKSİYONLAR ================= */}
-      <Pressable
+      {/* ================= ALT AKSİYONLAR ================= */}
+      <SoftPillButton
+        label="Düzenle"
+        icon="create-outline"
         onPress={() =>
           router.push({
             pathname: "/edit-book/[id]" as const,
             params: { id: book.id },
           })
         }
-        style={buttonStyle("secondary")}
-      >
-        <Text style={{ fontWeight: "900" }}>Düzenle</Text>
-      </Pressable>
+      />
 
-      <Pressable onPress={cycleStatus} style={buttonStyle("primary")}>
-        <Text style={{ color: "#fff", fontWeight: "900" }}>
-          Durumu Değiştir
-        </Text>
-      </Pressable>
+      <SoftPillButton
+        label="Durumu Değiştir"
+        icon="swap-horizontal-outline"
+        onPress={cycleStatus}
+        variant="primary"
+      />
 
-      <Pressable
+      <SoftPillButton
+        label="Paylaş"
+        icon="share-social-outline"
         onPress={() =>
           router.push({
             pathname: "/share/[id]" as const,
             params: { id: book.id },
           })
         }
-        style={buttonStyle("primary")}
-      >
-        <Text style={{ color: "#fff", fontWeight: "900" }}>Paylaş</Text>
-      </Pressable>
+        variant="primary"
+      />
 
-      <Pressable onPress={confirmDelete} style={buttonStyle("danger")}>
-        <Text style={{ fontWeight: "900", color: "#c00" }}>Kitabı Sil</Text>
-      </Pressable>
+      <SoftPillButton
+        label="Kitabı Sil"
+        icon="trash-outline"
+        onPress={confirmDelete}
+        variant="danger"
+      />
 
-      <Pressable onPress={() => router.back()} style={buttonStyle("secondary")}>
-        <Text style={{ fontWeight: "900" }}>Geri</Text>
-      </Pressable>
+      <SoftPillButton
+        label="Geri"
+        icon="arrow-back-outline"
+        onPress={() => router.back()}
+      />
     </ScrollView>
   );
 }

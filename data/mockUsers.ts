@@ -3,17 +3,48 @@
 import type { ChatParticipant } from "../types/chat";
 
 /**
- * Uygulamadaki aktif mock kullanıcı
+ * ===============================
+ * 🔹 AKTİF KULLANICI (CURRENT USER)
+ * ===============================
+ *
+ * Uygulamada giriş yapan kullanıcıyı temsil eder.
+ *
+ * Not:
+ * - Şu an mock (sabit veri)
+ * - İleride backend + auth geldiğinde burası dinamik olacak
  */
 export const CURRENT_USER: ChatParticipant = {
   id: "u_me",
+
+  /**
+   * Kullanıcı adı
+   */
   name: "Ecesu",
+
+  /**
+   * Avatar:
+   * ui-avatars servisi ile dinamik oluşturuluyor
+   *
+   * Parametreler:
+   * - name: isim
+   * - background: arka plan rengi
+   * - color: yazı rengi
+   */
   avatar:
     "https://ui-avatars.com/api/?name=Ecesu&background=111111&color=ffffff",
 };
 
 /**
- * Yeni sohbet başlatırken gösterilecek diğer mock kullanıcılar
+ * ===============================
+ * 🔹 MOCK KULLANICILAR
+ * ===============================
+ *
+ * Amaç:
+ * - Yeni sohbet başlatma ekranında kullanıcı listesi göstermek
+ * - Gerçek backend yokken test edebilmek
+ *
+ * Not:
+ * - İleride backend'den gelecek user listesi ile değiştirilecek
  */
 export const MOCK_USERS: ChatParticipant[] = [
   {

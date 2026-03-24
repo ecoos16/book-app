@@ -1,5 +1,6 @@
 // app/comments/[id].tsx
 
+import { Ionicons } from "@expo/vector-icons";
 import { router, useLocalSearchParams } from "expo-router";
 import React, { useMemo, useState } from "react";
 import {
@@ -14,24 +15,100 @@ import { useBooks } from "../../context/BooksContext";
 import type { BookComment } from "../../types/book";
 
 /**
+ * Ortak renk paleti
+ */
+const COLORS = {
+  bg: "#fbf9f5",
+  card: "#fffdf9",
+  border: "#ece7df",
+  text: "#2f2a24",
+  muted: "#7a7268",
+  primary: "#7d5739",
+  primaryDark: "#6b4a2f",
+  primarySoft: "#f3e2d2",
+  graySoft: "#f3efe8",
+  whiteSoft: "#fff7f4",
+  dangerSoft: "#fff4f4",
+  dangerBorder: "#ffd8d8",
+  dangerText: "#a22b2b",
+};
+
+/**
  * Basit benzersiz id üretici
- * Yeni yorum eklerken kullanıyoruz
  */
 function makeId() {
   return `${Date.now()}_${Math.random().toString(16).slice(2)}`;
 }
 
+/**
+ * Ortak buton
+ */
+function SoftButton({
+  label,
+  icon,
+  onPress,
+  variant = "secondary",
+}: {
+  label: string;
+  icon?: keyof typeof Ionicons.glyphMap;
+  onPress: () => void;
+  variant?: "secondary" | "primary" | "danger";
+}) {
+  const backgroundColor =
+    variant === "primary"
+      ? COLORS.primary
+      : variant === "danger"
+        ? COLORS.dangerSoft
+        : COLORS.graySoft;
+
+  const borderColor =
+    variant === "primary"
+      ? COLORS.primary
+      : variant === "danger"
+        ? COLORS.dangerBorder
+        : COLORS.border;
+
+  const textColor =
+    variant === "primary"
+      ? COLORS.whiteSoft
+      : variant === "danger"
+        ? COLORS.dangerText
+        : COLORS.text;
+
+  return (
+    <Pressable
+      onPress={onPress}
+      style={({ pressed }) => ({
+        paddingVertical: 13,
+        paddingHorizontal: 16,
+        borderRadius: 16,
+        borderWidth: 1,
+        borderColor,
+        backgroundColor: pressed
+          ? variant === "primary"
+            ? COLORS.primaryDark
+            : "#ece6dc"
+          : backgroundColor,
+        alignItems: "center",
+        justifyContent: "center",
+        flexDirection: "row",
+        gap: 8,
+      })}
+    >
+      {!!icon && <Ionicons name={icon} size={16} color={textColor} />}
+      <Text style={{ color: textColor, fontWeight: "900" }}>{label}</Text>
+    </Pressable>
+  );
+}
+
 export default function CommentsScreen() {
   /**
    * Route parametresi
-   * Örn: /comments/123
    */
   const { id } = useLocalSearchParams<{ id: string }>();
 
   /**
-   * Context içinden:
-   * - kitabı getir
-   * - yorumları updateBook ile güncelle
+   * Context içinden kitabı getir ve güncelle
    */
   const { getById, updateBook } = useBooks();
 
@@ -41,36 +118,54 @@ export default function CommentsScreen() {
   const book = id ? getById(id) : undefined;
 
   /**
-   * Yeni yorum input state'i
+   * Yeni yorum input state
    */
   const [text, setText] = useState("");
 
   /**
-   * Kitap bulunamazsa güvenli boş durum ekranı göster
+   * Kitap yoksa güvenli boş durum
    */
   if (!book) {
     return (
-      <ScrollView contentContainerStyle={{ padding: 16 }}>
+      <ScrollView
+        style={{ flex: 1, backgroundColor: COLORS.bg }}
+        contentContainerStyle={{ padding: 16 }}
+      >
         <View
           style={{
             marginTop: 20,
             borderWidth: 1,
-            borderColor: "#eee",
-            borderRadius: 18,
-            paddingVertical: 30,
-            paddingHorizontal: 20,
-            backgroundColor: "#fff",
+            borderColor: COLORS.border,
+            borderRadius: 24,
+            paddingVertical: 32,
+            paddingHorizontal: 22,
+            backgroundColor: COLORS.card,
             alignItems: "center",
+            gap: 10,
           }}
         >
-          <Text style={{ fontSize: 40 }}>💬</Text>
+          <View
+            style={{
+              width: 64,
+              height: 64,
+              borderRadius: 32,
+              backgroundColor: COLORS.primarySoft,
+              alignItems: "center",
+              justifyContent: "center",
+            }}
+          >
+            <Ionicons
+              name="chatbubble-ellipses-outline"
+              size={28}
+              color={COLORS.primary}
+            />
+          </View>
 
           <Text
             style={{
-              marginTop: 10,
-              fontSize: 18,
-              fontWeight: "800",
-              color: "#222",
+              fontSize: 20,
+              fontWeight: "900",
+              color: COLORS.text,
             }}
           >
             Kitap bulunamadı
@@ -78,31 +173,22 @@ export default function CommentsScreen() {
 
           <Text
             style={{
-              marginTop: 6,
-              color: "#666",
+              color: COLORS.muted,
               textAlign: "center",
-              lineHeight: 20,
+              lineHeight: 21,
             }}
           >
             Bu kayıt silinmiş olabilir veya geçersiz bir yorum bağlantısı
             açılmış olabilir.
           </Text>
 
-          <Pressable
-            onPress={() => router.back()}
-            style={{
-              marginTop: 16,
-              paddingVertical: 12,
-              paddingHorizontal: 24,
-              borderRadius: 12,
-              borderWidth: 1,
-              borderColor: "#ddd",
-              alignItems: "center",
-              backgroundColor: "#fff",
-            }}
-          >
-            <Text style={{ fontWeight: "800" }}>Geri</Text>
-          </Pressable>
+          <View style={{ marginTop: 8, minWidth: 140 }}>
+            <SoftButton
+              label="Geri"
+              icon="arrow-back-outline"
+              onPress={() => router.back()}
+            />
+          </View>
         </View>
       </ScrollView>
     );
@@ -110,7 +196,6 @@ export default function CommentsScreen() {
 
   /**
    * Kitabın yorum listesi
-   * comments alanı yoksa boş array kullan
    */
   const comments = useMemo<BookComment[]>(
     () => book.comments ?? [],
@@ -128,9 +213,6 @@ export default function CommentsScreen() {
       return;
     }
 
-    /**
-     * Mevcut yorumların sonuna yeni yorum eklenir
-     */
     const next: BookComment[] = [
       ...comments,
       {
@@ -145,8 +227,7 @@ export default function CommentsScreen() {
   };
 
   /**
-   * Yorum silme
-   * Şimdilik index ile siliyoruz
+   * Yorum sil
    */
   const removeComment = (index: number) => {
     Alert.alert("Yorum silinsin mi?", "Bu yorum kaldırılacak.", [
@@ -163,11 +244,23 @@ export default function CommentsScreen() {
   };
 
   return (
-    <ScrollView contentContainerStyle={{ padding: 16, gap: 14 }}>
+    <ScrollView
+      style={{ flex: 1, backgroundColor: COLORS.bg }}
+      contentContainerStyle={{ padding: 16, gap: 14, paddingBottom: 120 }}
+    >
       {/* Sayfa başlığı */}
       <View style={{ gap: 4 }}>
-        <Text style={{ fontSize: 24, fontWeight: "900" }}>Yorumlar</Text>
-        <Text style={{ color: "#666" }}>
+        <Text
+          style={{
+            fontSize: 28,
+            fontWeight: "900",
+            color: COLORS.text,
+          }}
+        >
+          Yorumlar
+        </Text>
+
+        <Text style={{ color: COLORS.muted }}>
           {book.title} • {comments.length} yorum
         </Text>
       </View>
@@ -176,42 +269,47 @@ export default function CommentsScreen() {
       <View
         style={{
           borderWidth: 1,
-          borderColor: "#eee",
-          borderRadius: 16,
-          padding: 14,
-          backgroundColor: "#fff",
-          gap: 10,
+          borderColor: COLORS.border,
+          borderRadius: 22,
+          padding: 16,
+          backgroundColor: COLORS.card,
+          gap: 12,
         }}
       >
-        <Text style={{ fontWeight: "800" }}>Yorum Yaz</Text>
+        <Text
+          style={{
+            fontWeight: "900",
+            fontSize: 17,
+            color: COLORS.text,
+          }}
+        >
+          Yorum Yaz
+        </Text>
 
         <TextInput
           value={text}
           onChangeText={setText}
           placeholder="Bu kitap hakkında düşünceni yaz..."
+          placeholderTextColor="#9a9389"
           multiline
           style={{
             borderWidth: 1,
-            borderColor: "#ddd",
-            borderRadius: 12,
-            padding: 12,
-            minHeight: 100,
+            borderColor: COLORS.border,
+            borderRadius: 16,
+            padding: 14,
+            minHeight: 110,
             textAlignVertical: "top",
-            backgroundColor: "#fafafa",
+            backgroundColor: COLORS.graySoft,
+            color: COLORS.text,
           }}
         />
 
-        <Pressable
+        <SoftButton
+          label="Yorumu Ekle"
+          icon="add-outline"
           onPress={addComment}
-          style={{
-            backgroundColor: "#111",
-            paddingVertical: 12,
-            borderRadius: 12,
-            alignItems: "center",
-          }}
-        >
-          <Text style={{ color: "#fff", fontWeight: "900" }}>Yorumu Ekle</Text>
-        </Pressable>
+          variant="primary"
+        />
       </View>
 
       {/* Yorum listesi */}
@@ -219,22 +317,37 @@ export default function CommentsScreen() {
         <View
           style={{
             borderWidth: 1,
-            borderColor: "#eee",
-            borderRadius: 18,
-            paddingVertical: 28,
-            paddingHorizontal: 20,
-            backgroundColor: "#fff",
+            borderColor: COLORS.border,
+            borderRadius: 24,
+            paddingVertical: 30,
+            paddingHorizontal: 22,
+            backgroundColor: COLORS.card,
             alignItems: "center",
+            gap: 10,
           }}
         >
-          <Text style={{ fontSize: 34 }}>💭</Text>
+          <View
+            style={{
+              width: 60,
+              height: 60,
+              borderRadius: 30,
+              backgroundColor: COLORS.primarySoft,
+              alignItems: "center",
+              justifyContent: "center",
+            }}
+          >
+            <Ionicons
+              name="chatbubble-outline"
+              size={26}
+              color={COLORS.primary}
+            />
+          </View>
 
           <Text
             style={{
-              marginTop: 10,
-              fontSize: 17,
-              fontWeight: "800",
-              color: "#222",
+              fontSize: 18,
+              fontWeight: "900",
+              color: COLORS.text,
             }}
           >
             Henüz yorum yok
@@ -242,10 +355,9 @@ export default function CommentsScreen() {
 
           <Text
             style={{
-              marginTop: 6,
-              color: "#666",
+              color: COLORS.muted,
               textAlign: "center",
-              lineHeight: 20,
+              lineHeight: 21,
             }}
           >
             Bu kitap için ilk yorumu sen yazabilirsin.
@@ -259,49 +371,48 @@ export default function CommentsScreen() {
             delayLongPress={250}
             style={{
               borderWidth: 1,
-              borderColor: "#eee",
-              borderRadius: 14,
-              padding: 12,
-              backgroundColor: "#fff",
+              borderColor: COLORS.border,
+              borderRadius: 18,
+              padding: 14,
+              backgroundColor: COLORS.card,
               gap: 8,
             }}
           >
-            {/* Yorum üst başlığı */}
+            {/* Yorum üst alanı */}
             <View
-              style={{ flexDirection: "row", justifyContent: "space-between" }}
+              style={{
+                flexDirection: "row",
+                justifyContent: "space-between",
+                alignItems: "center",
+                gap: 10,
+              }}
             >
-              <Text style={{ fontWeight: "800", color: "#222" }}>Yorum</Text>
+              <Text style={{ fontWeight: "900", color: COLORS.text }}>
+                Yorum
+              </Text>
 
-              <Text style={{ color: "#aaa", fontSize: 12 }}>
+              <Text style={{ color: COLORS.muted, fontSize: 12 }}>
                 {new Date(c.createdAt).toLocaleDateString("tr-TR")}
               </Text>
             </View>
 
             {/* Yorum metni */}
-            <Text style={{ color: "#444", lineHeight: 20 }}>{c.text}</Text>
+            <Text style={{ color: COLORS.text, lineHeight: 21 }}>{c.text}</Text>
 
-            {/* Yardımcı bilgi */}
-            <Text style={{ color: "#aaa", fontSize: 12 }}>
+            {/* Yardım metni */}
+            <Text style={{ color: COLORS.muted, fontSize: 12 }}>
               Uzun bas: yorumu sil
             </Text>
           </Pressable>
         ))
       )}
 
-      {/* Geri butonu */}
-      <Pressable
+      {/* Geri */}
+      <SoftButton
+        label="Geri"
+        icon="arrow-back-outline"
         onPress={() => router.back()}
-        style={{
-          paddingVertical: 14,
-          borderRadius: 14,
-          alignItems: "center",
-          borderWidth: 1,
-          borderColor: "#ddd",
-          backgroundColor: "#fff",
-        }}
-      >
-        <Text style={{ fontWeight: "900" }}>Geri</Text>
-      </Pressable>
+      />
     </ScrollView>
   );
 }

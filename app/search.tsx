@@ -1,5 +1,6 @@
 // app/search.tsx
 
+import { Ionicons } from "@expo/vector-icons";
 import { router, useLocalSearchParams } from "expo-router";
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
@@ -16,6 +17,25 @@ import { BookStatus } from "../types/book";
 import { GoogleBook } from "../types/googleBooks";
 
 /**
+ * Ortak renk paleti
+ */
+const COLORS = {
+  bg: "#fbf9f5",
+  card: "#fffdf9",
+  border: "#ece7df",
+  text: "#2f2a24",
+  muted: "#7a7268",
+  primary: "#7d5739",
+  primaryDark: "#6b4a2f",
+  primarySoft: "#f3e2d2",
+  graySoft: "#f3efe8",
+  whiteSoft: "#fff7f4",
+  errorSoft: "#fff4f4",
+  errorBorder: "#ffd8d8",
+  errorText: "#a22b2b",
+};
+
+/**
  * Girilen değeri belirli süre geciktirerek döndüren custom hook
  *
  * Amaç:
@@ -27,7 +47,6 @@ function useDebouncedValue<T>(value: T, delayMs: number) {
 
   useEffect(() => {
     const t = setTimeout(() => setDebounced(value), delayMs);
-
     return () => clearTimeout(t);
   }, [value, delayMs]);
 
@@ -113,7 +132,6 @@ export default function SearchScreen() {
       setLoading(false);
 
       inFlightQueryRef.current = null;
-
       abortRef.current?.abort();
       abortRef.current = null;
 
@@ -158,7 +176,6 @@ export default function SearchScreen() {
         }
       } catch (e: any) {
         if (cancelled) return;
-
         if (e?.name === "AbortError") return;
 
         const msg = String(e?.message ?? "Bir hata oluştu");
@@ -175,9 +192,6 @@ export default function SearchScreen() {
       } finally {
         if (!cancelled) setLoading(false);
 
-        /**
-         * Bu sorgu bittiyse inFlight ref'ini boşalt
-         */
         if (inFlightQueryRef.current === trimmed) {
           inFlightQueryRef.current = null;
         }
@@ -243,56 +257,75 @@ export default function SearchScreen() {
   }
 
   return (
-    <View style={{ flex: 1, padding: 16, gap: 12 }}>
+    <View
+      style={{
+        flex: 1,
+        backgroundColor: COLORS.bg,
+        padding: 16,
+        gap: 12,
+      }}
+    >
       {/* Üst başlık alanı */}
       <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
         <Pressable
           onPress={() => router.back()}
-          style={{
-            paddingVertical: 10,
+          style={({ pressed }) => ({
+            paddingVertical: 11,
             paddingHorizontal: 14,
-            borderRadius: 12,
+            borderRadius: 14,
             borderWidth: 1,
-            borderColor: "#ddd",
-            backgroundColor: "#fff",
-          }}
+            borderColor: COLORS.border,
+            backgroundColor: pressed ? "#ece6dc" : COLORS.card,
+            flexDirection: "row",
+            alignItems: "center",
+            gap: 6,
+          })}
         >
-          <Text style={{ fontWeight: "900" }}>Geri</Text>
+          <Ionicons name="arrow-back-outline" size={16} color={COLORS.text} />
+          <Text style={{ fontWeight: "900", color: COLORS.text }}>Geri</Text>
         </Pressable>
 
-        <Text style={{ fontSize: 22, fontWeight: "900" }}>Kitap Ara</Text>
+        <Text style={{ fontSize: 26, fontWeight: "900", color: COLORS.text }}>
+          Kitap Ara
+        </Text>
       </View>
 
       {/* Arama input alanı */}
       <View
         style={{
           borderWidth: 1,
-          borderColor: "#ddd",
-          borderRadius: 14,
-          paddingHorizontal: 12,
-          paddingVertical: 10,
-          backgroundColor: "#fff",
+          borderColor: COLORS.border,
+          borderRadius: 18,
+          paddingHorizontal: 14,
+          paddingVertical: 12,
+          backgroundColor: COLORS.card,
+          flexDirection: "row",
+          alignItems: "center",
+          gap: 10,
         }}
       >
+        <Ionicons name="search-outline" size={18} color={COLORS.muted} />
+
         <TextInput
           value={query}
           onChangeText={setQuery}
           placeholder="Kitap adı, yazar…"
+          placeholderTextColor="#9a9389"
           autoCapitalize="none"
           autoCorrect={false}
-          style={{ fontSize: 16 }}
+          style={{ fontSize: 16, color: COLORS.text, flex: 1 }}
         />
       </View>
 
       {/* Yardımcı metin */}
       {!!helperText && (
-        <Text style={{ color: "#666", fontSize: 12 }}>{helperText}</Text>
+        <Text style={{ color: COLORS.muted, fontSize: 12 }}>{helperText}</Text>
       )}
 
       {/* Loading göstergesi */}
       {loading && (
         <View style={{ paddingVertical: 10 }}>
-          <ActivityIndicator />
+          <ActivityIndicator color={COLORS.primary} />
         </View>
       )}
 
@@ -301,14 +334,22 @@ export default function SearchScreen() {
         <View
           style={{
             padding: 14,
-            borderRadius: 14,
+            borderRadius: 16,
             borderWidth: 1,
-            borderColor: "#f2b8b5",
-            backgroundColor: "#fff",
+            borderColor: COLORS.errorBorder,
+            backgroundColor: COLORS.errorSoft,
           }}
         >
-          <Text style={{ fontWeight: "900", marginBottom: 6 }}>Hata</Text>
-          <Text style={{ color: "#555" }}>{error}</Text>
+          <Text
+            style={{
+              fontWeight: "900",
+              marginBottom: 6,
+              color: COLORS.errorText,
+            }}
+          >
+            Hata
+          </Text>
+          <Text style={{ color: COLORS.errorText }}>{error}</Text>
         </View>
       )}
 
@@ -318,22 +359,33 @@ export default function SearchScreen() {
           style={{
             marginTop: 10,
             borderWidth: 1,
-            borderColor: "#eee",
-            borderRadius: 18,
+            borderColor: COLORS.border,
+            borderRadius: 22,
             paddingVertical: 30,
             paddingHorizontal: 20,
-            backgroundColor: "#fff",
+            backgroundColor: COLORS.card,
             alignItems: "center",
           }}
         >
-          <Text style={{ fontSize: 42 }}>🔎</Text>
+          <View
+            style={{
+              width: 64,
+              height: 64,
+              borderRadius: 32,
+              backgroundColor: COLORS.primarySoft,
+              alignItems: "center",
+              justifyContent: "center",
+            }}
+          >
+            <Ionicons name="search-outline" size={30} color={COLORS.primary} />
+          </View>
 
           <Text
             style={{
-              marginTop: 10,
-              fontSize: 17,
-              fontWeight: "800",
-              color: "#222",
+              marginTop: 12,
+              fontSize: 18,
+              fontWeight: "900",
+              color: COLORS.text,
             }}
           >
             Yeni bir kitap keşfet
@@ -342,7 +394,7 @@ export default function SearchScreen() {
           <Text
             style={{
               marginTop: 6,
-              color: "#666",
+              color: COLORS.muted,
               textAlign: "center",
               lineHeight: 20,
             }}
@@ -359,22 +411,33 @@ export default function SearchScreen() {
           style={{
             marginTop: 10,
             borderWidth: 1,
-            borderColor: "#eee",
-            borderRadius: 18,
+            borderColor: COLORS.border,
+            borderRadius: 22,
             paddingVertical: 30,
             paddingHorizontal: 20,
-            backgroundColor: "#fff",
+            backgroundColor: COLORS.card,
             alignItems: "center",
           }}
         >
-          <Text style={{ fontSize: 38 }}>📭</Text>
+          <View
+            style={{
+              width: 64,
+              height: 64,
+              borderRadius: 32,
+              backgroundColor: COLORS.graySoft,
+              alignItems: "center",
+              justifyContent: "center",
+            }}
+          >
+            <Ionicons name="book-outline" size={28} color={COLORS.primary} />
+          </View>
 
           <Text
             style={{
-              marginTop: 10,
-              fontSize: 17,
-              fontWeight: "800",
-              color: "#222",
+              marginTop: 12,
+              fontSize: 18,
+              fontWeight: "900",
+              color: COLORS.text,
             }}
           >
             Sonuç bulunamadı
@@ -383,7 +446,7 @@ export default function SearchScreen() {
           <Text
             style={{
               marginTop: 6,
-              color: "#666",
+              color: COLORS.muted,
               textAlign: "center",
               lineHeight: 20,
             }}
@@ -405,25 +468,25 @@ export default function SearchScreen() {
             return (
               <Pressable
                 onPress={() => onSelect(item)}
-                style={{
+                style={({ pressed }) => ({
                   flexDirection: "row",
                   gap: 12,
                   padding: 12,
-                  borderRadius: 16,
+                  borderRadius: 18,
                   borderWidth: 1,
-                  borderColor: "#eee",
+                  borderColor: COLORS.border,
                   alignItems: "center",
-                  backgroundColor: "#fff",
-                }}
+                  backgroundColor: pressed ? "#f5efe7" : COLORS.card,
+                })}
               >
                 {/* Kapak */}
                 <View
                   style={{
-                    width: 56,
-                    height: 80,
-                    borderRadius: 10,
+                    width: 58,
+                    height: 84,
+                    borderRadius: 12,
                     overflow: "hidden",
-                    backgroundColor: "#f3f3f3",
+                    backgroundColor: COLORS.primarySoft,
                     alignItems: "center",
                     justifyContent: "center",
                   }}
@@ -431,7 +494,7 @@ export default function SearchScreen() {
                   {item.thumbnail ? (
                     <Image
                       source={{ uri: item.thumbnail }}
-                      style={{ width: 56, height: 80 }}
+                      style={{ width: 58, height: 84 }}
                       resizeMode="cover"
                     />
                   ) : (
@@ -441,18 +504,17 @@ export default function SearchScreen() {
                         height: "100%",
                         alignItems: "center",
                         justifyContent: "center",
-                        backgroundColor: "#f1f1f1",
+                        backgroundColor: COLORS.primarySoft,
+                        gap: 2,
                       }}
                     >
-                      <Text style={{ fontSize: 22 }}>📚</Text>
-                      <Text
-                        style={{
-                          fontSize: 10,
-                          color: "#777",
-                          marginTop: 2,
-                        }}
-                      >
-                        No cover
+                      <Ionicons
+                        name="book-outline"
+                        size={24}
+                        color={COLORS.primary}
+                      />
+                      <Text style={{ fontSize: 10, color: COLORS.muted }}>
+                        Kapak yok
                       </Text>
                     </View>
                   )}
@@ -465,19 +527,19 @@ export default function SearchScreen() {
                     style={{
                       fontWeight: "900",
                       fontSize: 15,
-                      color: "#1a1a1a",
+                      color: COLORS.text,
                     }}
                   >
                     {item.title}
                   </Text>
 
-                  <Text numberOfLines={1} style={{ color: "#444" }}>
+                  <Text numberOfLines={1} style={{ color: COLORS.muted }}>
                     {author}
                   </Text>
 
                   <Text
                     numberOfLines={1}
-                    style={{ color: "#777", fontSize: 12 }}
+                    style={{ color: COLORS.muted, fontSize: 12 }}
                   >
                     {item.pageCount
                       ? `${item.pageCount} sayfa`

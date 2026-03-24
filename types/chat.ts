@@ -2,7 +2,9 @@
 
 /**
  * Sohbet katılımcısı
- * Kullanıcıların chat içindeki hafif özeti
+ *
+ * Chat listesinde ve konuşma ekranında
+ * kullanıcıyı hafif özetle temsil eder.
  */
 export type ChatParticipant = {
   id: string;
@@ -11,10 +13,17 @@ export type ChatParticipant = {
 };
 
 /**
- * Tek bir mesaj
+ * Tek bir mesaj modeli
  */
 export type Message = {
+  /**
+   * Mesajın benzersiz id'si
+   */
   id: string;
+
+  /**
+   * Mesajın bağlı olduğu konuşma
+   */
   conversationId: string;
 
   /**
@@ -31,45 +40,57 @@ export type Message = {
 
   /**
    * Oluşturulma zamanı
+   * Unix timestamp
    */
   createdAt: number;
 
   /**
    * Okunma bilgisi
-   * Şimdilik özellikle karşı taraftan gelen mesajlarda kullanılıyor
+   *
+   * Şimdilik özellikle karşı taraftan gelen mesajlarda kullanılıyor.
+   * Eski kayıtlarla uyumluluk için opsiyonel bırakıldı.
    */
   isRead?: boolean;
 };
 
 /**
  * Konuşma / sohbet kaydı
- * Liste ekranında hızlı göstermek için son mesaj özeti de tutulur
+ *
+ * Chat liste ekranında hızlı göstermek için
+ * son mesaj özeti ve bağlam alanları da tutuluyor.
  */
 export type Conversation = {
+  /**
+   * Konuşma id'si
+   */
   id: string;
 
   /**
-   * Konuşmaya dahil olan kişiler
+   * Konuşmaya dahil olan kullanıcılar
    */
   participants: ChatParticipant[];
 
   /**
    * Son mesaj özeti
+   * Liste ekranında hızlı gösterim için kullanılabilir
    */
   lastMessageText?: string;
   lastMessageAt?: number;
   lastSenderId?: string;
 
   /**
-   * İleride posttan / kitaptan başlatılan sohbetler için
-   * küçük bağlam alanı bırakıyoruz
-   * Şu an opsiyonel, sonra kullanacağız
+   * Sohbetin hangi bağlamdan doğduğunu belirtmek için
+   * opsiyonel alan bırakıyoruz.
+   *
+   * direct -> direkt kullanıcılar arası
+   * post   -> bir paylaşım üzerinden başlatılmış
+   * book   -> bir kitap üzerinden başlatılmış
    */
   sourceType?: "direct" | "post" | "book";
   sourceId?: string;
 
   /**
-   * Oluşturulma ve güncellenme zamanı
+   * Oluşturulma ve son güncellenme zamanı
    */
   createdAt: number;
   updatedAt: number;

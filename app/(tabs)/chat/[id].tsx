@@ -1,3 +1,6 @@
+// app/(tabs)/chat/[id].tsx
+
+import { Ionicons } from "@expo/vector-icons";
 import { router, useLocalSearchParams } from "expo-router";
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
@@ -14,6 +17,22 @@ import {
 import { useChat } from "../../../context/ChatContext";
 import { CURRENT_USER } from "../../../data/mockUsers";
 import type { ChatParticipant, Message } from "../../../types/chat";
+
+/**
+ * Ortak renk paleti
+ */
+const COLORS = {
+  bg: "#fbf9f5",
+  card: "#fffdf9",
+  border: "#ece7df",
+  text: "#2f2a24",
+  muted: "#7a7268",
+  primary: "#7d5739",
+  primaryDark: "#6b4a2f",
+  primarySoft: "#f3e2d2",
+  graySoft: "#f3efe8",
+  whiteSoft: "#fff7f4",
+};
 
 /**
  * Mesaj saatini HH:mm formatında gösterir
@@ -40,8 +59,6 @@ function getInitials(name: string) {
 export default function ChatDetailScreen() {
   /**
    * Route parametreleri
-   * id -> konuşma id
-   * prefill -> dışarıdan hazır mesaj metni
    */
   const { id, prefill } = useLocalSearchParams<{
     id: string;
@@ -49,7 +66,7 @@ export default function ChatDetailScreen() {
   }>();
 
   /**
-   * Chat context verileri
+   * Chat context
    */
   const {
     getConversationById,
@@ -70,7 +87,7 @@ export default function ChatDetailScreen() {
   const prefillAppliedRef = useRef(false);
 
   /**
-   * Mesaj listesi referansı
+   * Liste referansı
    */
   const listRef = useRef<FlatList<Message>>(null);
 
@@ -83,7 +100,7 @@ export default function ChatDetailScreen() {
   }, [id, getConversationById]);
 
   /**
-   * Bu konuşmanın mesajları
+   * Mesajlar
    */
   const messages = useMemo(() => {
     if (!id) return [];
@@ -91,7 +108,7 @@ export default function ChatDetailScreen() {
   }, [id, getMessagesByConversationId]);
 
   /**
-   * Karşı tarafı bul
+   * Karşı taraf
    */
   const otherUser = useMemo(() => {
     return conversation?.participants.find(
@@ -108,14 +125,14 @@ export default function ChatDetailScreen() {
   }, [id, typingByConversation]);
 
   /**
-   * Input boşsa gönder butonunu pasif yap
+   * Gönder butonu aktif mi?
    */
   const isSendDisabled = useMemo(() => {
     return text.trim().length === 0;
   }, [text]);
 
   /**
-   * Son mesajı bul
+   * Son mesaj
    */
   const lastMessage = useMemo(() => {
     if (!messages.length) return undefined;
@@ -130,18 +147,16 @@ export default function ChatDetailScreen() {
   }, [lastMessage]);
 
   /**
-   * Son benim mesajım için küçük durum metni
+   * Benim son mesajım için küçük durum metni
    */
   const lastOwnMessageStatus = useMemo(() => {
     if (!lastMessage || !isLastMessageMine) return null;
-
     if (isTyping) return "Yanıt yazıyor...";
-
     return "Gönderildi";
   }, [lastMessage, isLastMessageMine, isTyping]);
 
   /**
-   * Dışarıdan prefill geldiyse input'a yalnızca bir kez yerleştir
+   * Prefill input'a bir kez yerleştir
    */
   useEffect(() => {
     if (prefillAppliedRef.current) return;
@@ -153,15 +168,22 @@ export default function ChatDetailScreen() {
   }, [prefill]);
 
   /**
-   * Sohbet açılınca karşı taraftan gelen mesajları okundu say
+   * Sohbet ekranı açılınca sadece ilgili konuşmadaki
+   * karşı taraf mesajlarını okundu say
+   *
+   * Dikkat:
+   * markConversationAsRead dependency array'e eklenirse
+   * context her render'da yeni referans üretebildiği için
+   * sonsuz döngü oluşabilir.
    */
   useEffect(() => {
     if (!id) return;
     markConversationAsRead(id);
-  }, [id, markConversationAsRead]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [id]);
 
   /**
-   * Mesaj sayısı değiştikçe aşağı kaydır
+   * Mesaj değişince aşağı kaydır
    */
   useEffect(() => {
     if (!messages.length) return;
@@ -174,7 +196,7 @@ export default function ChatDetailScreen() {
   }, [messages.length]);
 
   /**
-   * Typing durumu açıldığında da en alta kaydır
+   * Typing görünürken de aşağı kaydır
    */
   useEffect(() => {
     if (!isTyping) return;
@@ -198,11 +220,19 @@ export default function ChatDetailScreen() {
   };
 
   /**
-   * Konuşma bulunamadıysa fallback ekranı
+   * Konuşma yoksa fallback
    */
   if (!conversation) {
     return (
       <View style={styles.notFoundContainer}>
+        <View style={styles.notFoundIconWrap}>
+          <Ionicons
+            name="chatbox-ellipses-outline"
+            size={32}
+            color={COLORS.primary}
+          />
+        </View>
+
         <Text style={styles.notFoundTitle}>Konuşma bulunamadı</Text>
         <Text style={styles.notFoundText}>
           Bu sohbet silinmiş olabilir ya da geçersiz bir bağlantı açılmış
@@ -237,7 +267,7 @@ export default function ChatDetailScreen() {
             pressed && styles.buttonPressed,
           ]}
         >
-          <Text style={styles.iconButtonText}>←</Text>
+          <Ionicons name="arrow-back" size={18} color={COLORS.text} />
         </Pressable>
 
         {otherUser?.avatar ? (
@@ -277,7 +307,7 @@ export default function ChatDetailScreen() {
           const isMine = item.senderId === CURRENT_USER.id;
 
           /**
-           * Bu mesaj listedeki son benim mesajım mı?
+           * Son benim mesajım mı?
            */
           const isLastOwnBubble =
             isMine &&
@@ -357,7 +387,7 @@ export default function ChatDetailScreen() {
           value={text}
           onChangeText={setText}
           placeholder="Mesaj yaz..."
-          placeholderTextColor="#9ca3af"
+          placeholderTextColor="#9a9389"
           style={styles.input}
           multiline
           maxLength={500}
@@ -373,6 +403,11 @@ export default function ChatDetailScreen() {
             pressed && !isSendDisabled && styles.buttonPressed,
           ]}
         >
+          <Ionicons
+            name="send"
+            size={16}
+            color={isSendDisabled ? "#8d877e" : COLORS.whiteSoft}
+          />
           <Text
             style={[
               styles.sendButtonText,
@@ -388,54 +423,57 @@ export default function ChatDetailScreen() {
 }
 
 const styles = StyleSheet.create({
+  /**
+   * Ana kapsayıcı
+   */
   container: {
     flex: 1,
-    backgroundColor: "#ffffff",
+    backgroundColor: COLORS.bg,
   },
 
+  /**
+   * Header
+   */
   header: {
     paddingTop: 18,
     paddingBottom: 14,
     paddingHorizontal: 16,
     borderBottomWidth: 1,
-    borderBottomColor: "#e5e7eb",
+    borderBottomColor: COLORS.border,
     flexDirection: "row",
     alignItems: "center",
     gap: 12,
-    backgroundColor: "#ffffff",
+    backgroundColor: COLORS.bg,
   },
 
   iconButton: {
-    width: 38,
-    height: 38,
-    borderRadius: 19,
-    backgroundColor: "#f3f4f6",
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: COLORS.graySoft,
     alignItems: "center",
     justifyContent: "center",
-  },
-  iconButtonText: {
-    fontSize: 18,
-    fontWeight: "700",
-    color: "#111827",
+    borderWidth: 1,
+    borderColor: COLORS.border,
   },
 
   headerAvatar: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    backgroundColor: "#f3f4f6",
+    width: 50,
+    height: 50,
+    borderRadius: 25,
+    backgroundColor: COLORS.graySoft,
   },
   headerAvatarFallback: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    backgroundColor: "#e5e7eb",
+    width: 50,
+    height: 50,
+    borderRadius: 25,
+    backgroundColor: COLORS.primarySoft,
     alignItems: "center",
     justifyContent: "center",
   },
   headerAvatarFallbackText: {
-    fontWeight: "700",
-    color: "#374151",
+    fontWeight: "900",
+    color: COLORS.primary,
   },
 
   headerTextArea: {
@@ -443,15 +481,18 @@ const styles = StyleSheet.create({
   },
   headerTitle: {
     fontSize: 18,
-    fontWeight: "700",
-    color: "#111827",
+    fontWeight: "900",
+    color: COLORS.text,
   },
   headerSubtitle: {
     marginTop: 2,
     fontSize: 13,
-    color: "#6b7280",
+    color: COLORS.muted,
   },
 
+  /**
+   * Mesaj listesi
+   */
   messagesContent: {
     padding: 16,
     paddingBottom: 28,
@@ -468,31 +509,41 @@ const styles = StyleSheet.create({
     justifyContent: "flex-start",
   },
 
+  /**
+   * Balonlar
+   */
   messageBubble: {
     maxWidth: "78%",
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    borderRadius: 16,
+    paddingHorizontal: 13,
+    paddingVertical: 11,
+    borderRadius: 18,
+    borderWidth: 1,
   },
   messageBubbleMine: {
-    backgroundColor: "#111827",
-    borderBottomRightRadius: 6,
+    backgroundColor: COLORS.primary,
+    borderColor: COLORS.primary,
+    borderBottomRightRadius: 7,
   },
   messageBubbleOther: {
-    backgroundColor: "#f3f4f6",
-    borderBottomLeftRadius: 6,
+    backgroundColor: COLORS.card,
+    borderColor: COLORS.border,
+    borderBottomLeftRadius: 7,
   },
 
   typingBubble: {
-    backgroundColor: "#f3f4f6",
-    borderBottomLeftRadius: 6,
+    backgroundColor: COLORS.graySoft,
+    borderColor: COLORS.border,
+    borderBottomLeftRadius: 7,
   },
   typingText: {
-    color: "#6b7280",
+    color: COLORS.muted,
     fontSize: 14,
     fontStyle: "italic",
   },
 
+  /**
+   * Son durum
+   */
   lastStatusRow: {
     alignItems: "flex-end",
     marginTop: -4,
@@ -501,18 +552,21 @@ const styles = StyleSheet.create({
   },
   lastStatusText: {
     fontSize: 11,
-    color: "#6b7280",
+    color: COLORS.muted,
   },
 
+  /**
+   * Mesaj metni / saat
+   */
   messageText: {
     fontSize: 15,
-    lineHeight: 20,
+    lineHeight: 21,
   },
   messageTextMine: {
-    color: "#ffffff",
+    color: COLORS.whiteSoft,
   },
   messageTextOther: {
-    color: "#111827",
+    color: COLORS.text,
   },
 
   messageTime: {
@@ -520,34 +574,40 @@ const styles = StyleSheet.create({
     fontSize: 11,
   },
   messageTimeMine: {
-    color: "#d1d5db",
+    color: "#f3e7dc",
     textAlign: "right",
   },
   messageTimeOther: {
-    color: "#6b7280",
+    color: COLORS.muted,
     textAlign: "left",
   },
 
+  /**
+   * Boş durum
+   */
   emptyCard: {
     marginTop: 18,
     padding: 18,
     borderWidth: 1,
-    borderColor: "#e5e7eb",
-    borderRadius: 18,
-    backgroundColor: "#f9fafb",
+    borderColor: COLORS.border,
+    borderRadius: 20,
+    backgroundColor: COLORS.card,
   },
   emptyTitle: {
     fontSize: 18,
-    fontWeight: "700",
-    color: "#111827",
+    fontWeight: "900",
+    color: COLORS.text,
   },
   emptyText: {
     marginTop: 8,
     fontSize: 14,
-    color: "#6b7280",
+    color: COLORS.muted,
     lineHeight: 21,
   },
 
+  /**
+   * Alt input bar
+   */
   inputBar: {
     flexDirection: "row",
     alignItems: "flex-end",
@@ -556,77 +616,95 @@ const styles = StyleSheet.create({
     paddingTop: 10,
     paddingBottom: 12,
     borderTopWidth: 1,
-    borderTopColor: "#e5e7eb",
-    backgroundColor: "#ffffff",
+    borderTopColor: COLORS.border,
+    backgroundColor: COLORS.bg,
   },
 
   input: {
     flex: 1,
-    minHeight: 46,
+    minHeight: 48,
     maxHeight: 110,
     borderWidth: 1,
-    borderColor: "#d1d5db",
-    borderRadius: 16,
+    borderColor: COLORS.border,
+    borderRadius: 18,
     paddingHorizontal: 14,
-    paddingVertical: 10,
+    paddingVertical: 11,
     fontSize: 15,
-    color: "#111827",
-    backgroundColor: "#ffffff",
+    color: COLORS.text,
+    backgroundColor: COLORS.card,
   },
 
   sendButton: {
-    backgroundColor: "#111827",
+    backgroundColor: COLORS.primary,
     paddingHorizontal: 16,
     paddingVertical: 12,
     borderRadius: 999,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
   },
   sendButtonDisabled: {
-    backgroundColor: "#d1d5db",
+    backgroundColor: "#ddd6cb",
   },
   sendButtonText: {
-    color: "#ffffff",
-    fontWeight: "700",
+    color: COLORS.whiteSoft,
+    fontWeight: "900",
     fontSize: 14,
   },
   sendButtonTextDisabled: {
-    color: "#6b7280",
+    color: "#8d877e",
   },
 
+  /**
+   * Basma efekti
+   */
   buttonPressed: {
     opacity: 0.9,
     transform: [{ scale: 0.98 }],
   },
 
+  /**
+   * Not found
+   */
   notFoundContainer: {
     flex: 1,
-    backgroundColor: "#ffffff",
+    backgroundColor: COLORS.bg,
     alignItems: "center",
     justifyContent: "center",
     padding: 24,
   },
+  notFoundIconWrap: {
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    backgroundColor: COLORS.primarySoft,
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: 16,
+  },
   notFoundTitle: {
-    fontSize: 20,
-    fontWeight: "700",
-    color: "#111827",
+    fontSize: 21,
+    fontWeight: "900",
+    color: COLORS.text,
   },
   notFoundText: {
     marginTop: 8,
     textAlign: "center",
-    color: "#6b7280",
+    color: COLORS.muted,
     lineHeight: 21,
     fontSize: 14,
   },
 
   backButton: {
     marginTop: 18,
-    backgroundColor: "#111827",
+    backgroundColor: COLORS.primary,
     paddingHorizontal: 18,
     paddingVertical: 12,
     borderRadius: 999,
   },
   backButtonText: {
-    color: "#ffffff",
-    fontWeight: "700",
+    color: COLORS.whiteSoft,
+    fontWeight: "900",
     fontSize: 14,
   },
 });

@@ -3,6 +3,10 @@
 /**
  * Google Books / OpenLibrary arama sonucunda
  * uygulama içinde kullanacağımız ortak kitap tipi
+ *
+ * Amaç:
+ * farklı API kaynaklarından gelen veriyi
+ * tek biçimde kullanabilmek
  */
 export type GoogleBook = {
   /**
@@ -19,12 +23,12 @@ export type GoogleBook = {
 
   /**
    * Yazar listesi
-   * Bazı kitaplarda birden fazla yazar olabilir
+   * Bir kitapta birden fazla yazar olabilir
    */
   authors: string[];
 
   /**
-   * Açıklama / özet bilgisi
+   * Açıklama / özet
    * Her zaman gelmeyebilir
    */
   description?: string;
@@ -46,13 +50,13 @@ export type GoogleBook = {
 
   /**
    * Yayın tarihi
-   * Bazen sadece yıl, bazen tam tarih olabilir
+   * Bazen tam tarih, bazen sadece yıl olabilir
    */
   publishedDate?: string;
 
   /**
-   * Dil bilgisi
-   * Örn: "en", "tr"
+   * Dil kodu
+   * Örn: "tr", "en"
    */
   language?: string;
 

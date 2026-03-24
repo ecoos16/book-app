@@ -1,6 +1,9 @@
+// context/ChatContext.tsx
+
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import React, {
   createContext,
+  useCallback,
   useContext,
   useEffect,
   useMemo,
@@ -16,7 +19,7 @@ const CHAT_CONVERSATIONS_KEY = "CHAT_CONVERSATIONS_V1";
 const CHAT_MESSAGES_KEY = "CHAT_MESSAGES_V1";
 
 /**
- * Basit unique id üretici
+ * Basit benzersiz id üretici
  */
 function makeId() {
   return `${Date.now()}_${Math.random().toString(16).slice(2)}`;
@@ -29,64 +32,37 @@ function pickRandom<T>(items: T[]) {
   return items[Math.floor(Math.random() * items.length)];
 }
 
+/**
+ * Chat context dışına açılacak yapı
+ */
 type ChatContextType = {
   conversations: Conversation[];
   messages: Message[];
   loading: boolean;
-
-  /**
-   * Şu anda karşı taraf yazıyor mu?
-   * Key = conversationId
-   */
   typingByConversation: Record<string, boolean>;
 
-  /**
-   * Yeni konuşma oluşturur
-   */
   createConversation: (participant: ChatParticipant) => string;
-
-  /**
-   * Konuşma varsa getirir, yoksa oluşturur
-   */
   getOrCreateConversationByParticipant: (
     participant: ChatParticipant,
   ) => string;
 
-  /**
-   * Mesaj gönderir
-   */
   sendMessage: (conversationId: string, text: string) => void;
-
-  /**
-   * Konuşmayı siler
-   */
   deleteConversation: (conversationId: string) => void;
 
-  /**
-   * ID ile konuşma getirir
-   */
   getConversationById: (conversationId: string) => Conversation | undefined;
-
-  /**
-   * Konuşmanın mesajlarını getirir
-   */
   getMessagesByConversationId: (conversationId: string) => Message[];
 
-  /**
-   * Konuşmadaki karşı taraftan gelen mesajları okundu işaretler
-   */
   markConversationAsRead: (conversationId: string) => void;
-
-  /**
-   * Tüm chat verilerini temizler
-   */
   clearAllChats: () => void;
 };
 
+/**
+ * Context oluştur
+ */
 const ChatContext = createContext<ChatContextType | undefined>(undefined);
 
 /**
- * Kullanıcının yazdığı mesaja göre daha alakalı otomatik cevap üret
+ * Kullanıcının yazdığı mesaja göre otomatik cevap üret
  */
 function pickAutoReply(userText: string) {
   const text = userText.toLocaleLowerCase("tr-TR").trim();
@@ -195,7 +171,7 @@ function pickAutoReply(userText: string) {
 }
 
 /**
- * İlk kullanım için örnek konuşmalar üret
+ * Seed data üret
  */
 function createSeedData(): {
   conversations: Conversation[];
@@ -281,6 +257,13 @@ function createSeedData(): {
   return { conversations, messages };
 }
 
+/**
+ * Konuşmaları yeni -> eski sıralar
+ */
+function sortConversations(items: Conversation[]) {
+  return [...items].sort((a, b) => b.updatedAt - a.updatedAt);
+}
+
 export function ChatProvider({ children }: { children: React.ReactNode }) {
   /**
    * Tüm konuşmalar
@@ -293,28 +276,31 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
   const [messages, setMessages] = useState<Message[]>([]);
 
   /**
-   * İlk yükleme durumu
+   * İlk yükleme tamamlandı mı?
    */
   const [loading, setLoading] = useState(true);
 
   /**
-   * Karşı tarafın "yazıyor..." durumunu takip eder
+   * Karşı tarafın yazıyor bilgisini tutar
    */
   const [typingByConversation, setTypingByConversation] = useState<
     Record<string, boolean>
   >({});
 
   /**
-   * Storage'dan verileri yükle
-   * Veri yoksa örnek veri oluştur
+   * İlk açılışta verileri yükle
    */
   useEffect(() => {
+    let mounted = true;
+
     (async () => {
       try {
         const [storedConversations, storedMessages] = await Promise.all([
           AsyncStorage.getItem(CHAT_CONVERSATIONS_KEY),
           AsyncStorage.getItem(CHAT_MESSAGES_KEY),
         ]);
+
+        if (!mounted) return;
 
         const parsedConversations: Conversation[] = storedConversations
           ? JSON.parse(storedConversations)
@@ -329,26 +315,27 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
           setConversations(seed.conversations);
           setMessages(seed.messages);
         } else {
-          setConversations(parsedConversations);
+          setConversations(sortConversations(parsedConversations));
           setMessages(parsedMessages);
         }
       } catch (error) {
         console.log("❌ Chat verileri yüklenemedi:", error);
 
-        /**
-         * Hata olsa da uygulama boş kalmasın
-         */
         const seed = createSeedData();
         setConversations(seed.conversations);
         setMessages(seed.messages);
       } finally {
-        setLoading(false);
+        if (mounted) setLoading(false);
       }
     })();
+
+    return () => {
+      mounted = false;
+    };
   }, []);
 
   /**
-   * Konuşmaları storage'a kaydet
+   * Konuşmaları kaydet
    */
   useEffect(() => {
     if (loading) return;
@@ -362,7 +349,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
   }, [conversations, loading]);
 
   /**
-   * Mesajları storage'a kaydet
+   * Mesajları kaydet
    */
   useEffect(() => {
     if (loading) return;
@@ -375,223 +362,200 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
   }, [messages, loading]);
 
   /**
-   * Konuşmaları güncelliğe göre sıralar
+   * Aynı kullanıcıyla var olan konuşmayı bul
    */
-  const sortConversations = (items: Conversation[]) => {
-    return [...items].sort((a, b) => b.updatedAt - a.updatedAt);
-  };
+  const findConversationByParticipant = useCallback(
+    (participantId: string) => {
+      return conversations.find((conversation) => {
+        const ids = conversation.participants.map((p) => p.id).sort();
+        const expected = [CURRENT_USER.id, participantId].sort();
 
-  /**
-   * Belirli bir kullanıcı ile mevcut konuşma var mı?
-   */
-  const findConversationByParticipant = (participantId: string) => {
-    return conversations.find((conversation) => {
-      const ids = conversation.participants.map((p) => p.id).sort();
-      const expected = [CURRENT_USER.id, participantId].sort();
-
-      return (
-        ids.length === 2 && ids[0] === expected[0] && ids[1] === expected[1]
-      );
-    });
-  };
+        return (
+          ids.length === 2 && ids[0] === expected[0] && ids[1] === expected[1]
+        );
+      });
+    },
+    [conversations],
+  );
 
   /**
    * Yeni konuşma oluştur
-   * Aynı kullanıcıyla konuşma varsa onu döndür
    */
-  const createConversation = (participant: ChatParticipant) => {
-    const existingConversation = findConversationByParticipant(participant.id);
+  const createConversation = useCallback(
+    (participant: ChatParticipant) => {
+      const existingConversation = findConversationByParticipant(
+        participant.id,
+      );
 
-    if (existingConversation) {
-      return existingConversation.id;
-    }
+      if (existingConversation) {
+        return existingConversation.id;
+      }
 
-    const now = Date.now();
+      const now = Date.now();
 
-    const newConversation: Conversation = {
-      id: makeId(),
-      participants: [CURRENT_USER, participant],
-      createdAt: now,
-      updatedAt: now,
-      lastMessageText: undefined,
-      lastMessageAt: undefined,
-      lastSenderId: undefined,
-    };
+      const newConversation: Conversation = {
+        id: makeId(),
+        participants: [CURRENT_USER, participant],
+        createdAt: now,
+        updatedAt: now,
+        lastMessageText: undefined,
+        lastMessageAt: undefined,
+        lastSenderId: undefined,
+      };
 
-    setConversations((prev) => sortConversations([newConversation, ...prev]));
+      setConversations((prev) => sortConversations([newConversation, ...prev]));
 
-    return newConversation.id;
-  };
+      return newConversation.id;
+    },
+    [findConversationByParticipant],
+  );
 
   /**
    * Konuşmayı bul ya da oluştur
    */
-  const getOrCreateConversationByParticipant = (
-    participant: ChatParticipant,
-  ) => {
-    const existingConversation = findConversationByParticipant(participant.id);
+  const getOrCreateConversationByParticipant = useCallback(
+    (participant: ChatParticipant) => {
+      const existingConversation = findConversationByParticipant(
+        participant.id,
+      );
 
-    if (existingConversation) {
-      /**
-       * Mevcut konuşma varsa yine de listeyi düzenli tut
-       */
-      setConversations((prev) => sortConversations(prev));
-      return existingConversation.id;
-    }
+      if (existingConversation) {
+        return existingConversation.id;
+      }
 
-    return createConversation(participant);
-  };
+      return createConversation(participant);
+    },
+    [findConversationByParticipant, createConversation],
+  );
 
   /**
    * Mesaj gönder
-   * Kullanıcının mesajından sonra typing açılır
-   * Sonra otomatik cevap gelir
    */
-  const sendMessage = (conversationId: string, text: string) => {
-    const trimmed = text.trim();
-    if (!trimmed) return;
+  const sendMessage = useCallback(
+    (conversationId: string, text: string) => {
+      const trimmed = text.trim();
+      if (!trimmed) return;
 
-    /**
-     * Bu konuşmanın karşı tarafını bul
-     */
-    const activeConversation = conversations.find(
-      (c) => c.id === conversationId,
-    );
+      const activeConversation = conversations.find(
+        (conversation) => conversation.id === conversationId,
+      );
 
-    const otherUser = activeConversation?.participants.find(
-      (p) => p.id !== CURRENT_USER.id,
-    );
+      const otherUser = activeConversation?.participants.find(
+        (participant) => participant.id !== CURRENT_USER.id,
+      );
 
-    const now = Date.now();
+      const now = Date.now();
 
-    const newMessage: Message = {
-      id: makeId(),
-      conversationId,
-      senderId: CURRENT_USER.id,
-      senderName: CURRENT_USER.name,
-      senderAvatar: CURRENT_USER.avatar,
-      text: trimmed,
-      createdAt: now,
-      isRead: true,
-    };
+      const newMessage: Message = {
+        id: makeId(),
+        conversationId,
+        senderId: CURRENT_USER.id,
+        senderName: CURRENT_USER.name,
+        senderAvatar: CURRENT_USER.avatar,
+        text: trimmed,
+        createdAt: now,
+        isRead: true,
+      };
 
-    /**
-     * Önce kullanıcının mesajını ekle
-     */
-    setMessages((prev) => [...prev, newMessage]);
+      setMessages((prev) => [...prev, newMessage]);
 
-    /**
-     * Konuşma son bilgisini güncelle ve üste taşı
-     */
-    setConversations((prev) =>
-      sortConversations(
-        prev.map((conversation) =>
-          conversation.id === conversationId
-            ? {
-                ...conversation,
-                updatedAt: now,
-                lastMessageText: trimmed,
-                lastMessageAt: now,
-                lastSenderId: CURRENT_USER.id,
-              }
-            : conversation,
-        ),
-      ),
-    );
-
-    /**
-     * Karşı kullanıcı yoksa otomatik cevap üretme
-     */
-    if (!otherUser) return;
-
-    /**
-     * Yazıyor durumunu aç
-     */
-    setTypingByConversation((prev) => ({
-      ...prev,
-      [conversationId]: true,
-    }));
-
-    const autoReply = pickAutoReply(trimmed);
-
-    /**
-     * Kısa süre sonra otomatik cevap üret
-     */
-    setTimeout(
-      () => {
-        const replyTime = Date.now();
-
-        const replyMessage: Message = {
-          id: makeId(),
-          conversationId,
-          senderId: otherUser.id,
-          senderName: otherUser.name,
-          senderAvatar: otherUser.avatar,
-          text: autoReply,
-          createdAt: replyTime,
-          isRead: false,
-        };
-
-        /**
-         * Yazıyor durumunu kapat
-         */
-        setTypingByConversation((prev) => ({
-          ...prev,
-          [conversationId]: false,
-        }));
-
-        /**
-         * Otomatik cevabı ekle
-         */
-        setMessages((prev) => [...prev, replyMessage]);
-
-        /**
-         * Konuşmanın son bilgisini tekrar güncelle
-         */
-        setConversations((prev) =>
-          sortConversations(
-            prev.map((conversation) =>
-              conversation.id === conversationId
-                ? {
-                    ...conversation,
-                    updatedAt: replyTime,
-                    lastMessageText: autoReply,
-                    lastMessageAt: replyTime,
-                    lastSenderId: otherUser.id,
-                  }
-                : conversation,
-            ),
+      setConversations((prev) =>
+        sortConversations(
+          prev.map((conversation) =>
+            conversation.id === conversationId
+              ? {
+                  ...conversation,
+                  updatedAt: now,
+                  lastMessageText: trimmed,
+                  lastMessageAt: now,
+                  lastSenderId: CURRENT_USER.id,
+                }
+              : conversation,
           ),
-        );
-      },
-      1200 + Math.random() * 1000,
-    );
-  };
+        ),
+      );
+
+      if (!otherUser) return;
+
+      setTypingByConversation((prev) => ({
+        ...prev,
+        [conversationId]: true,
+      }));
+
+      const autoReply = pickAutoReply(trimmed);
+
+      setTimeout(
+        () => {
+          const replyTime = Date.now();
+
+          const replyMessage: Message = {
+            id: makeId(),
+            conversationId,
+            senderId: otherUser.id,
+            senderName: otherUser.name,
+            senderAvatar: otherUser.avatar,
+            text: autoReply,
+            createdAt: replyTime,
+            isRead: false,
+          };
+
+          setTypingByConversation((prev) => ({
+            ...prev,
+            [conversationId]: false,
+          }));
+
+          setMessages((prev) => [...prev, replyMessage]);
+
+          setConversations((prev) =>
+            sortConversations(
+              prev.map((conversation) =>
+                conversation.id === conversationId
+                  ? {
+                      ...conversation,
+                      updatedAt: replyTime,
+                      lastMessageText: autoReply,
+                      lastMessageAt: replyTime,
+                      lastSenderId: otherUser.id,
+                    }
+                  : conversation,
+              ),
+            ),
+          );
+        },
+        1200 + Math.random() * 1000,
+      );
+    },
+    [conversations],
+  );
 
   /**
    * ID ile konuşma getir
    */
-  const getConversationById = (conversationId: string) => {
-    return conversations.find(
-      (conversation) => conversation.id === conversationId,
-    );
-  };
+  const getConversationById = useCallback(
+    (conversationId: string) => {
+      return conversations.find(
+        (conversation) => conversation.id === conversationId,
+      );
+    },
+    [conversations],
+  );
 
   /**
-   * Bir konuşmanın mesajlarını getir
-   * Eski -> yeni sıralı
+   * Konuşma mesajlarını getir
    */
-  const getMessagesByConversationId = (conversationId: string) => {
-    return messages
-      .filter((message) => message.conversationId === conversationId)
-      .sort((a, b) => a.createdAt - b.createdAt);
-  };
+  const getMessagesByConversationId = useCallback(
+    (conversationId: string) => {
+      return messages
+        .filter((message) => message.conversationId === conversationId)
+        .sort((a, b) => a.createdAt - b.createdAt);
+    },
+    [messages],
+  );
 
   /**
    * Konuşmayı sil
-   * Mesajları da temizle
    */
-  const deleteConversation = (conversationId: string) => {
+  const deleteConversation = useCallback((conversationId: string) => {
     setConversations((prev) =>
       prev.filter((conversation) => conversation.id !== conversationId),
     );
@@ -605,19 +569,27 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
       delete next[conversationId];
       return next;
     });
-  };
+  }, []);
 
   /**
    * Karşı taraftan gelen mesajları okundu işaretle
+   *
+   * Önemli:
+   * Eğer hiçbir şey değişmiyorsa aynı prev referansı döndürülür.
+   * Böylece gereksiz render ve sonsuz update loop önlenir.
    */
-  const markConversationAsRead = (conversationId: string) => {
-    setMessages((prev) =>
-      prev.map((message) => {
+  const markConversationAsRead = useCallback((conversationId: string) => {
+    setMessages((prev) => {
+      let changed = false;
+
+      const next = prev.map((message) => {
         if (
           message.conversationId === conversationId &&
           message.senderId !== CURRENT_USER.id &&
           !message.isRead
         ) {
+          changed = true;
+
           return {
             ...message,
             isRead: true,
@@ -625,21 +597,23 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
         }
 
         return message;
-      }),
-    );
-  };
+      });
+
+      return changed ? next : prev;
+    });
+  }, []);
 
   /**
    * Tüm chat verilerini temizle
    */
-  const clearAllChats = () => {
+  const clearAllChats = useCallback(() => {
     setConversations([]);
     setMessages([]);
     setTypingByConversation({});
-  };
+  }, []);
 
   /**
-   * Context dışa açılan değer
+   * Context değeri
    */
   const value = useMemo<ChatContextType>(
     () => ({
@@ -656,12 +630,28 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
       markConversationAsRead,
       clearAllChats,
     }),
-    [conversations, messages, loading, typingByConversation],
+    [
+      conversations,
+      messages,
+      loading,
+      typingByConversation,
+      createConversation,
+      getOrCreateConversationByParticipant,
+      sendMessage,
+      deleteConversation,
+      getConversationById,
+      getMessagesByConversationId,
+      markConversationAsRead,
+      clearAllChats,
+    ],
   );
 
   return <ChatContext.Provider value={value}>{children}</ChatContext.Provider>;
 }
 
+/**
+ * Context hook
+ */
 export function useChat() {
   const context = useContext(ChatContext);
 

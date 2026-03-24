@@ -10,11 +10,10 @@ import React, {
   type ReactNode,
 } from "react";
 
-// Book modeli ve status tipi
 import type { Book, BookStatus } from "../types/book";
 
 /**
- * Context'in dışarıya sunacağı değerler
+ * Context'in dışarı açtığı yapı
  */
 type BooksContextValue = {
   books: Book[];
@@ -22,7 +21,7 @@ type BooksContextValue = {
 
   /**
    * Yeni kitap ekler
-   * Eğer aynı kitap daha önce eklenmişse mevcut id'yi döner
+   * Aynı kitap varsa yeni kayıt açmak yerine mevcut id'yi döner
    */
   addBook: (payload: Omit<Book, "id" | "createdAt">) => string;
 
@@ -37,7 +36,7 @@ type BooksContextValue = {
   removeBook: (id: string) => void;
 
   /**
-   * id ile tek kitap getir
+   * ID ile tek kitap getir
    */
   getById: (id: string) => Book | undefined;
 
@@ -47,18 +46,18 @@ type BooksContextValue = {
   getByStatus: (status: BookStatus) => Book[];
 
   /**
-   * Tüm kitapları temizle
+   * Tüm kayıtları temizle
    */
   clearAll: () => Promise<void>;
 };
 
 /**
- * AsyncStorage anahtarı
+ * AsyncStorage key
  */
 const STORAGE_KEY = "BOOKS_V1";
 
 /**
- * React Context
+ * Context
  */
 const BooksContext = createContext<BooksContextValue | null>(null);
 
@@ -70,16 +69,20 @@ function makeId() {
 }
 
 /**
- * Duplicate kontrolü için normalize yardımcı fonksiyon
+ * Duplicate kontrolünde kullanılacak normalize yardımcı fonksiyonu
+ *
+ * Örn:
+ * " George Orwell " -> "george orwell"
  */
 function normalizeText(value: unknown) {
   if (typeof value !== "string") return "";
-
   return value.trim().toLocaleLowerCase("tr").replace(/\s+/g, " ");
 }
 
 /**
- * Kitap kaydını güvenli ortak yapıya çevirir
+ * Kitap verisini güvenli ve tutarlı ortak yapıya dönüştürür
+ *
+ * Storage'dan gelen bozuk / eksik veriler burada temizlenir.
  */
 function normalizeBook(b: any): Book {
   const safePagesTotal =
@@ -93,8 +96,6 @@ function normalizeBook(b: any): Book {
       : undefined;
 
   return {
-    ...b,
-
     /**
      * Zorunlu alanlar
      */
@@ -127,44 +128,60 @@ function normalizeBook(b: any): Book {
         ? b.googleId
         : undefined,
 
-    note: typeof b?.note === "string" && b.note.length > 0 ? b.note : undefined,
-
-    rating: typeof b?.rating === "number" ? b.rating : undefined,
-
     pagesTotal: safePagesTotal,
 
+    /**
+     * pagesRead toplam sayfayı aşmasın
+     */
     pagesRead:
       typeof safePagesRead === "number"
-        ? safePagesTotal
+        ? typeof safePagesTotal === "number"
           ? Math.min(safePagesRead, safePagesTotal)
           : safePagesRead
         : undefined,
 
-    /**
-     * Sosyal alanlar
-     */
+    rating:
+      typeof b?.rating === "number" && b.rating >= 1 && b.rating <= 5
+        ? b.rating
+        : undefined,
+
+    note:
+      typeof b?.note === "string" && b.note.trim().length > 0
+        ? b.note
+        : undefined,
+
+    shareText:
+      typeof b?.shareText === "string" && b.shareText.trim().length > 0
+        ? b.shareText
+        : undefined,
+
+    sharedAt:
+      typeof b?.sharedAt === "number"
+        ? b.sharedAt
+        : typeof b?.sharedAt === "string"
+          ? new Date(b.sharedAt).getTime() || undefined
+          : undefined,
+
     likes: typeof b?.likes === "number" ? b.likes : 0,
     isLiked: typeof b?.isLiked === "boolean" ? b.isLiked : false,
+
     comments: Array.isArray(b?.comments) ? b.comments : [],
   };
 }
 
-/**
- * Provider
- */
 export function BooksProvider({ children }: { children: ReactNode }) {
   /**
-   * Tüm kitap listesi
+   * Tüm kitaplar
    */
   const [books, setBooks] = useState<Book[]>([]);
 
   /**
-   * Storage'dan ilk veri yüklemesi tamamlandı mı?
+   * Storage yüklemesi tamamlandı mı?
    */
   const [isHydrated, setIsHydrated] = useState(false);
 
   /**
-   * Uygulama açıldığında AsyncStorage'dan kayıtları oku
+   * İlk açılışta storage'dan kitapları yükle
    */
   useEffect(() => {
     let mounted = true;
@@ -177,19 +194,20 @@ export function BooksProvider({ children }: { children: ReactNode }) {
 
         if (raw) {
           const parsed = JSON.parse(raw) as unknown;
+          const safeBooks = Array.isArray(parsed)
+            ? parsed.map(normalizeBook)
+            : [];
 
-          if (Array.isArray(parsed)) {
-            setBooks((parsed as any[]).map(normalizeBook));
-          } else {
-            setBooks([]);
-          }
+          /**
+           * Yeni -> eski sıralı tut
+           */
+          safeBooks.sort((a, b) => b.createdAt - a.createdAt);
+
+          setBooks(safeBooks);
         } else {
           setBooks([]);
         }
       } catch {
-        /**
-         * Hata olursa uygulama kırılmasın
-         */
         setBooks([]);
       } finally {
         if (mounted) setIsHydrated(true);
@@ -202,53 +220,41 @@ export function BooksProvider({ children }: { children: ReactNode }) {
   }, []);
 
   /**
-   * books değiştiğinde storage'a kaydet
+   * Kitap listesi değişince storage'a kaydet
    */
   useEffect(() => {
     if (!isHydrated) return;
 
-    AsyncStorage.setItem(
-      STORAGE_KEY,
-      JSON.stringify(books.map(normalizeBook)),
-    ).catch(() => {
+    AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(books)).catch(() => {
       // sessiz geç
     });
   }, [books, isHydrated]);
 
   /**
-   * Yeni kitap ekleme
+   * Yeni kitap ekle
+   *
+   * Duplicate kontrolü:
+   * 1) googleId ile
+   * 2) title + author normalize edilerek
    */
   const addBook: BooksContextValue["addBook"] = (payload) => {
-    const incomingGoogleId =
+    const existingByGoogleId =
       typeof payload.googleId === "string" && payload.googleId.length > 0
-        ? payload.googleId
+        ? books.find((b) => b.googleId === payload.googleId)
         : undefined;
 
-    /**
-     * Önce googleId ile duplicate kontrolü
-     */
-    if (incomingGoogleId) {
-      const existingByGoogleId = books.find(
-        (b) => b.googleId === incomingGoogleId,
-      );
-
-      if (existingByGoogleId) {
-        return existingByGoogleId.id;
-      }
+    if (existingByGoogleId) {
+      return existingByGoogleId.id;
     }
 
-    /**
-     * Sonra title + author ile kontrol
-     */
-    const normalizedIncomingTitle = normalizeText(payload.title);
-    const normalizedIncomingAuthor = normalizeText(payload.author);
+    const normalizedTitle = normalizeText(payload.title);
+    const normalizedAuthor = normalizeText(payload.author);
 
-    const existingByTitleAuthor = books.find((b) => {
-      return (
-        normalizeText(b.title) === normalizedIncomingTitle &&
-        normalizeText(b.author) === normalizedIncomingAuthor
-      );
-    });
+    const existingByTitleAuthor = books.find(
+      (b) =>
+        normalizeText(b.title) === normalizedTitle &&
+        normalizeText(b.author) === normalizedAuthor,
+    );
 
     if (existingByTitleAuthor) {
       return existingByTitleAuthor.id;
@@ -269,7 +275,7 @@ export function BooksProvider({ children }: { children: ReactNode }) {
     });
 
     /**
-     * Yeni kitabı listenin başına ekle
+     * Listenin başına ekle
      */
     setBooks((prev) => [newBook, ...prev].map(normalizeBook));
 
@@ -306,13 +312,13 @@ export function BooksProvider({ children }: { children: ReactNode }) {
   };
 
   /**
-   * id ile tek kitap getir
+   * ID ile tek kitap getir
    */
   const getById: BooksContextValue["getById"] = (id) =>
     books.find((b) => b.id === id);
 
   /**
-   * Duruma göre filtrele
+   * Statüye göre filtrele
    */
   const getByStatus: BooksContextValue["getByStatus"] = (status) =>
     books.filter((b) => b.status === status);

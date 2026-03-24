@@ -1,14 +1,40 @@
+// app/(tabs)/home.tsx
+
+import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
 import React, { useMemo, useState } from "react";
 import { Image, Pressable, ScrollView, Text, View } from "react-native";
+
 import { useBooks } from "../../context/BooksContext";
 import { useChat } from "../../context/ChatContext";
 import { usePosts } from "../../context/PostsContext";
 import { CURRENT_USER } from "../../data/mockUsers";
-import { buttonStyle, pillButtonStyle } from "../../utils/pressableStyles";
 
 /**
- * Zaman farkını kısa formatta gösterir
+ * ReadSphere için ortak renkler
+ * Stitch tasarımlarındaki sıcak / premium hissi korumak için
+ * krem, kahve, yumuşak yeşil ve nötr tonlar kullanıldı.
+ */
+const COLORS = {
+  bg: "#fbf9f5",
+  card: "#fffdf9",
+  border: "#ece7df",
+  text: "#2f2a24",
+  muted: "#7a7268",
+  primary: "#7d5739",
+  primaryDark: "#6b4a2f",
+  primarySoft: "#f3e2d2",
+  greenSoft: "#dfe7cf",
+  peachSoft: "#f7dfcc",
+  graySoft: "#f3efe8",
+  white: "#fff",
+  dangerSoft: "#fff4f4",
+  dangerBorder: "#ffd8d8",
+  dangerText: "#a22b2b",
+};
+
+/**
+ * Verilen zaman damgasını "kaç dk / sa / gün önce" şeklinde gösterir.
  */
 function formatTimeAgo(timestamp: number) {
   const diffMs = Date.now() - timestamp;
@@ -17,26 +43,297 @@ function formatTimeAgo(timestamp: number) {
   const days = Math.floor(diffMs / (1000 * 60 * 60 * 24));
 
   if (minutes < 1) return "şimdi";
-  if (minutes < 60) return `${minutes} dk`;
-  if (hours < 24) return `${hours} sa`;
-  return `${days} gün`;
+  if (minutes < 60) return `${minutes} dk önce`;
+  if (hours < 24) return `${hours} sa önce`;
+  return `${days} gün önce`;
 }
 
+/**
+ * Kullanıcı adından baş harf üretir.
+ * Örn: "Ecesu Orhan" -> EO
+ */
+function getInitials(name?: string) {
+  if (!name?.trim()) return "U";
+
+  const parts = name.trim().split(" ").filter(Boolean);
+
+  if (parts.length === 1) {
+    return parts[0].slice(0, 2).toUpperCase();
+  }
+
+  return `${parts[0][0] ?? ""}${parts[1][0] ?? ""}`.toUpperCase();
+}
+
+/**
+ * Home ekranında kullanılan bölüm başlığı
+ */
+function SectionHeader({
+  title,
+  subtitle,
+  rightText,
+  onPressRight,
+}: {
+  title: string;
+  subtitle?: string;
+  rightText?: string;
+  onPressRight?: () => void;
+}) {
+  return (
+    <View
+      style={{
+        flexDirection: "row",
+        justifyContent: "space-between",
+        alignItems: "flex-end",
+        gap: 12,
+      }}
+    >
+      <View style={{ flex: 1, gap: 4 }}>
+        <Text
+          style={{
+            fontSize: 21,
+            fontWeight: "900",
+            color: COLORS.text,
+          }}
+        >
+          {title}
+        </Text>
+
+        {!!subtitle && (
+          <Text
+            style={{
+              color: COLORS.muted,
+              fontSize: 14,
+              lineHeight: 20,
+            }}
+          >
+            {subtitle}
+          </Text>
+        )}
+      </View>
+
+      {!!rightText && !!onPressRight && (
+        <Pressable onPress={onPressRight}>
+          <Text
+            style={{
+              color: COLORS.primary,
+              fontWeight: "800",
+            }}
+          >
+            {rightText}
+          </Text>
+        </Pressable>
+      )}
+    </View>
+  );
+}
+
+/**
+ * Son eklenenler bölümünde kullanılacak küçük kitap kartı
+ */
+function RecentBookCard({
+  title,
+  author,
+  thumbnail,
+  statusLabel,
+  onPress,
+}: {
+  title: string;
+  author: string;
+  thumbnail?: string;
+  statusLabel: string;
+  onPress: () => void;
+}) {
+  return (
+    <Pressable
+      onPress={onPress}
+      style={({ pressed, hovered }) => ({
+        width: 180,
+        borderRadius: 24,
+        borderWidth: 1,
+        borderColor: COLORS.border,
+        backgroundColor: pressed
+          ? "#f7f1ea"
+          : hovered
+            ? "#fff9f3"
+            : COLORS.card,
+        padding: 14,
+        gap: 12,
+        transform: [{ scale: pressed ? 0.985 : 1 }],
+        shadowColor: "#2f2a24",
+        shadowOpacity: 0.06,
+        shadowRadius: 14,
+        shadowOffset: { width: 0, height: 8 },
+        elevation: 2,
+      })}
+    >
+      {/* Kapak alanı */}
+      <View
+        style={{
+          height: 180,
+          borderRadius: 18,
+          backgroundColor: COLORS.primarySoft,
+          overflow: "hidden",
+          alignItems: "center",
+          justifyContent: "center",
+        }}
+      >
+        {thumbnail ? (
+          <Image
+            source={{ uri: thumbnail }}
+            style={{
+              width: "82%",
+              height: "82%",
+              borderRadius: 12,
+              resizeMode: "cover",
+            }}
+          />
+        ) : (
+          <Ionicons name="book-outline" size={36} color={COLORS.primary} />
+        )}
+      </View>
+
+      {/* İçerik alanı */}
+      <View style={{ gap: 5 }}>
+        <Text
+          numberOfLines={2}
+          style={{
+            fontSize: 18,
+            fontWeight: "900",
+            color: COLORS.text,
+          }}
+        >
+          {title}
+        </Text>
+
+        <Text
+          numberOfLines={1}
+          style={{
+            color: COLORS.muted,
+            fontSize: 14,
+          }}
+        >
+          {author}
+        </Text>
+
+        <View
+          style={{
+            alignSelf: "flex-start",
+            marginTop: 4,
+            paddingHorizontal: 10,
+            paddingVertical: 6,
+            borderRadius: 999,
+            backgroundColor: COLORS.graySoft,
+            borderWidth: 1,
+            borderColor: COLORS.border,
+          }}
+        >
+          <Text
+            style={{
+              color: COLORS.primary,
+              fontWeight: "800",
+              fontSize: 12,
+            }}
+          >
+            {statusLabel}
+          </Text>
+        </View>
+      </View>
+    </Pressable>
+  );
+}
+
+/**
+ * Topluluk akışında kullanılan aksiyon pill butonu
+ */
+function ActionPill({
+  label,
+  icon,
+  onPress,
+  variant = "secondary",
+}: {
+  label: string;
+  icon?: keyof typeof Ionicons.glyphMap;
+  onPress: () => void;
+  variant?: "secondary" | "primary" | "danger";
+}) {
+  const backgroundColor =
+    variant === "primary"
+      ? COLORS.primary
+      : variant === "danger"
+        ? COLORS.dangerSoft
+        : COLORS.graySoft;
+
+  const borderColor =
+    variant === "primary"
+      ? COLORS.primary
+      : variant === "danger"
+        ? COLORS.dangerBorder
+        : COLORS.border;
+
+  const textColor =
+    variant === "primary"
+      ? "#fff7f4"
+      : variant === "danger"
+        ? COLORS.dangerText
+        : COLORS.text;
+
+  return (
+    <Pressable
+      onPress={onPress}
+      style={({ pressed, hovered }) => ({
+        flexDirection: "row",
+        alignItems: "center",
+        gap: 6,
+        paddingHorizontal: 12,
+        paddingVertical: 9,
+        borderRadius: 999,
+        borderWidth: 1,
+        borderColor,
+        backgroundColor: pressed
+          ? variant === "primary"
+            ? COLORS.primaryDark
+            : "#ede7de"
+          : hovered
+            ? variant === "primary"
+              ? "#8b6240"
+              : "#f8f3ed"
+            : backgroundColor,
+        transform: [{ scale: pressed ? 0.98 : 1 }],
+      })}
+    >
+      {!!icon && <Ionicons name={icon} size={15} color={textColor} />}
+      <Text
+        style={{
+          color: textColor,
+          fontWeight: "800",
+          fontSize: 13,
+        }}
+      >
+        {label}
+      </Text>
+    </Pressable>
+  );
+}
+
+/**
+ * Home ekranı
+ *
+ * Bu ekran:
+ * - üst karşılama kartı
+ * - arama alanı
+ * - son eklenen kitaplar
+ * - topluluk akışı
+ * - kendi paylaşımları
+ * - floating add button
+ * bölümlerini içerir.
+ */
 export default function Home() {
-  /**
-   * Books ve posts context verileri
-   */
   const { books } = useBooks();
   const { posts, isHydrated, toggleLike, removePost } = usePosts();
-
-  /**
-   * Chat context
-   * Post sahibine mesaj atarken kullanıyoruz
-   */
   const { getOrCreateConversationByParticipant } = useChat();
 
   /**
-   * Silme onayı state
+   * Hangi post için silme onayı açık?
    */
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
 
@@ -47,6 +344,8 @@ export default function Home() {
 
   /**
    * Postları yeni -> eski sırala
+   * NOT: mevcut yüklenen kodda `return [.posts]` hatalıydı.
+   * Doğrusu `return [...posts]`.
    */
   const sortedPosts = useMemo(() => {
     return [...posts].sort((a, b) => b.createdAt - a.createdAt);
@@ -60,21 +359,21 @@ export default function Home() {
   }, [sortedPosts]);
 
   /**
-   * Topluluk postları
+   * Tüm topluluk postları
    */
   const communityPosts = useMemo(() => {
     return sortedPosts;
   }, [sortedPosts]);
 
   /**
-   * BookId ile local kitap bul
+   * bookId ile local kitap bul
    */
   function getLocalBook(bookId: string) {
     return books.find((b) => b.id === bookId);
   }
 
   /**
-   * Post sil
+   * Paylaşım sil
    */
   function handleDeletePost(postId: string) {
     removePost(postId);
@@ -82,8 +381,8 @@ export default function Home() {
   }
 
   /**
-   * Post sahibine mesaj at
-   * prefill ile hazır mesajı input alanına taşır
+   * Paylaşım sahibine mesaj at
+   * Konuşma yoksa oluşturur, sonra prefill ile chat ekranına gider.
    */
   function handleMessagePostOwner(post: {
     userId: string;
@@ -113,254 +412,377 @@ export default function Home() {
   }
 
   return (
-    <View style={{ flex: 1 }}>
+    <View style={{ flex: 1, backgroundColor: COLORS.bg }}>
       <ScrollView
-        contentContainerStyle={{ padding: 16, gap: 18, paddingBottom: 120 }}
+        contentContainerStyle={{
+          padding: 18,
+          gap: 22,
+          paddingBottom: 130,
+        }}
       >
-        {/* ================= HEADER ================= */}
+        {/* ================= ÜST KARŞILAMA KARTI ================= */}
         <View
           style={{
-            padding: 16,
-            borderRadius: 18,
+            borderRadius: 26,
+            padding: 20,
+            backgroundColor: COLORS.card,
             borderWidth: 1,
-            borderColor: "#eee",
-            backgroundColor: "#fff",
-            gap: 6,
+            borderColor: COLORS.border,
+            gap: 8,
+            shadowColor: "#2f2a24",
+            shadowOpacity: 0.06,
+            shadowRadius: 14,
+            shadowOffset: { width: 0, height: 8 },
+            elevation: 2,
           }}
         >
-          <Text style={{ fontSize: 28, fontWeight: "900", color: "#111" }}>
-            ReadSphere
-          </Text>
+          <View
+            style={{
+              flexDirection: "row",
+              alignItems: "center",
+              gap: 12,
+            }}
+          >
+            <View
+              style={{
+                width: 44,
+                height: 44,
+                borderRadius: 22,
+                backgroundColor: COLORS.primarySoft,
+                alignItems: "center",
+                justifyContent: "center",
+              }}
+            >
+              <Text
+                style={{
+                  color: COLORS.primary,
+                  fontWeight: "900",
+                  fontSize: 14,
+                }}
+              >
+                {getInitials(CURRENT_USER.name)}
+              </Text>
+            </View>
 
-          <Text style={{ color: "#666", fontSize: 14, lineHeight: 20 }}>
-            Kitaplarını keşfet, takip et ve paylaşımlarınla kendi küçük okuma
-            dünyanı oluştur.
-          </Text>
+            <View style={{ flex: 1 }}>
+              <Text
+                style={{
+                  fontSize: 28,
+                  fontWeight: "900",
+                  color: COLORS.primary,
+                }}
+              >
+                ReadSphere
+              </Text>
+
+              <Text
+                style={{
+                  color: COLORS.muted,
+                  fontSize: 14,
+                  lineHeight: 20,
+                  marginTop: 2,
+                }}
+              >
+                Kitaplarını keşfet, takip et ve paylaşımlarınla kendi küçük
+                okuma dünyanı oluştur.
+              </Text>
+            </View>
+          </View>
         </View>
 
-        {/* ================= SEARCH ================= */}
+        {/* ================= ARAMA ================= */}
         <Pressable
           onPress={() => router.push("/search" as any)}
-          style={buttonStyle("secondary", {
-            borderRadius: 16,
-            alignItems: "flex-start",
+          style={({ pressed, hovered }) => ({
+            borderRadius: 18,
+            paddingVertical: 16,
+            paddingHorizontal: 16,
+            borderWidth: 1,
+            borderColor: COLORS.border,
+            backgroundColor: pressed
+              ? "#f6f1ea"
+              : hovered
+                ? "#fff9f3"
+                : COLORS.card,
+            flexDirection: "row",
+            alignItems: "center",
+            gap: 10,
           })}
         >
-          <Text style={{ color: "#888", fontSize: 15 }}>
-            🔎 Kitap veya yazar ara…
+          <Ionicons name="search-outline" size={18} color={COLORS.muted} />
+          <Text style={{ color: "#8a8379", fontSize: 15 }}>
+            Kitap veya yazar ara…
           </Text>
         </Pressable>
 
         {/* ================= SON EKLENENLER ================= */}
-        {last3.length > 0 && (
-          <View style={{ gap: 10 }}>
-            <Text style={{ fontSize: 18, fontWeight: "900", color: "#111" }}>
-              Son Eklenenler
-            </Text>
+        <View style={{ gap: 14 }}>
+          <SectionHeader
+            title="Son Eklenenler"
+            subtitle="Kitaplığındaki en yeni eklemeler."
+            rightText={books.length > 0 ? "Kitaplığa Git" : undefined}
+            onPressRight={
+              books.length > 0 ? () => router.push("/library") : undefined
+            }
+          />
 
-            {last3.map((b) => (
-              <Pressable
-                key={b.id}
-                onPress={() =>
-                  router.push({
-                    pathname: "/book/[id]" as const,
-                    params: { id: b.id },
-                  })
-                }
-                style={({ pressed, hovered }) => ({
-                  flexDirection: "row",
-                  gap: 12,
-                  padding: 12,
-                  borderRadius: 16,
-                  borderWidth: 1,
-                  borderColor: "#eee",
-                  backgroundColor: pressed
-                    ? "#f1f1f1"
-                    : hovered
-                      ? "#fafafa"
-                      : "#fff",
-                  alignItems: "center",
-                  transform: [{ scale: pressed ? 0.99 : 1 }],
-                })}
-              >
-                <View
-                  style={{
-                    width: 54,
-                    height: 78,
-                    borderRadius: 10,
-                    overflow: "hidden",
-                    backgroundColor: "#f3f3f3",
-                    alignItems: "center",
-                    justifyContent: "center",
-                  }}
-                >
-                  {b.thumbnail ? (
-                    <Image
-                      source={{ uri: b.thumbnail }}
-                      style={{ width: 54, height: 78 }}
-                      resizeMode="cover"
-                    />
-                  ) : (
-                    <View
-                      style={{
-                        width: "100%",
-                        height: "100%",
-                        alignItems: "center",
-                        justifyContent: "center",
-                        backgroundColor: "#f1f1f1",
-                      }}
-                    >
-                      <Text style={{ fontSize: 20 }}>📚</Text>
-                    </View>
-                  )}
-                </View>
-
-                <View style={{ flex: 1, gap: 4 }}>
-                  <Text
-                    style={{
-                      fontWeight: "900",
-                      fontSize: 15,
-                      color: "#1a1a1a",
-                    }}
-                    numberOfLines={2}
-                  >
-                    {b.title}
-                  </Text>
-
-                  <Text style={{ color: "#666" }} numberOfLines={1}>
-                    {b.author}
-                  </Text>
-
-                  <Text style={{ color: "#888", fontSize: 12 }}>
-                    {b.status === "reading"
-                      ? "Okumaya devam ediyorsun"
-                      : b.status === "read"
-                        ? "Okudun"
-                        : "Okuma listende"}
-                  </Text>
-                </View>
-              </Pressable>
-            ))}
-          </View>
-        )}
-
-        {/* ================= TOPLULUK ================= */}
-        {isHydrated && (
-          <View style={{ gap: 10 }}>
-            <Text style={{ fontSize: 18, fontWeight: "900", color: "#111" }}>
-              Topluluk
-            </Text>
-
-            {communityPosts.length === 0 ? (
-              <View
+          {last3.length === 0 ? (
+            <View
+              style={{
+                borderRadius: 22,
+                padding: 24,
+                borderWidth: 1,
+                borderColor: COLORS.border,
+                backgroundColor: COLORS.card,
+                alignItems: "center",
+                gap: 10,
+              }}
+            >
+              <Ionicons
+                name="library-outline"
+                size={30}
+                color={COLORS.primary}
+              />
+              <Text
                 style={{
-                  borderWidth: 1,
-                  borderColor: "#eee",
-                  borderRadius: 18,
-                  paddingVertical: 28,
-                  paddingHorizontal: 20,
-                  backgroundColor: "#fff",
-                  alignItems: "center",
+                  fontWeight: "900",
+                  fontSize: 17,
+                  color: COLORS.text,
                 }}
               >
-                <Text style={{ fontSize: 36 }}>🌍</Text>
-                <Text
-                  style={{
-                    marginTop: 10,
-                    fontSize: 17,
-                    fontWeight: "800",
-                    color: "#222",
-                  }}
-                >
-                  Henüz topluluk paylaşımı yok
-                </Text>
-              </View>
-            ) : (
-              communityPosts.map((post) => {
-                const localBook = getLocalBook(post.bookId);
-                const displayTitle = localBook?.title ?? post.bookTitle;
-                const displayAuthor = localBook?.author ?? post.bookAuthor;
-                const displayThumbnail =
-                  localBook?.thumbnail ?? post.bookThumbnail;
+                Henüz kitap eklenmedi
+              </Text>
+              <Text
+                style={{
+                  textAlign: "center",
+                  color: COLORS.muted,
+                  lineHeight: 20,
+                }}
+              >
+                İlk kitabını ekleyerek okuma yolculuğunu başlat.
+              </Text>
+            </View>
+          ) : (
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={{ gap: 14, paddingRight: 8 }}
+            >
+              {last3.map((book) => {
+                const statusLabel =
+                  book.status === "reading"
+                    ? "Okuyorum"
+                    : book.status === "read"
+                      ? "Okudum"
+                      : "İstiyorum";
 
+                return (
+                  <RecentBookCard
+                    key={book.id}
+                    title={book.title}
+                    author={book.author}
+                    thumbnail={book.thumbnail}
+                    statusLabel={statusLabel}
+                    onPress={() =>
+                      router.push({
+                        pathname: "/book/[id]",
+                        params: { id: book.id },
+                      })
+                    }
+                  />
+                );
+              })}
+            </ScrollView>
+          )}
+        </View>
+
+        {/* ================= TOPLULUK ================= */}
+        <View style={{ gap: 14 }}>
+          <SectionHeader
+            title="Topluluk"
+            subtitle="Okurların paylaşımlarını keşfet."
+          />
+
+          {!isHydrated ? (
+            <View
+              style={{
+                borderRadius: 20,
+                padding: 20,
+                backgroundColor: COLORS.card,
+                borderWidth: 1,
+                borderColor: COLORS.border,
+              }}
+            >
+              <Text style={{ color: COLORS.muted }}>Yükleniyor…</Text>
+            </View>
+          ) : communityPosts.length === 0 ? (
+            <View
+              style={{
+                borderRadius: 22,
+                padding: 24,
+                borderWidth: 1,
+                borderColor: COLORS.border,
+                backgroundColor: COLORS.card,
+                alignItems: "center",
+                gap: 10,
+              }}
+            >
+              <Ionicons
+                name="chatbubbles-outline"
+                size={30}
+                color={COLORS.primary}
+              />
+              <Text
+                style={{
+                  fontWeight: "900",
+                  fontSize: 17,
+                  color: COLORS.text,
+                }}
+              >
+                Toplulukta henüz paylaşım yok
+              </Text>
+              <Text
+                style={{
+                  textAlign: "center",
+                  color: COLORS.muted,
+                  lineHeight: 20,
+                }}
+              >
+                İlk paylaşımı sen yap ve okuma deneyimini anlat.
+              </Text>
+            </View>
+          ) : (
+            <View style={{ gap: 14 }}>
+              {communityPosts.map((post) => {
+                const localBook = getLocalBook(post.bookId);
+
+                const displayTitle =
+                  post.bookTitle || localBook?.title || "Kitap";
+                const displayAuthor =
+                  post.bookAuthor || localBook?.author || "Bilinmeyen Yazar";
+                const displayThumbnail =
+                  post.bookThumbnail || localBook?.thumbnail;
                 const isMine = post.userId === CURRENT_USER.id;
 
                 return (
                   <View
                     key={post.id}
                     style={{
-                      padding: 14,
-                      borderRadius: 16,
+                      borderRadius: 24,
+                      padding: 16,
+                      backgroundColor: COLORS.card,
                       borderWidth: 1,
-                      borderColor: "#eee",
-                      backgroundColor: "#fff",
-                      gap: 10,
+                      borderColor: COLORS.border,
+                      gap: 14,
+                      shadowColor: "#2f2a24",
+                      shadowOpacity: 0.05,
+                      shadowRadius: 12,
+                      shadowOffset: { width: 0, height: 6 },
+                      elevation: 2,
                     }}
                   >
-                    {/* ================= ÜST BİLGİ ================= */}
+                    {/* ---------- ÜST KULLANICI SATIRI ---------- */}
                     <View
                       style={{
                         flexDirection: "row",
-                        justifyContent: "space-between",
                         alignItems: "center",
+                        justifyContent: "space-between",
+                        gap: 12,
                       }}
                     >
-                      <View style={{ flexDirection: "row", gap: 10, flex: 1 }}>
-                        <Image
-                          source={{
-                            uri:
-                              post.userAvatar ??
-                              "https://ui-avatars.com/api/?name=User",
-                          }}
+                      <View
+                        style={{
+                          flexDirection: "row",
+                          alignItems: "center",
+                          gap: 12,
+                          flex: 1,
+                        }}
+                      >
+                        <View
                           style={{
-                            width: 40,
-                            height: 40,
-                            borderRadius: 20,
-                            backgroundColor: "#f1f1f1",
+                            width: 42,
+                            height: 42,
+                            borderRadius: 21,
+                            backgroundColor: isMine
+                              ? COLORS.primarySoft
+                              : COLORS.greenSoft,
+                            alignItems: "center",
+                            justifyContent: "center",
                           }}
-                        />
+                        >
+                          <Text
+                            style={{
+                              color: COLORS.primary,
+                              fontWeight: "900",
+                              fontSize: 13,
+                            }}
+                          >
+                            {getInitials(post.userName)}
+                          </Text>
+                        </View>
 
                         <View style={{ flex: 1 }}>
-                          <Text style={{ fontWeight: "900", color: "#111" }}>
+                          <Text
+                            style={{
+                              fontWeight: "900",
+                              fontSize: 15,
+                              color: COLORS.text,
+                            }}
+                          >
                             {post.userName}
                           </Text>
-                          <Text style={{ color: "#888", fontSize: 12 }}>
-                            {formatTimeAgo(post.createdAt)} önce
+
+                          <Text
+                            style={{
+                              color: COLORS.muted,
+                              fontSize: 12.5,
+                              marginTop: 2,
+                            }}
+                          >
+                            {formatTimeAgo(post.createdAt)}
                           </Text>
                         </View>
                       </View>
+
+                      <Pressable
+                        onPress={() =>
+                          router.push({
+                            pathname: "/post-comments/[id]",
+                            params: { id: post.id },
+                          })
+                        }
+                      >
+                        <Ionicons
+                          name="chevron-forward"
+                          size={18}
+                          color={COLORS.primary}
+                        />
+                      </Pressable>
                     </View>
 
-                    {/* ================= KİTAP ALANI ================= */}
+                    {/* ---------- KİTAP BİLGİ KARTI ---------- */}
                     <Pressable
-                      onPress={() => {
-                        if (localBook) {
-                          router.push({
-                            pathname: "/book/[id]" as const,
-                            params: { id: localBook.id },
-                          });
-                        }
-                      }}
-                      style={({ pressed, hovered }) => ({
+                      onPress={() =>
+                        router.push({
+                          pathname: "/book/[id]",
+                          params: { id: post.bookId },
+                        })
+                      }
+                      style={({ pressed }) => ({
                         flexDirection: "row",
-                        gap: 12,
-                        borderRadius: 12,
-                        padding: 4,
-                        backgroundColor: pressed
-                          ? "#f3f3f3"
-                          : hovered
-                            ? "#fafafa"
-                            : "transparent",
-                        transform: [{ scale: pressed ? 0.99 : 1 }],
+                        gap: 14,
+                        borderRadius: 18,
+                        backgroundColor: pressed ? "#f5efe7" : "#f8f4ee",
+                        padding: 12,
                       })}
                     >
                       <View
                         style={{
-                          width: 56,
-                          height: 80,
-                          borderRadius: 10,
+                          width: 72,
+                          height: 98,
+                          borderRadius: 14,
                           overflow: "hidden",
-                          backgroundColor: "#f3f3f3",
+                          backgroundColor: COLORS.primarySoft,
                           alignItems: "center",
                           justifyContent: "center",
                         }}
@@ -368,100 +790,89 @@ export default function Home() {
                         {displayThumbnail ? (
                           <Image
                             source={{ uri: displayThumbnail }}
-                            style={{ width: 56, height: 80 }}
-                            resizeMode="cover"
-                          />
-                        ) : (
-                          <View
                             style={{
                               width: "100%",
                               height: "100%",
-                              alignItems: "center",
-                              justifyContent: "center",
-                              backgroundColor: "#f1f1f1",
+                              resizeMode: "cover",
                             }}
-                          >
-                            <Text style={{ fontSize: 22 }}>📚</Text>
-                          </View>
+                          />
+                        ) : (
+                          <Ionicons
+                            name="book-outline"
+                            size={26}
+                            color={COLORS.primary}
+                          />
                         )}
                       </View>
 
-                      <View style={{ flex: 1, gap: 4 }}>
+                      <View
+                        style={{ flex: 1, justifyContent: "center", gap: 5 }}
+                      >
                         <Text
-                          style={{
-                            fontWeight: "900",
-                            fontSize: 15,
-                            color: "#1a1a1a",
-                          }}
                           numberOfLines={2}
+                          style={{
+                            fontSize: 18,
+                            fontWeight: "900",
+                            color: COLORS.text,
+                          }}
                         >
                           {displayTitle}
                         </Text>
 
-                        <Text style={{ color: "#666" }} numberOfLines={1}>
+                        <Text
+                          numberOfLines={1}
+                          style={{
+                            color: COLORS.muted,
+                            fontSize: 14,
+                          }}
+                        >
                           {displayAuthor}
                         </Text>
                       </View>
                     </Pressable>
 
-                    {/* ================= PAYLAŞIM METNİ ================= */}
-                    <Pressable
-                      onPress={() =>
-                        router.push({
-                          pathname: "/post-comments/[id]" as const,
-                          params: { id: post.id },
-                        })
-                      }
-                      style={({ pressed, hovered }) => ({
-                        borderRadius: 12,
-                        padding: 4,
-                        backgroundColor: pressed
-                          ? "#f3f3f3"
-                          : hovered
-                            ? "#fafafa"
-                            : "transparent",
-                        transform: [{ scale: pressed ? 0.99 : 1 }],
-                      })}
-                    >
-                      <Text style={{ color: "#555", lineHeight: 20 }}>
-                        “{post.shareText || "Paylaşım metni yok"}”
+                    {/* ---------- PAYLAŞIM METNİ ---------- */}
+                    {!!post.shareText && (
+                      <Text
+                        style={{
+                          color: COLORS.text,
+                          fontSize: 15,
+                          lineHeight: 23,
+                        }}
+                      >
+                        {post.shareText}
                       </Text>
-                    </Pressable>
+                    )}
 
-                    {/* ================= ALT AKSİYONLAR ================= */}
+                    {/* ---------- AKSİYONLAR ---------- */}
                     <View
                       style={{
                         flexDirection: "row",
-                        gap: 10,
-                        alignItems: "center",
                         flexWrap: "wrap",
+                        gap: 10,
                       }}
                     >
-                      <Pressable
+                      <ActionPill
+                        icon={post.isLiked ? "heart" : "heart-outline"}
+                        label={String(post.likes ?? 0)}
                         onPress={() => toggleLike(post.id)}
-                        style={pillButtonStyle("secondary")}
-                      >
-                        <Text style={{ fontWeight: "900" }}>
-                          {post.isLiked ? "❤️" : "🤍"} {post.likes}
-                        </Text>
-                      </Pressable>
+                      />
 
-                      <Pressable
+                      <ActionPill
+                        icon="chatbubble-ellipses-outline"
+                        label={String(post.comments?.length ?? 0)}
                         onPress={() =>
                           router.push({
-                            pathname: "/post-comments/[id]" as const,
+                            pathname: "/post-comments/[id]",
                             params: { id: post.id },
                           })
                         }
-                        style={pillButtonStyle("secondary")}
-                      >
-                        <Text style={{ fontWeight: "900" }}>
-                          💬 {post.comments.length}
-                        </Text>
-                      </Pressable>
+                      />
 
                       {!isMine && (
-                        <Pressable
+                        <ActionPill
+                          icon="mail-outline"
+                          label="Mesaj"
                           onPress={() =>
                             handleMessagePostOwner({
                               userId: post.userId,
@@ -470,357 +881,214 @@ export default function Home() {
                               bookTitle: displayTitle,
                             })
                           }
-                          style={pillButtonStyle("secondary")}
-                        >
-                          <Text style={{ fontWeight: "900" }}>✉️ Mesaj</Text>
-                        </Pressable>
+                        />
                       )}
 
                       {isMine && (
                         <>
-                          <Pressable
+                          <ActionPill
+                            icon="create-outline"
+                            label="Düzenle"
                             onPress={() =>
                               router.push({
-                                pathname: "/share/[id]" as const,
+                                pathname: "/share/[id]",
                                 params: {
                                   id: post.bookId,
                                   postId: post.id,
                                 },
                               })
                             }
-                            style={pillButtonStyle("secondary")}
-                          >
-                            <Text style={{ fontWeight: "800", color: "#333" }}>
-                              Düzenle
-                            </Text>
-                          </Pressable>
+                          />
 
-                          <Pressable
+                          <ActionPill
+                            icon="trash-outline"
+                            label="Sil"
+                            variant="danger"
                             onPress={() =>
                               setConfirmDeleteId((prev) =>
                                 prev === post.id ? null : post.id,
                               )
                             }
-                            style={pillButtonStyle("danger")}
-                          >
-                            <Text style={{ fontWeight: "800", color: "#c00" }}>
-                              Sil
-                            </Text>
-                          </Pressable>
+                          />
                         </>
                       )}
                     </View>
 
-                    {/* ================= SİLME ONAYI ================= */}
+                    {/* ---------- SİLME ONAYI ---------- */}
                     {isMine && confirmDeleteId === post.id && (
                       <View
                         style={{
-                          marginTop: 6,
-                          padding: 12,
-                          borderRadius: 12,
+                          borderRadius: 16,
+                          padding: 14,
                           borderWidth: 1,
-                          borderColor: "#ffd6d6",
-                          backgroundColor: "#fff7f7",
+                          borderColor: COLORS.dangerBorder,
+                          backgroundColor: COLORS.dangerSoft,
                           gap: 10,
                         }}
                       >
-                        <Text style={{ color: "#8b0000", fontWeight: "800" }}>
+                        <Text
+                          style={{
+                            color: COLORS.dangerText,
+                            fontWeight: "800",
+                          }}
+                        >
                           Bu paylaşım silinsin mi?
                         </Text>
 
                         <View style={{ flexDirection: "row", gap: 10 }}>
-                          <Pressable
-                            onPress={() => setConfirmDeleteId(null)}
-                            style={buttonStyle("secondary", { flex: 1 })}
-                          >
-                            <Text style={{ fontWeight: "800", color: "#333" }}>
-                              Vazgeç
-                            </Text>
-                          </Pressable>
+                          <View style={{ flex: 1 }}>
+                            <ActionPill
+                              label="Vazgeç"
+                              onPress={() => setConfirmDeleteId(null)}
+                            />
+                          </View>
 
-                          <Pressable
-                            onPress={() => handleDeletePost(post.id)}
-                            style={buttonStyle("primary", { flex: 1 })}
-                          >
-                            <Text style={{ fontWeight: "800", color: "#fff" }}>
-                              Evet, Sil
-                            </Text>
-                          </Pressable>
+                          <View style={{ flex: 1 }}>
+                            <ActionPill
+                              label="Evet, Sil"
+                              variant="primary"
+                              onPress={() => handleDeletePost(post.id)}
+                            />
+                          </View>
                         </View>
                       </View>
                     )}
                   </View>
                 );
-              })
-            )}
-          </View>
-        )}
+              })}
+            </View>
+          )}
+        </View>
 
         {/* ================= SENİN PAYLAŞIMLARIN ================= */}
         {isHydrated && (
-          <View style={{ gap: 10 }}>
-            <Text style={{ fontSize: 18, fontWeight: "900", color: "#111" }}>
-              Senin Paylaşımların
-            </Text>
+          <View style={{ gap: 14 }}>
+            <SectionHeader
+              title="Senin Paylaşımların"
+              subtitle="Kendi yazdığın paylaşımları buradan hızlıca görebilirsin."
+            />
 
             {myPosts.length === 0 ? (
               <View
                 style={{
                   borderWidth: 1,
-                  borderColor: "#eee",
-                  borderRadius: 18,
+                  borderColor: COLORS.border,
+                  borderRadius: 22,
                   paddingVertical: 28,
                   paddingHorizontal: 20,
-                  backgroundColor: "#fff",
+                  backgroundColor: COLORS.card,
                   alignItems: "center",
+                  gap: 10,
                 }}
               >
-                <Text style={{ fontSize: 36 }}>✨</Text>
-
+                <Ionicons
+                  name="create-outline"
+                  size={28}
+                  color={COLORS.primary}
+                />
                 <Text
                   style={{
-                    marginTop: 10,
                     fontSize: 17,
-                    fontWeight: "800",
-                    color: "#222",
+                    fontWeight: "900",
+                    color: COLORS.text,
                   }}
                 >
-                  Henüz paylaşım yok
+                  Henüz paylaşım yapmadın
                 </Text>
-
                 <Text
                   style={{
-                    marginTop: 6,
-                    color: "#666",
+                    color: COLORS.muted,
                     textAlign: "center",
                     lineHeight: 20,
                   }}
                 >
-                  Bir kitabın detay ekranına girip paylaşım oluşturarak burada
-                  görünmesini sağlayabilirsin.
+                  Bir kitap hakkında düşüncelerini paylaşarak topluluğa katıl.
                 </Text>
               </View>
             ) : (
-              myPosts.map((post) => {
-                const localBook = getLocalBook(post.bookId);
-                const displayTitle = localBook?.title ?? post.bookTitle;
-                const displayAuthor = localBook?.author ?? post.bookAuthor;
-                const displayThumbnail =
-                  localBook?.thumbnail ?? post.bookThumbnail;
+              <View style={{ gap: 12 }}>
+                {myPosts.map((post) => {
+                  const localBook = getLocalBook(post.bookId);
+                  const displayTitle =
+                    post.bookTitle || localBook?.title || "Kitap";
+                  const displayAuthor =
+                    post.bookAuthor || localBook?.author || "Bilinmeyen Yazar";
 
-                return (
-                  <View
-                    key={post.id}
-                    style={{
-                      padding: 14,
-                      borderRadius: 16,
-                      borderWidth: 1,
-                      borderColor: "#eee",
-                      backgroundColor: "#fff",
-                      gap: 10,
-                    }}
-                  >
-                    <View style={{ flexDirection: "row", gap: 12 }}>
-                      <Image
-                        source={{
-                          uri:
-                            post.userAvatar ??
-                            "https://ui-avatars.com/api/?name=User",
-                        }}
-                        style={{
-                          width: 40,
-                          height: 40,
-                          borderRadius: 20,
-                          backgroundColor: "#f1f1f1",
-                        }}
-                      />
-
-                      <View style={{ flex: 1 }}>
-                        <Text style={{ fontWeight: "900", color: "#111" }}>
-                          {post.userName}
-                        </Text>
-                        <Text style={{ color: "#888", fontSize: 12 }}>
-                          {formatTimeAgo(post.createdAt)} önce
-                        </Text>
-                      </View>
-                    </View>
-
+                  return (
                     <Pressable
+                      key={post.id}
                       onPress={() =>
                         router.push({
-                          pathname: "/post-comments/[id]" as const,
+                          pathname: "/post-comments/[id]",
                           params: { id: post.id },
                         })
                       }
                       style={({ pressed, hovered }) => ({
-                        flexDirection: "row",
-                        gap: 12,
-                        borderRadius: 12,
-                        padding: 4,
+                        borderWidth: 1,
+                        borderColor: COLORS.border,
+                        borderRadius: 22,
+                        padding: 16,
                         backgroundColor: pressed
-                          ? "#f3f3f3"
+                          ? "#f6f1ea"
                           : hovered
-                            ? "#fafafa"
-                            : "transparent",
+                            ? "#fff9f3"
+                            : COLORS.card,
+                        gap: 8,
                         transform: [{ scale: pressed ? 0.99 : 1 }],
                       })}
                     >
-                      <View
+                      <Text
                         style={{
-                          width: 56,
-                          height: 80,
-                          borderRadius: 10,
-                          overflow: "hidden",
-                          backgroundColor: "#f3f3f3",
-                          alignItems: "center",
-                          justifyContent: "center",
+                          fontWeight: "900",
+                          fontSize: 17,
+                          color: COLORS.text,
                         }}
                       >
-                        {displayThumbnail ? (
-                          <Image
-                            source={{ uri: displayThumbnail }}
-                            style={{ width: 56, height: 80 }}
-                            resizeMode="cover"
-                          />
-                        ) : (
-                          <View
-                            style={{
-                              width: "100%",
-                              height: "100%",
-                              alignItems: "center",
-                              justifyContent: "center",
-                              backgroundColor: "#f1f1f1",
-                            }}
-                          >
-                            <Text style={{ fontSize: 22 }}>📚</Text>
-                          </View>
-                        )}
-                      </View>
+                        {displayTitle}
+                      </Text>
 
-                      <View style={{ flex: 1, gap: 4 }}>
+                      <Text style={{ color: COLORS.muted }}>
+                        {displayAuthor}
+                      </Text>
+
+                      {!!post.shareText && (
                         <Text
-                          style={{
-                            fontWeight: "900",
-                            fontSize: 15,
-                            color: "#1a1a1a",
-                          }}
                           numberOfLines={2}
+                          style={{
+                            color: COLORS.text,
+                            lineHeight: 22,
+                          }}
                         >
-                          {displayTitle}
+                          {post.shareText}
+                        </Text>
+                      )}
+
+                      <View
+                        style={{
+                          marginTop: 4,
+                          flexDirection: "row",
+                          justifyContent: "space-between",
+                          alignItems: "center",
+                        }}
+                      >
+                        <Text style={{ color: COLORS.muted, fontSize: 13 }}>
+                          ❤️ {post.likes ?? 0} · 💬 {post.comments?.length ?? 0}
                         </Text>
 
-                        <Text style={{ color: "#666" }} numberOfLines={1}>
-                          {displayAuthor}
+                        <Text
+                          style={{
+                            color: COLORS.primary,
+                            fontWeight: "800",
+                            fontSize: 13,
+                          }}
+                        >
+                          Aç
                         </Text>
                       </View>
                     </Pressable>
-
-                    <Text style={{ color: "#555", lineHeight: 20 }}>
-                      “{post.shareText || "Paylaşım metni yok"}”
-                    </Text>
-
-                    <View
-                      style={{
-                        flexDirection: "row",
-                        gap: 10,
-                        alignItems: "center",
-                        flexWrap: "wrap",
-                      }}
-                    >
-                      <Pressable
-                        onPress={() => toggleLike(post.id)}
-                        style={pillButtonStyle("secondary")}
-                      >
-                        <Text style={{ fontWeight: "900" }}>
-                          {post.isLiked ? "❤️" : "🤍"} {post.likes}
-                        </Text>
-                      </Pressable>
-
-                      <Pressable
-                        onPress={() =>
-                          router.push({
-                            pathname: "/post-comments/[id]" as const,
-                            params: { id: post.id },
-                          })
-                        }
-                        style={pillButtonStyle("secondary")}
-                      >
-                        <Text style={{ fontWeight: "900" }}>
-                          💬 {post.comments.length}
-                        </Text>
-                      </Pressable>
-
-                      <Pressable
-                        onPress={() =>
-                          router.push({
-                            pathname: "/share/[id]" as const,
-                            params: {
-                              id: post.bookId,
-                              postId: post.id,
-                            },
-                          })
-                        }
-                        style={pillButtonStyle("secondary")}
-                      >
-                        <Text style={{ fontWeight: "800", color: "#333" }}>
-                          Düzenle
-                        </Text>
-                      </Pressable>
-
-                      <Pressable
-                        onPress={() =>
-                          setConfirmDeleteId((prev) =>
-                            prev === post.id ? null : post.id,
-                          )
-                        }
-                        style={pillButtonStyle("danger")}
-                      >
-                        <Text style={{ fontWeight: "800", color: "#c00" }}>
-                          Sil
-                        </Text>
-                      </Pressable>
-                    </View>
-
-                    {confirmDeleteId === post.id && (
-                      <View
-                        style={{
-                          marginTop: 6,
-                          padding: 12,
-                          borderRadius: 12,
-                          borderWidth: 1,
-                          borderColor: "#ffd6d6",
-                          backgroundColor: "#fff7f7",
-                          gap: 10,
-                        }}
-                      >
-                        <Text style={{ color: "#8b0000", fontWeight: "800" }}>
-                          Bu paylaşım silinsin mi?
-                        </Text>
-
-                        <View style={{ flexDirection: "row", gap: 10 }}>
-                          <Pressable
-                            onPress={() => setConfirmDeleteId(null)}
-                            style={buttonStyle("secondary", { flex: 1 })}
-                          >
-                            <Text style={{ fontWeight: "800", color: "#333" }}>
-                              Vazgeç
-                            </Text>
-                          </Pressable>
-
-                          <Pressable
-                            onPress={() => handleDeletePost(post.id)}
-                            style={buttonStyle("primary", { flex: 1 })}
-                          >
-                            <Text style={{ fontWeight: "800", color: "#fff" }}>
-                              Evet, Sil
-                            </Text>
-                          </Pressable>
-                        </View>
-                      </View>
-                    )}
-                  </View>
-                );
-              })
+                  );
+                })}
+              </View>
             )}
           </View>
         )}
@@ -831,21 +1099,27 @@ export default function Home() {
         onPress={() => router.push("/add-book")}
         style={({ pressed, hovered }) => ({
           position: "absolute",
-          right: 16,
-          bottom: 16,
-          width: 58,
-          height: 58,
-          borderRadius: 29,
-          backgroundColor: pressed ? "#333" : hovered ? "#222" : "#111",
+          right: 18,
+          bottom: 22,
+          width: 62,
+          height: 62,
+          borderRadius: 31,
+          backgroundColor: pressed
+            ? COLORS.primaryDark
+            : hovered
+              ? "#8b6240"
+              : COLORS.primary,
           alignItems: "center",
           justifyContent: "center",
-          elevation: 4,
+          shadowColor: COLORS.primary,
+          shadowOpacity: 0.24,
+          shadowRadius: 16,
+          shadowOffset: { width: 0, height: 8 },
+          elevation: 6,
           transform: [{ scale: pressed ? 0.96 : 1 }],
         })}
       >
-        <Text style={{ color: "white", fontSize: 30, fontWeight: "400" }}>
-          +
-        </Text>
+        <Ionicons name="add" size={28} color="#fff7f4" />
       </Pressable>
     </View>
   );

@@ -1,16 +1,20 @@
 // types/book.ts
 
 /**
- * Kitabın kullanıcı kitaplığındaki durumu
+ * Kitabın kullanıcının kitaplığındaki durumu
  *
- * reading  -> şu an okunuyor
- * read     -> bitirildi
- * want     -> daha sonra okunacak
+ * reading -> şu anda okunuyor
+ * read    -> bitirildi
+ * want    -> daha sonra okunacak
  */
 export type BookStatus = "reading" | "read" | "want";
 
 /**
- * Kitap altında tutulacak yorum modeli
+ * Kitap altındaki eski yorum modeli
+ *
+ * Not:
+ * Projede artık sosyal yorumlar çoğunlukla Post modeli üzerinden gidiyor.
+ * Ama bu yapı eski akışlarla uyumluluk için hâlâ tutuluyor.
  */
 export type BookComment = {
   /**
@@ -25,11 +29,13 @@ export type BookComment = {
 
   /**
    * Yorum oluşturulma zamanı
+   * Unix timestamp (number)
    */
   createdAt: number;
 
   /**
    * Yorumu yazan kullanıcı bilgileri
+   * Eski kayıtlarla uyumluluk için opsiyonel tutuluyor
    */
   userId?: string;
   userName?: string;
@@ -38,6 +44,14 @@ export type BookComment = {
 
 /**
  * Uygulamadaki temel kitap modeli
+ *
+ * Bu model:
+ * - kitaplık
+ * - kitap detay
+ * - okuma ilerlemesi
+ * - değerlendirme
+ * - eski paylaşım/comment uyumluluğu
+ * alanlarını taşır
  */
 export type Book = {
   /**
@@ -58,7 +72,7 @@ export type Book = {
   googleId?: string;
 
   /**
-   * Kitabın kullanıcı kitaplığındaki durumu
+   * Kitabın kitaplıktaki mevcut durumu
    */
   status: BookStatus;
 
@@ -75,21 +89,25 @@ export type Book = {
   note?: string;
 
   /**
-   * Paylaşım alanları
-   * Eski akışlarla uyumluluk için tutuluyor
+   * Eski paylaşım akışıyla uyumluluk alanları
+   *
+   * Not:
+   * Yeni sosyal sistem Post modeli üzerinden ilerliyor.
    */
   sharedAt?: number;
   shareText?: string;
 
   /**
-   * Sosyal alanlar
+   * Eski sosyal alanlar
+   * Yeni sistemde ana kaynak Post modeli olsa da
+   * geriye dönük uyumluluk için tutuluyor.
    */
   likes?: number;
   isLiked?: boolean;
   comments?: BookComment[];
 
   /**
-   * Kayıt oluşturulma zamanı
+   * Kitabın kayıt oluşturulma zamanı
    */
   createdAt: number;
 };

@@ -1,3 +1,6 @@
+// app/share/[id].tsx
+
+import { Ionicons } from "@expo/vector-icons";
 import { router, useLocalSearchParams } from "expo-router";
 import React, { useEffect, useMemo, useState } from "react";
 import {
@@ -12,13 +15,74 @@ import {
 import { useBooks } from "../../context/BooksContext";
 import { usePosts } from "../../context/PostsContext";
 import { CURRENT_USER } from "../../data/mockUsers";
-import { buttonStyle } from "../../utils/pressableStyles";
+
+/**
+ * Ortak renk paleti
+ */
+const COLORS = {
+  bg: "#fbf9f5",
+  card: "#fffdf9",
+  border: "#ece7df",
+  text: "#2f2a24",
+  muted: "#7a7268",
+  primary: "#7d5739",
+  primaryDark: "#6b4a2f",
+  primarySoft: "#f3e2d2",
+  graySoft: "#f3efe8",
+  whiteSoft: "#fff7f4",
+};
+
+/**
+ * Ortak buton
+ */
+function SoftButton({
+  label,
+  icon,
+  onPress,
+  variant = "secondary",
+}: {
+  label: string;
+  icon?: keyof typeof Ionicons.glyphMap;
+  onPress: () => void;
+  variant?: "secondary" | "primary";
+}) {
+  const backgroundColor = variant === "primary" ? COLORS.primary : COLORS.card;
+
+  const borderColor = variant === "primary" ? COLORS.primary : COLORS.border;
+
+  const textColor = variant === "primary" ? COLORS.whiteSoft : COLORS.text;
+
+  return (
+    <Pressable
+      onPress={onPress}
+      style={({ pressed }) => ({
+        paddingVertical: 14,
+        paddingHorizontal: 16,
+        borderRadius: 16,
+        borderWidth: 1,
+        borderColor,
+        backgroundColor: pressed
+          ? variant === "primary"
+            ? COLORS.primaryDark
+            : "#ece6dc"
+          : backgroundColor,
+        alignItems: "center",
+        justifyContent: "center",
+        flexDirection: "row",
+        gap: 8,
+      })}
+    >
+      {!!icon && <Ionicons name={icon} size={16} color={textColor} />}
+      <Text style={{ color: textColor, fontWeight: "900" }}>{label}</Text>
+    </Pressable>
+  );
+}
 
 export default function ShareBookScreen() {
   /**
    * Route parametreleri
    * id     -> kitap id
-   * postId -> varsa mevcut paylaşımı düzenleme modu
+   * postId -> varsa düzenleme modu
    */
   const { id, postId } = useLocalSearchParams<{
     id: string;
@@ -38,12 +102,12 @@ export default function ShareBookScreen() {
   const editingPost = postId ? getPostById(postId) : undefined;
 
   /**
-   * Text input state
+   * Paylaşım metni
    */
   const [text, setText] = useState("");
 
   /**
-   * Düzenleme modunda mevcut paylaşım metnini input'a doldur
+   * Düzenleme modunda mevcut paylaşımı input'a doldur
    */
   useEffect(() => {
     if (editingPost) {
@@ -52,30 +116,44 @@ export default function ShareBookScreen() {
   }, [editingPost]);
 
   /**
-   * Kitap bulunamadıysa fallback ekranı
+   * Kitap yoksa fallback ekranı
    */
   if (!book) {
     return (
-      <ScrollView contentContainerStyle={{ padding: 16 }}>
+      <ScrollView
+        style={{ flex: 1, backgroundColor: COLORS.bg }}
+        contentContainerStyle={{ padding: 16 }}
+      >
         <View
           style={{
             borderWidth: 1,
-            borderColor: "#eee",
-            borderRadius: 18,
+            borderColor: COLORS.border,
+            borderRadius: 22,
             paddingVertical: 30,
             paddingHorizontal: 20,
-            backgroundColor: "#fff",
+            backgroundColor: COLORS.card,
             alignItems: "center",
+            gap: 10,
           }}
         >
-          <Text style={{ fontSize: 40 }}>📚</Text>
+          <View
+            style={{
+              width: 58,
+              height: 58,
+              borderRadius: 29,
+              backgroundColor: COLORS.primarySoft,
+              alignItems: "center",
+              justifyContent: "center",
+            }}
+          >
+            <Ionicons name="book-outline" size={28} color={COLORS.primary} />
+          </View>
 
           <Text
             style={{
-              marginTop: 10,
-              fontSize: 18,
-              fontWeight: "800",
-              color: "#222",
+              fontSize: 20,
+              fontWeight: "900",
+              color: COLORS.text,
             }}
           >
             Kitap bulunamadı
@@ -83,8 +161,7 @@ export default function ShareBookScreen() {
 
           <Text
             style={{
-              marginTop: 6,
-              color: "#666",
+              color: COLORS.muted,
               textAlign: "center",
               lineHeight: 20,
             }}
@@ -93,12 +170,13 @@ export default function ShareBookScreen() {
             olabilir.
           </Text>
 
-          <Pressable
-            onPress={() => router.back()}
-            style={buttonStyle("secondary", { marginTop: 16, minWidth: 120 })}
-          >
-            <Text style={{ fontWeight: "800" }}>Geri</Text>
-          </Pressable>
+          <View style={{ marginTop: 6, minWidth: 140 }}>
+            <SoftButton
+              label="Geri"
+              icon="arrow-back-outline"
+              onPress={() => router.back()}
+            />
+          </View>
         </View>
       </ScrollView>
     );
@@ -108,14 +186,14 @@ export default function ShareBookScreen() {
 
   /**
    * Aynı kitaba ait mevcut paylaşımlar
-   * Düzenleme ekranında değilken göstermek için kullanıyoruz
+   * Düzenleme modunda değilken kullanıcıya gösterilir.
    */
   const existingPosts = useMemo(() => {
     return getByBookId(safeBook.id);
   }, [safeBook.id, getByBookId]);
 
   /**
-   * Paylaş / güncelle butonu
+   * Yeni paylaşım veya güncelleme işlemi
    */
   function handleSubmit() {
     const trimmed = text.trim();
@@ -167,17 +245,33 @@ export default function ShareBookScreen() {
   }
 
   return (
-    <ScrollView contentContainerStyle={{ padding: 16, gap: 14 }}>
-      {/* ================= KİTAP KARTI ================= */}
+    <ScrollView
+      style={{ flex: 1, backgroundColor: COLORS.bg }}
+      contentContainerStyle={{ padding: 16, gap: 14, paddingBottom: 120 }}
+    >
+      {/* Başlık */}
+      <View style={{ gap: 4 }}>
+        <Text style={{ fontSize: 28, fontWeight: "900", color: COLORS.text }}>
+          {editingPost ? "Paylaşımı Düzenle" : "Paylaş"}
+        </Text>
+
+        <Text style={{ color: COLORS.muted, lineHeight: 21 }}>
+          {editingPost
+            ? "Mevcut paylaşım metnini güncelle."
+            : "Bu kitap hakkında düşüncelerini toplulukla paylaş."}
+        </Text>
+      </View>
+
+      {/* Kitap kartı */}
       <View
         style={{
           flexDirection: "row",
           gap: 12,
           padding: 14,
-          borderRadius: 16,
+          borderRadius: 18,
           borderWidth: 1,
-          borderColor: "#eee",
-          backgroundColor: "#fff",
+          borderColor: COLORS.border,
+          backgroundColor: COLORS.card,
           alignItems: "center",
         }}
       >
@@ -185,9 +279,9 @@ export default function ShareBookScreen() {
           style={{
             width: 60,
             height: 88,
-            borderRadius: 10,
+            borderRadius: 12,
             overflow: "hidden",
-            backgroundColor: "#f3f3f3",
+            backgroundColor: COLORS.primarySoft,
             alignItems: "center",
             justifyContent: "center",
           }}
@@ -199,20 +293,23 @@ export default function ShareBookScreen() {
               resizeMode="cover"
             />
           ) : (
-            <Text style={{ fontSize: 22 }}>📚</Text>
+            <Ionicons name="book-outline" size={24} color={COLORS.primary} />
           )}
         </View>
 
         <View style={{ flex: 1, gap: 4 }}>
-          <Text style={{ fontWeight: "900", fontSize: 16 }} numberOfLines={2}>
+          <Text
+            style={{ fontWeight: "900", fontSize: 17, color: COLORS.text }}
+            numberOfLines={2}
+          >
             {safeBook.title}
           </Text>
 
-          <Text style={{ color: "#666" }} numberOfLines={1}>
+          <Text style={{ color: COLORS.muted }} numberOfLines={1}>
             {safeBook.author}
           </Text>
 
-          <Text style={{ color: "#888", fontSize: 12 }}>
+          <Text style={{ color: COLORS.muted, fontSize: 12 }}>
             {editingPost
               ? "Paylaşımını düzenliyorsun"
               : "Bu kitap hakkında düşüncelerini paylaş"}
@@ -220,18 +317,18 @@ export default function ShareBookScreen() {
         </View>
       </View>
 
-      {/* ================= PAYLAŞIM METNİ ================= */}
+      {/* Metin alanı */}
       <View
         style={{
           padding: 14,
-          borderRadius: 16,
+          borderRadius: 18,
           borderWidth: 1,
-          borderColor: "#eee",
-          backgroundColor: "#fff",
+          borderColor: COLORS.border,
+          backgroundColor: COLORS.card,
           gap: 10,
         }}
       >
-        <Text style={{ fontWeight: "800", color: "#222" }}>
+        <Text style={{ fontWeight: "900", color: COLORS.text }}>
           {editingPost ? "Paylaşımı Düzenle" : "Paylaşım Metni"}
         </Text>
 
@@ -239,50 +336,52 @@ export default function ShareBookScreen() {
           value={text}
           onChangeText={setText}
           placeholder="Bu kitap sende nasıl bir etki bıraktı?"
+          placeholderTextColor="#9a9389"
           multiline
           textAlignVertical="top"
           maxLength={700}
           style={{
             minHeight: 140,
             borderWidth: 1,
-            borderColor: "#ddd",
-            borderRadius: 12,
+            borderColor: COLORS.border,
+            borderRadius: 14,
             padding: 12,
-            backgroundColor: "#fff",
-            color: "#222",
+            backgroundColor: COLORS.graySoft,
+            color: COLORS.text,
           }}
         />
 
-        <Text style={{ color: "#888", fontSize: 12 }}>
+        <Text style={{ color: COLORS.muted, fontSize: 12 }}>
           {text.trim().length}/700 karakter
         </Text>
       </View>
 
-      {/* ================= AKSİYON BUTONU ================= */}
-      <Pressable onPress={handleSubmit} style={buttonStyle("primary")}>
-        <Text style={{ color: "#fff", fontWeight: "900" }}>
-          {editingPost ? "Güncelle" : "Paylaş"}
-        </Text>
-      </Pressable>
+      {/* Ana aksiyon */}
+      <SoftButton
+        label={editingPost ? "Güncelle" : "Paylaş"}
+        icon={editingPost ? "create-outline" : "share-social-outline"}
+        onPress={handleSubmit}
+        variant="primary"
+      />
 
-      {/* ================= ÖNCEKİ PAYLAŞIMLAR ================= */}
+      {/* Önceki paylaşımlar */}
       {!editingPost && (
         <View
           style={{
             padding: 14,
-            borderRadius: 16,
+            borderRadius: 18,
             borderWidth: 1,
-            borderColor: "#eee",
-            backgroundColor: "#fff",
+            borderColor: COLORS.border,
+            backgroundColor: COLORS.card,
             gap: 8,
           }}
         >
-          <Text style={{ fontWeight: "800", color: "#222" }}>
+          <Text style={{ fontWeight: "900", color: COLORS.text }}>
             Bu kitaba ait önceki paylaşımlar
           </Text>
 
           {existingPosts.length === 0 ? (
-            <Text style={{ color: "#666" }}>Henüz paylaşım yok.</Text>
+            <Text style={{ color: COLORS.muted }}>Henüz paylaşım yok.</Text>
           ) : (
             existingPosts.map((post) => (
               <View
@@ -290,14 +389,15 @@ export default function ShareBookScreen() {
                 style={{
                   padding: 10,
                   borderRadius: 12,
-                  backgroundColor: "#fafafa",
+                  backgroundColor: COLORS.graySoft,
                   gap: 4,
                 }}
               >
-                <Text style={{ fontWeight: "800", color: "#222" }}>
+                <Text style={{ fontWeight: "800", color: COLORS.text }}>
                   {post.userName}
                 </Text>
-                <Text style={{ color: "#555", lineHeight: 20 }}>
+
+                <Text style={{ color: COLORS.muted, lineHeight: 20 }}>
                   {post.shareText}
                 </Text>
               </View>
@@ -306,10 +406,12 @@ export default function ShareBookScreen() {
         </View>
       )}
 
-      {/* ================= GERİ ================= */}
-      <Pressable onPress={() => router.back()} style={buttonStyle("secondary")}>
-        <Text style={{ fontWeight: "900" }}>Geri</Text>
-      </Pressable>
+      {/* Geri */}
+      <SoftButton
+        label="Geri"
+        icon="arrow-back-outline"
+        onPress={() => router.back()}
+      />
     </ScrollView>
   );
 }

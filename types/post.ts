@@ -1,11 +1,22 @@
 // types/post.ts
 
 /**
- * Post altındaki yorum modeli
+ * Topluluk paylaşımı altındaki yorum modeli
  */
 export type PostComment = {
+  /**
+   * Yorum benzersiz id'si
+   */
   id: string;
+
+  /**
+   * Yorum içeriği
+   */
   text: string;
+
+  /**
+   * Oluşturulma zamanı
+   */
   createdAt: number;
 
   /**
@@ -18,19 +29,23 @@ export type PostComment = {
 
 /**
  * Topluluk paylaşım modeli
+ *
+ * Bu model sosyal feed'in ana veri kaynağıdır.
  */
 export type Post = {
+  /**
+   * Post benzersiz id'si
+   */
   id: string;
 
   /**
-   * Paylaşımın bağlı olduğu kitap id
-   * Kullanıcının kendi kitabıyla eşleşebilir
+   * Paylaşımın bağlı olduğu kitap
    */
   bookId: string;
 
   /**
-   * Kitap snapshot bilgisi
-   * Feed içinde doğrudan göstermek için tutulur
+   * Feed içinde doğrudan gösterebilmek için
+   * kitap snapshot bilgileri tutulur
    */
   bookTitle: string;
   bookAuthor: string;
@@ -61,8 +76,11 @@ export type Post = {
   comments: PostComment[];
 
   /**
-   * İleride posttan başlatılmış sohbet bağlamı için alan bırakıyoruz
-   * Şimdilik opsiyonel
+   * İleride paylaşımın nereden üretildiğini anlamak için
+   * opsiyonel kaynak alanı
+   *
+   * manual    -> kullanıcı manuel paylaşım oluşturdu
+   * book-share -> kitap paylaşımı akışından üretildi
    */
   sourceType?: "manual" | "book-share";
 };

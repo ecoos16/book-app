@@ -1,6 +1,10 @@
+// app/post-comments/[id].tsx
+
+import { Ionicons } from "@expo/vector-icons";
 import { router, useLocalSearchParams } from "expo-router";
 import React, { useMemo, useState } from "react";
 import {
+  Alert,
   Image,
   Pressable,
   ScrollView,
@@ -8,10 +12,29 @@ import {
   TextInput,
   View,
 } from "react-native";
+
 import { useChat } from "../../context/ChatContext";
 import { usePosts } from "../../context/PostsContext";
 import { CURRENT_USER } from "../../data/mockUsers";
-import { buttonStyle, pillButtonStyle } from "../../utils/pressableStyles";
+
+/**
+ * ReadSphere ortak renk paleti
+ */
+const COLORS = {
+  bg: "#fbf9f5",
+  card: "#fffdf9",
+  border: "#ece7df",
+  text: "#2f2a24",
+  muted: "#7a7268",
+  primary: "#7d5739",
+  primaryDark: "#6b4a2f",
+  primarySoft: "#f3e2d2",
+  graySoft: "#f3efe8",
+  whiteSoft: "#fff7f4",
+  dangerSoft: "#fff4f4",
+  dangerBorder: "#ffd8d8",
+  dangerText: "#a22b2b",
+};
 
 /**
  * Tarihi Türkçe formatta göstermek için yardımcı fonksiyon
@@ -26,6 +49,91 @@ function formatDate(timestamp: number) {
   });
 }
 
+/**
+ * Avatar yoksa isimden baş harf üret
+ */
+function getInitials(name?: string) {
+  if (!name?.trim()) return "U";
+
+  const parts = name.trim().split(" ").filter(Boolean);
+
+  if (parts.length === 1) {
+    return parts[0].slice(0, 2).toUpperCase();
+  }
+
+  return `${parts[0][0] ?? ""}${parts[1][0] ?? ""}`.toUpperCase();
+}
+
+/**
+ * Ortak yumuşak buton
+ */
+function SoftButton({
+  label,
+  icon,
+  onPress,
+  variant = "secondary",
+}: {
+  label: string;
+  icon?: keyof typeof Ionicons.glyphMap;
+  onPress: () => void;
+  variant?: "secondary" | "primary" | "danger";
+}) {
+  const backgroundColor =
+    variant === "primary"
+      ? COLORS.primary
+      : variant === "danger"
+        ? COLORS.dangerSoft
+        : COLORS.card;
+
+  const borderColor =
+    variant === "primary"
+      ? COLORS.primary
+      : variant === "danger"
+        ? COLORS.dangerBorder
+        : COLORS.border;
+
+  const textColor =
+    variant === "primary"
+      ? COLORS.whiteSoft
+      : variant === "danger"
+        ? COLORS.dangerText
+        : COLORS.text;
+
+  return (
+    <Pressable
+      onPress={onPress}
+      style={({ pressed }) => ({
+        paddingVertical: 12,
+        paddingHorizontal: 14,
+        borderRadius: 16,
+        borderWidth: 1,
+        borderColor,
+        backgroundColor: pressed
+          ? variant === "primary"
+            ? COLORS.primaryDark
+            : "#ece6dc"
+          : backgroundColor,
+        alignItems: "center",
+        justifyContent: "center",
+        flexDirection: "row",
+        gap: 8,
+        transform: [{ scale: pressed ? 0.985 : 1 }],
+      })}
+    >
+      {!!icon && <Ionicons name={icon} size={16} color={textColor} />}
+      <Text
+        style={{
+          color: textColor,
+          fontWeight: "900",
+          fontSize: 14,
+        }}
+      >
+        {label}
+      </Text>
+    </Pressable>
+  );
+}
+
 export default function PostCommentsScreen() {
   /**
    * Route parametresinden post id al
@@ -34,11 +142,18 @@ export default function PostCommentsScreen() {
 
   /**
    * Post işlemleri
+   *
+   * Not:
+   * Eski çalışan koduna göre:
+   * - addComment tek bir nesne parametresi alıyor
+   * - removeComment ise (postId, commentId) alıyor
    */
-  const { getById, addComment, removeComment, removePost } = usePosts();
+  const { getById, addComment, removeComment, removePost, toggleLike } =
+    usePosts();
 
   /**
    * Chat işlemleri
+   * Post sahibine mesaj göndermek için kullanıyoruz
    */
   const { getOrCreateConversationByParticipant } = useChat();
 
@@ -53,35 +168,54 @@ export default function PostCommentsScreen() {
   const [text, setText] = useState("");
 
   /**
-   * Post silme onayı
+   * Post silme onayı açık mı?
    */
   const [confirmDeletePost, setConfirmDeletePost] = useState(false);
 
   /**
-   * Post yoksa boş durum ekranı
+   * Post yoksa fallback ekranı
    */
   if (!post) {
     return (
-      <ScrollView contentContainerStyle={{ padding: 16 }}>
+      <ScrollView
+        style={{ flex: 1, backgroundColor: COLORS.bg }}
+        contentContainerStyle={{ padding: 16 }}
+      >
         <View
           style={{
             borderWidth: 1,
-            borderColor: "#eee",
-            borderRadius: 18,
+            borderColor: COLORS.border,
+            borderRadius: 22,
             paddingVertical: 30,
             paddingHorizontal: 20,
-            backgroundColor: "#fff",
+            backgroundColor: COLORS.card,
             alignItems: "center",
+            gap: 10,
           }}
         >
-          <Text style={{ fontSize: 40 }}>💬</Text>
+          <View
+            style={{
+              width: 60,
+              height: 60,
+              borderRadius: 30,
+              backgroundColor: COLORS.primarySoft,
+              alignItems: "center",
+              justifyContent: "center",
+            }}
+          >
+            <Ionicons
+              name="chatbubble-ellipses-outline"
+              size={28}
+              color={COLORS.primary}
+            />
+          </View>
 
           <Text
             style={{
-              marginTop: 10,
-              fontSize: 18,
-              fontWeight: "800",
-              color: "#222",
+              marginTop: 8,
+              fontSize: 20,
+              fontWeight: "900",
+              color: COLORS.text,
             }}
           >
             Paylaşım bulunamadı
@@ -89,22 +223,22 @@ export default function PostCommentsScreen() {
 
           <Text
             style={{
-              marginTop: 6,
-              color: "#666",
+              color: COLORS.muted,
               textAlign: "center",
-              lineHeight: 20,
+              lineHeight: 21,
             }}
           >
             Bu paylaşım silinmiş olabilir veya geçersiz bir bağlantı açılmış
             olabilir.
           </Text>
 
-          <Pressable
-            onPress={() => router.back()}
-            style={buttonStyle("secondary", { marginTop: 16, minWidth: 120 })}
-          >
-            <Text style={{ fontWeight: "800" }}>Geri</Text>
-          </Pressable>
+          <View style={{ marginTop: 8, minWidth: 140 }}>
+            <SoftButton
+              label="Geri"
+              icon="arrow-back-outline"
+              onPress={() => router.back()}
+            />
+          </View>
         </View>
       </ScrollView>
     );
@@ -112,24 +246,48 @@ export default function PostCommentsScreen() {
 
   /**
    * Bu noktadan sonra post kesin var
+   * TypeScript'in "possibly undefined" uyarısını temizlemek için
+   * ayrı bir safePost sabiti kullanıyoruz
    */
   const safePost = post;
+
+  /**
+   * Post bana mı ait?
+   */
   const isMine = safePost.userId === CURRENT_USER.id;
 
   /**
    * Yorumları tarihe göre sırala
+   *
+   * DİKKAT:
+   * Yanlış kullanım:
+   *   [.safePost.comments]
+   *
+   * Doğrusu:
+   *   [...(safePost.comments ?? [])]
    */
   const sortedComments = useMemo(() => {
-    return [...safePost.comments].sort((a, b) => a.createdAt - b.createdAt);
+    return [...(safePost.comments ?? [])].sort(
+      (a, b) => a.createdAt - b.createdAt,
+    );
   }, [safePost.comments]);
 
   /**
    * Yeni yorum ekle
+   *
+   * DİKKAT:
+   * addComment burada TEK NESNE alıyor
+   * Bu yüzden:
+   *   addComment({ postId, text, ... })
+   * şeklinde çağrılmalı
    */
   function handleAddComment() {
     const trimmed = text.trim();
 
-    if (!trimmed) return;
+    if (!trimmed) {
+      Alert.alert("Eksik bilgi", "Yorum yazmalısın.");
+      return;
+    }
 
     addComment({
       postId: safePost.id,
@@ -144,9 +302,20 @@ export default function PostCommentsScreen() {
 
   /**
    * Yorumu sil
+   *
+   * DİKKAT:
+   * removeComment burada iki argüman alıyor:
+   *   removeComment(postId, commentId)
    */
   function handleDeleteComment(commentId: string) {
-    removeComment(safePost.id, commentId);
+    Alert.alert("Yorum silinsin mi?", "Bu yorum kaldırılacak.", [
+      { text: "Vazgeç", style: "cancel" },
+      {
+        text: "Sil",
+        style: "destructive",
+        onPress: () => removeComment(safePost.id, commentId),
+      },
+    ]);
   }
 
   /**
@@ -183,26 +352,113 @@ export default function PostCommentsScreen() {
   }
 
   return (
-    <ScrollView contentContainerStyle={{ padding: 16, gap: 14 }}>
+    <ScrollView
+      style={{ flex: 1, backgroundColor: COLORS.bg }}
+      contentContainerStyle={{ padding: 16, gap: 14, paddingBottom: 120 }}
+      keyboardShouldPersistTaps="handled"
+    >
+      {/* ================= SAYFA BAŞLIĞI ================= */}
+      <View style={{ gap: 4 }}>
+        <Text
+          style={{
+            fontSize: 28,
+            fontWeight: "900",
+            color: COLORS.text,
+          }}
+        >
+          Paylaşım Detayı
+        </Text>
+
+        <Text style={{ color: COLORS.muted }}>
+          {sortedComments.length} yorum
+        </Text>
+      </View>
+
       {/* ================= PAYLAŞIM KARTI ================= */}
       <View
         style={{
-          padding: 14,
-          borderRadius: 16,
+          padding: 16,
+          borderRadius: 22,
           borderWidth: 1,
-          borderColor: "#eee",
-          backgroundColor: "#fff",
-          gap: 10,
+          borderColor: COLORS.border,
+          backgroundColor: COLORS.card,
+          gap: 12,
         }}
       >
-        <View style={{ flexDirection: "row", gap: 12 }}>
+        {/* Kullanıcı üst satırı */}
+        <View
+          style={{
+            flexDirection: "row",
+            gap: 12,
+            alignItems: "center",
+          }}
+        >
+          {safePost.userAvatar ? (
+            <Image
+              source={{ uri: safePost.userAvatar }}
+              style={{
+                width: 42,
+                height: 42,
+                borderRadius: 21,
+                backgroundColor: COLORS.primarySoft,
+              }}
+            />
+          ) : (
+            <View
+              style={{
+                width: 42,
+                height: 42,
+                borderRadius: 21,
+                backgroundColor: COLORS.primarySoft,
+                alignItems: "center",
+                justifyContent: "center",
+              }}
+            >
+              <Text style={{ fontWeight: "900", color: COLORS.primary }}>
+                {getInitials(safePost.userName)}
+              </Text>
+            </View>
+          )}
+
+          <View style={{ flex: 1 }}>
+            <Text
+              style={{
+                fontWeight: "900",
+                fontSize: 15,
+                color: COLORS.text,
+              }}
+            >
+              {safePost.userName}
+            </Text>
+
+            <Text
+              style={{
+                color: COLORS.muted,
+                fontSize: 12,
+              }}
+            >
+              {formatDate(safePost.createdAt)}
+            </Text>
+          </View>
+        </View>
+
+        {/* Kitap alanı */}
+        <View
+          style={{
+            flexDirection: "row",
+            gap: 12,
+            borderRadius: 16,
+            padding: 10,
+            backgroundColor: COLORS.graySoft,
+          }}
+        >
           <View
             style={{
               width: 56,
               height: 80,
               borderRadius: 10,
               overflow: "hidden",
-              backgroundColor: "#f3f3f3",
+              backgroundColor: COLORS.primarySoft,
               alignItems: "center",
               justifyContent: "center",
             }}
@@ -214,30 +470,34 @@ export default function PostCommentsScreen() {
                 resizeMode="cover"
               />
             ) : (
-              <Text style={{ fontSize: 22 }}>📚</Text>
+              <Ionicons name="book-outline" size={22} color={COLORS.primary} />
             )}
           </View>
 
           <View style={{ flex: 1, gap: 4 }}>
-            <Text style={{ fontWeight: "900", fontSize: 16 }} numberOfLines={2}>
+            <Text
+              style={{
+                fontWeight: "900",
+                fontSize: 16,
+                color: COLORS.text,
+              }}
+              numberOfLines={2}
+            >
               {safePost.bookTitle}
             </Text>
 
-            <Text style={{ color: "#666" }} numberOfLines={1}>
+            <Text style={{ color: COLORS.muted }} numberOfLines={1}>
               {safePost.bookAuthor}
-            </Text>
-
-            <Text style={{ color: "#444", fontWeight: "800" }}>
-              {safePost.userName}
             </Text>
           </View>
         </View>
 
-        <Text style={{ color: "#555", lineHeight: 20 }}>
-          {safePost.shareText}
+        {/* Paylaşım metni */}
+        <Text style={{ color: COLORS.text, lineHeight: 22 }}>
+          {safePost.shareText || "Paylaşım metni yok"}
         </Text>
 
-        {/* ================= POST AKSİYONLARI ================= */}
+        {/* Post aksiyonları */}
         <View
           style={{
             flexDirection: "row",
@@ -246,224 +506,302 @@ export default function PostCommentsScreen() {
             flexWrap: "wrap",
           }}
         >
-          <View
-            style={{
-              paddingHorizontal: 12,
-              paddingVertical: 8,
-              borderRadius: 999,
-              borderWidth: 1,
-              borderColor: "#ddd",
-              backgroundColor: "#fff",
-            }}
-          >
-            <Text style={{ fontWeight: "900" }}>
-              💬 {safePost.comments.length}
-            </Text>
-          </View>
+          <SoftButton
+            label={`${safePost.isLiked ? "❤️" : "🤍"} ${safePost.likes ?? 0}`}
+            onPress={() => toggleLike(safePost.id)}
+          />
+
+          <SoftButton
+            label={`💬 ${sortedComments.length}`}
+            onPress={() => {}}
+          />
 
           {!isMine && (
-            <Pressable
+            <SoftButton
+              label="Mesaj"
+              icon="mail-outline"
               onPress={handleMessagePostOwner}
-              style={pillButtonStyle("secondary")}
-            >
-              <Text style={{ fontWeight: "800", color: "#333" }}>
-                ✉️ Mesaj Gönder
-              </Text>
-            </Pressable>
+            />
           )}
 
           {isMine && (
-            <>
-              <Pressable
-                onPress={() =>
-                  router.push({
-                    pathname: "/share/[id]" as const,
-                    params: {
-                      id: safePost.bookId,
-                      postId: safePost.id,
-                    },
-                  })
-                }
-                style={pillButtonStyle("secondary")}
-              >
-                <Text style={{ fontWeight: "800", color: "#333" }}>
-                  Düzenle
-                </Text>
-              </Pressable>
+            <SoftButton
+              label="Düzenle"
+              icon="create-outline"
+              onPress={() =>
+                router.push({
+                  pathname: "/share/[id]",
+                  params: {
+                    id: safePost.bookId,
+                    postId: safePost.id,
+                  },
+                })
+              }
+            />
+          )}
 
-              <Pressable
-                onPress={() => setConfirmDeletePost((prev) => !prev)}
-                style={pillButtonStyle("danger")}
-              >
-                <Text style={{ fontWeight: "800", color: "#c00" }}>Sil</Text>
-              </Pressable>
-            </>
+          {isMine && (
+            <SoftButton
+              label="Sil"
+              icon="trash-outline"
+              variant="danger"
+              onPress={() => setConfirmDeletePost((prev) => !prev)}
+            />
           )}
         </View>
 
+        {/* Paylaşım silme onayı */}
         {isMine && confirmDeletePost && (
           <View
             style={{
-              marginTop: 6,
-              padding: 12,
-              borderRadius: 12,
+              borderRadius: 16,
+              padding: 14,
               borderWidth: 1,
-              borderColor: "#ffd6d6",
-              backgroundColor: "#fff7f7",
+              borderColor: COLORS.dangerBorder,
+              backgroundColor: COLORS.dangerSoft,
               gap: 10,
             }}
           >
-            <Text style={{ color: "#8b0000", fontWeight: "800" }}>
+            <Text
+              style={{
+                color: COLORS.dangerText,
+                fontWeight: "800",
+              }}
+            >
               Bu paylaşım silinsin mi?
             </Text>
 
             <View style={{ flexDirection: "row", gap: 10 }}>
-              <Pressable
-                onPress={() => setConfirmDeletePost(false)}
-                style={buttonStyle("secondary", { flex: 1 })}
-              >
-                <Text style={{ fontWeight: "800", color: "#333" }}>Vazgeç</Text>
-              </Pressable>
+              <View style={{ flex: 1 }}>
+                <SoftButton
+                  label="Vazgeç"
+                  onPress={() => setConfirmDeletePost(false)}
+                />
+              </View>
 
-              <Pressable
-                onPress={handleDeletePost}
-                style={buttonStyle("primary", { flex: 1 })}
-              >
-                <Text style={{ fontWeight: "800", color: "#fff" }}>
-                  Evet, Sil
-                </Text>
-              </Pressable>
+              <View style={{ flex: 1 }}>
+                <SoftButton
+                  label="Evet, Sil"
+                  variant="primary"
+                  onPress={handleDeletePost}
+                />
+              </View>
             </View>
           </View>
         )}
       </View>
 
-      {/* ================= YORUM EKLE ================= */}
+      {/* ================= YORUM YAZMA KARTI ================= */}
       <View
         style={{
-          padding: 14,
-          borderRadius: 16,
           borderWidth: 1,
-          borderColor: "#eee",
-          backgroundColor: "#fff",
-          gap: 10,
+          borderColor: COLORS.border,
+          borderRadius: 22,
+          padding: 16,
+          backgroundColor: COLORS.card,
+          gap: 12,
         }}
       >
-        <Text style={{ fontWeight: "800", color: "#222" }}>Yorum Ekle</Text>
+        <Text
+          style={{
+            fontWeight: "900",
+            fontSize: 17,
+            color: COLORS.text,
+          }}
+        >
+          Yorum Yaz
+        </Text>
 
         <TextInput
           value={text}
           onChangeText={setText}
-          placeholder="Bu paylaşım hakkında bir şey yaz..."
+          placeholder="Bu paylaşım hakkında düşünceni yaz..."
+          placeholderTextColor="#9a9389"
           multiline
-          textAlignVertical="top"
-          maxLength={500}
           style={{
-            minHeight: 110,
             borderWidth: 1,
-            borderColor: "#ddd",
-            borderRadius: 12,
-            padding: 12,
-            backgroundColor: "#fff",
-            color: "#222",
+            borderColor: COLORS.border,
+            borderRadius: 16,
+            padding: 14,
+            minHeight: 110,
+            textAlignVertical: "top",
+            backgroundColor: COLORS.graySoft,
+            color: COLORS.text,
           }}
         />
 
-        <Pressable onPress={handleAddComment} style={buttonStyle("primary")}>
-          <Text style={{ color: "#fff", fontWeight: "900" }}>Yorum Yap</Text>
-        </Pressable>
+        <SoftButton
+          label="Yorumu Ekle"
+          icon="add-outline"
+          onPress={handleAddComment}
+          variant="primary"
+        />
       </View>
 
       {/* ================= YORUMLAR ================= */}
-      <View
-        style={{
-          padding: 14,
-          borderRadius: 16,
-          borderWidth: 1,
-          borderColor: "#eee",
-          backgroundColor: "#fff",
-          gap: 10,
-        }}
-      >
-        <Text style={{ fontWeight: "800", color: "#222" }}>
-          Yorumlar ({safePost.comments.length})
-        </Text>
+      {sortedComments.length === 0 ? (
+        <View
+          style={{
+            borderWidth: 1,
+            borderColor: COLORS.border,
+            borderRadius: 22,
+            paddingVertical: 30,
+            paddingHorizontal: 22,
+            backgroundColor: COLORS.card,
+            alignItems: "center",
+            gap: 10,
+          }}
+        >
+          <View
+            style={{
+              width: 60,
+              height: 60,
+              borderRadius: 30,
+              backgroundColor: COLORS.primarySoft,
+              alignItems: "center",
+              justifyContent: "center",
+            }}
+          >
+            <Ionicons
+              name="chatbubble-outline"
+              size={26}
+              color={COLORS.primary}
+            />
+          </View>
 
-        {sortedComments.length === 0 ? (
-          <Text style={{ color: "#666" }}>Henüz yorum yok.</Text>
-        ) : (
-          sortedComments.map((comment) => {
-            const canDeleteComment =
-              comment.userId === CURRENT_USER.id || isMine;
+          <Text
+            style={{
+              fontSize: 18,
+              fontWeight: "900",
+              color: COLORS.text,
+            }}
+          >
+            Henüz yorum yok
+          </Text>
 
-            return (
+          <Text
+            style={{
+              color: COLORS.muted,
+              textAlign: "center",
+              lineHeight: 21,
+            }}
+          >
+            Bu paylaşım için ilk yorumu sen yapabilirsin.
+          </Text>
+        </View>
+      ) : (
+        sortedComments.map((comment) => {
+          const commentIsMine = comment.userId === CURRENT_USER.id;
+
+          return (
+            <Pressable
+              key={comment.id}
+              onLongPress={() =>
+                commentIsMine ? handleDeleteComment(comment.id) : undefined
+              }
+              delayLongPress={250}
+              style={{
+                borderWidth: 1,
+                borderColor: COLORS.border,
+                borderRadius: 18,
+                padding: 14,
+                backgroundColor: COLORS.card,
+                gap: 8,
+              }}
+            >
+              {/* Yorum üst satırı */}
               <View
-                key={comment.id}
                 style={{
-                  padding: 12,
-                  borderRadius: 12,
-                  backgroundColor: "#fafafa",
-                  gap: 6,
+                  flexDirection: "row",
+                  justifyContent: "space-between",
+                  alignItems: "center",
+                  gap: 10,
                 }}
               >
                 <View
                   style={{
                     flexDirection: "row",
-                    justifyContent: "space-between",
-                    gap: 12,
+                    alignItems: "center",
+                    gap: 10,
+                    flex: 1,
                   }}
                 >
-                  <View style={{ flexDirection: "row", gap: 8, flex: 1 }}>
+                  {comment.userAvatar ? (
                     <Image
-                      source={{
-                        uri:
-                          comment.userAvatar ??
-                          "https://ui-avatars.com/api/?name=User",
-                      }}
+                      source={{ uri: comment.userAvatar }}
                       style={{
-                        width: 32,
-                        height: 32,
-                        borderRadius: 16,
-                        backgroundColor: "#f1f1f1",
+                        width: 34,
+                        height: 34,
+                        borderRadius: 17,
+                        backgroundColor: COLORS.primarySoft,
                       }}
                     />
-
-                    <View style={{ flex: 1 }}>
-                      <Text style={{ fontWeight: "800", color: "#222" }}>
-                        {comment.userName}
-                      </Text>
-
-                      <Text style={{ color: "#888", fontSize: 12 }}>
-                        {formatDate(comment.createdAt)}
+                  ) : (
+                    <View
+                      style={{
+                        width: 34,
+                        height: 34,
+                        borderRadius: 17,
+                        backgroundColor: COLORS.primarySoft,
+                        alignItems: "center",
+                        justifyContent: "center",
+                      }}
+                    >
+                      <Text
+                        style={{
+                          fontWeight: "900",
+                          color: COLORS.primary,
+                          fontSize: 12,
+                        }}
+                      >
+                        {getInitials(comment.userName)}
                       </Text>
                     </View>
-                  </View>
-
-                  {canDeleteComment && (
-                    <Pressable
-                      onPress={() => handleDeleteComment(comment.id)}
-                      style={pillButtonStyle("danger")}
-                    >
-                      <Text style={{ color: "#c00", fontWeight: "800" }}>
-                        Sil
-                      </Text>
-                    </Pressable>
                   )}
+
+                  <View style={{ flex: 1 }}>
+                    <Text style={{ fontWeight: "900", color: COLORS.text }}>
+                      {comment.userName || "Kullanıcı"}
+                    </Text>
+
+                    <Text style={{ color: COLORS.muted, fontSize: 12 }}>
+                      {formatDate(comment.createdAt)}
+                    </Text>
+                  </View>
                 </View>
 
-                <Text style={{ color: "#555", lineHeight: 20 }}>
-                  {comment.text}
-                </Text>
+                {commentIsMine && (
+                  <Pressable onPress={() => handleDeleteComment(comment.id)}>
+                    <Ionicons
+                      name="trash-outline"
+                      size={16}
+                      color={COLORS.dangerText}
+                    />
+                  </Pressable>
+                )}
               </View>
-            );
-          })
-        )}
-      </View>
+
+              {/* Yorum metni */}
+              <Text style={{ color: COLORS.text, lineHeight: 21 }}>
+                {comment.text}
+              </Text>
+
+              {commentIsMine && (
+                <Text style={{ color: COLORS.muted, fontSize: 12 }}>
+                  Uzun bas veya çöp ikonuyla sil
+                </Text>
+              )}
+            </Pressable>
+          );
+        })
+      )}
 
       {/* ================= GERİ ================= */}
-      <Pressable onPress={() => router.back()} style={buttonStyle("secondary")}>
-        <Text style={{ fontWeight: "900" }}>Geri</Text>
-      </Pressable>
+      <SoftButton
+        label="Geri"
+        icon="arrow-back-outline"
+        onPress={() => router.back()}
+      />
     </ScrollView>
   );
 }

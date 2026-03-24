@@ -1,3 +1,6 @@
+// app/add-book.tsx
+
+import { Ionicons } from "@expo/vector-icons";
 import { router, useLocalSearchParams } from "expo-router";
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
@@ -17,6 +20,24 @@ import type { BookStatus } from "../types/book";
 import type { GoogleBook } from "../types/googleBooks";
 
 /**
+ * ReadSphere ortak renk paleti
+ */
+const COLORS = {
+  bg: "#fbf9f5",
+  card: "#fffdf9",
+  border: "#ece7df",
+  text: "#2f2a24",
+  muted: "#7a7268",
+  primary: "#7d5739",
+  primaryDark: "#6b4a2f",
+  primarySoft: "#f3e2d2",
+  peachSoft: "#f7dfcc",
+  greenSoft: "#dfe7cf",
+  graySoft: "#f3efe8",
+  whiteSoft: "#fff7f4",
+};
+
+/**
  * Durum etiketleri
  * UI'da kullanıcıya Türkçe olarak gösterilecek karşılıklar
  */
@@ -25,6 +46,137 @@ const statusLabel: Record<BookStatus, string> = {
   read: "Okudum",
   want: "İstiyorum",
 };
+
+/**
+ * Ortak section kartı
+ */
+function SectionCard({
+  title,
+  children,
+}: {
+  title: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <View
+      style={{
+        borderWidth: 1,
+        borderColor: COLORS.border,
+        borderRadius: 22,
+        padding: 16,
+        backgroundColor: COLORS.card,
+        gap: 12,
+      }}
+    >
+      <Text
+        style={{
+          fontWeight: "900",
+          fontSize: 17,
+          color: COLORS.text,
+        }}
+      >
+        {title}
+      </Text>
+
+      {children}
+    </View>
+  );
+}
+
+/**
+ * Etiketli input alanı
+ */
+function LabeledInput({
+  label,
+  value,
+  onChangeText,
+  placeholder,
+  multiline = false,
+  keyboardType,
+}: {
+  label: string;
+  value: string;
+  onChangeText: (text: string) => void;
+  placeholder: string;
+  multiline?: boolean;
+  keyboardType?: "default" | "number-pad";
+}) {
+  return (
+    <View style={{ gap: 6 }}>
+      <Text style={{ fontWeight: "800", color: COLORS.text }}>{label}</Text>
+
+      <TextInput
+        value={value}
+        onChangeText={onChangeText}
+        placeholder={placeholder}
+        placeholderTextColor="#9a9389"
+        multiline={multiline}
+        keyboardType={keyboardType}
+        style={{
+          borderWidth: 1,
+          borderColor: COLORS.border,
+          borderRadius: 16,
+          padding: 13,
+          backgroundColor: COLORS.graySoft,
+          color: COLORS.text,
+          minHeight: multiline ? 110 : undefined,
+          textAlignVertical: multiline ? "top" : "center",
+        }}
+      />
+    </View>
+  );
+}
+
+/**
+ * Ortak buton
+ */
+function SoftButton({
+  label,
+  icon,
+  onPress,
+  variant = "secondary",
+  disabled = false,
+}: {
+  label: string;
+  icon?: keyof typeof Ionicons.glyphMap;
+  onPress: () => void;
+  variant?: "secondary" | "primary";
+  disabled?: boolean;
+}) {
+  const backgroundColor = variant === "primary" ? COLORS.primary : COLORS.card;
+
+  const borderColor = variant === "primary" ? COLORS.primary : COLORS.border;
+
+  const textColor = variant === "primary" ? COLORS.whiteSoft : COLORS.text;
+
+  return (
+    <Pressable
+      onPress={onPress}
+      disabled={disabled}
+      style={({ pressed }) => ({
+        paddingVertical: 14,
+        paddingHorizontal: 16,
+        borderRadius: 16,
+        borderWidth: 1,
+        borderColor,
+        backgroundColor: disabled
+          ? "#cfc6bb"
+          : pressed
+            ? variant === "primary"
+              ? COLORS.primaryDark
+              : "#ece6dc"
+            : backgroundColor,
+        alignItems: "center",
+        justifyContent: "center",
+        flexDirection: "row",
+        gap: 8,
+      })}
+    >
+      {!!icon && <Ionicons name={icon} size={16} color={textColor} />}
+      <Text style={{ color: textColor, fontWeight: "900" }}>{label}</Text>
+    </Pressable>
+  );
+}
 
 export default function AddBook() {
   /**
@@ -182,12 +334,11 @@ export default function AddBook() {
     }
 
     // "Okudum" seçildiyse ve toplam sayfa bilgisi varsa
-    // okunan sayfayı otomatik toplam sayfaya eşitle
     if (next === "read" && pagesTotalText) {
       setPagesReadText(pagesTotalText);
     }
 
-    // "İstiyorum" seçildiyse okunan sayfa bilgisi silinsin
+    // "İstiyorum" seçildiyse okunan sayfa gereksiz
     if (next === "want") {
       setPagesReadText("");
     }
@@ -245,16 +396,13 @@ export default function AddBook() {
       return;
     }
 
-    // Toplam sayfa artık genel bilgi olarak saklanabilir
     const pagesTotal = toSafeNumber(pagesTotalText);
 
-    // Okunan sayfa sadece reading ve read için anlamlı
     const pagesRead =
       status === "reading" || status === "read"
         ? toSafeNumber(pagesReadText)
         : undefined;
 
-    // Okunan sayfa toplam sayfayı aşmasın
     const fixedPagesRead =
       typeof pagesTotal === "number" && typeof pagesRead === "number"
         ? Math.min(pagesRead, pagesTotal)
@@ -269,19 +417,13 @@ export default function AddBook() {
       status,
       thumbnail,
       googleId,
-
-      // Sadece "Okudum" için değerlendirme alanları
       rating: status === "read" && rating > 0 ? rating : undefined,
       note:
         status === "read" && note.trim().length > 0 ? note.trim() : undefined,
-
-      // Toplam sayfa varsa her durumda saklanabilir
       pagesTotal:
         typeof pagesTotal === "number" && pagesTotal > 0
           ? pagesTotal
           : undefined,
-
-      // Okunan sayfa sadece reading / read için geçerli
       pagesRead:
         (status === "reading" || status === "read") &&
         typeof fixedPagesRead === "number" &&
@@ -290,47 +432,39 @@ export default function AddBook() {
           : undefined,
     });
 
-    // Kaydettikten sonra geri dön
     router.back();
   };
 
   return (
     <ScrollView
-      contentContainerStyle={{ padding: 16, gap: 14 }}
+      style={{ flex: 1, backgroundColor: COLORS.bg }}
+      contentContainerStyle={{ padding: 16, gap: 14, paddingBottom: 120 }}
       keyboardShouldPersistTaps="handled"
     >
       {/* Başlık alanı */}
       <View style={{ gap: 4 }}>
-        <Text style={{ fontSize: 24, fontWeight: "900" }}>Kitap Ekle</Text>
-        <Text style={{ color: "#666" }}>
+        <Text style={{ fontSize: 28, fontWeight: "900", color: COLORS.text }}>
+          Kitap Ekle
+        </Text>
+        <Text style={{ color: COLORS.muted, lineHeight: 21 }}>
           Kitabı ara, bilgileri otomatik doldur ve listene ekle.
         </Text>
       </View>
 
       {/* Arama kartı */}
-      <View
-        style={{
-          borderWidth: 1,
-          borderColor: "#eee",
-          borderRadius: 16,
-          padding: 14,
-          backgroundColor: "#fff",
-          gap: 8,
-        }}
-      >
-        <Text style={{ fontWeight: "800" }}>Kitap Ara</Text>
+      <SectionCard title="Kitap Ara">
         <BookSearchPicker onSelect={handleSelectGoogleBook} />
-      </View>
+      </SectionCard>
 
       {/* Seçilen kitap önizleme kartı */}
       {(selectedGoogleBook || thumbnail || title || author) && (
         <View
           style={{
             borderWidth: 1,
-            borderColor: "#eee",
-            borderRadius: 16,
-            padding: 12,
-            backgroundColor: "#fff",
+            borderColor: COLORS.border,
+            borderRadius: 22,
+            padding: 14,
+            backgroundColor: COLORS.card,
             flexDirection: "row",
             gap: 12,
           }}
@@ -339,42 +473,55 @@ export default function AddBook() {
           {thumbnail ? (
             <Image
               source={{ uri: thumbnail }}
-              style={{ width: 64, height: 96, borderRadius: 10 }}
+              style={{ width: 72, height: 106, borderRadius: 12 }}
               resizeMode="cover"
             />
           ) : (
             <View
               style={{
-                width: 64,
-                height: 96,
-                borderRadius: 10,
-                backgroundColor: "#eee",
+                width: 72,
+                height: 106,
+                borderRadius: 12,
+                backgroundColor: COLORS.primarySoft,
                 alignItems: "center",
                 justifyContent: "center",
+                gap: 4,
               }}
             >
-              <Text style={{ fontSize: 22 }}>📚</Text>
+              <Ionicons name="book-outline" size={28} color={COLORS.primary} />
+              <Text style={{ fontSize: 10, color: COLORS.muted }}>
+                Kapak yok
+              </Text>
             </View>
           )}
 
           {/* Kitap özeti */}
-          <View style={{ flex: 1, justifyContent: "center" }}>
-            <Text style={{ fontWeight: "800", fontSize: 16 }} numberOfLines={2}>
+          <View style={{ flex: 1, justifyContent: "center", gap: 4 }}>
+            <Text
+              style={{ fontWeight: "900", fontSize: 17, color: COLORS.text }}
+              numberOfLines={2}
+            >
               {title || "Kitap seçilmedi"}
             </Text>
 
-            <Text style={{ color: "#666", marginTop: 4 }} numberOfLines={1}>
+            <Text style={{ color: COLORS.muted }} numberOfLines={1}>
               {author || "Yazar bilgisi yok"}
             </Text>
 
             {pagesTotalText ? (
-              <Text style={{ color: "#888", marginTop: 4 }}>
+              <Text style={{ color: COLORS.muted, fontSize: 12 }}>
                 {pagesTotalText} sayfa
               </Text>
             ) : null}
 
             {googleId ? (
-              <Text style={{ color: "#aaa", marginTop: 4, fontSize: 12 }}>
+              <Text
+                style={{
+                  color: COLORS.primary,
+                  fontSize: 12,
+                  fontWeight: "800",
+                }}
+              >
                 API ile seçildi
               </Text>
             ) : null}
@@ -383,84 +530,32 @@ export default function AddBook() {
       )}
 
       {/* Temel bilgi kartı */}
-      <View
-        style={{
-          borderWidth: 1,
-          borderColor: "#eee",
-          borderRadius: 16,
-          padding: 14,
-          backgroundColor: "#fff",
-          gap: 12,
-        }}
-      >
-        <Text style={{ fontWeight: "800" }}>Temel Bilgiler</Text>
+      <SectionCard title="Temel Bilgiler">
+        <LabeledInput
+          label="Kitap Adı"
+          value={title}
+          onChangeText={setTitle}
+          placeholder="Örn: 1984"
+        />
 
-        {/* Kitap adı */}
-        <View style={{ gap: 6 }}>
-          <Text style={{ fontWeight: "700" }}>Kitap Adı</Text>
-          <TextInput
-            value={title}
-            onChangeText={setTitle}
-            placeholder="Örn: 1984"
-            style={{
-              borderWidth: 1,
-              borderColor: "#ddd",
-              borderRadius: 12,
-              padding: 12,
-              backgroundColor: "#fafafa",
-            }}
-          />
-        </View>
+        <LabeledInput
+          label="Yazar"
+          value={author}
+          onChangeText={setAuthor}
+          placeholder="Örn: George Orwell"
+        />
 
-        {/* Yazar */}
-        <View style={{ gap: 6 }}>
-          <Text style={{ fontWeight: "700" }}>Yazar</Text>
-          <TextInput
-            value={author}
-            onChangeText={setAuthor}
-            placeholder="Örn: George Orwell"
-            style={{
-              borderWidth: 1,
-              borderColor: "#ddd",
-              borderRadius: 12,
-              padding: 12,
-              backgroundColor: "#fafafa",
-            }}
-          />
-        </View>
-
-        {/* Toplam sayfa */}
-        <View style={{ gap: 6 }}>
-          <Text style={{ fontWeight: "700" }}>Toplam Sayfa</Text>
-          <TextInput
-            value={pagesTotalText}
-            onChangeText={setPagesTotalText}
-            placeholder="Örn: 320"
-            keyboardType="number-pad"
-            style={{
-              borderWidth: 1,
-              borderColor: "#ddd",
-              borderRadius: 12,
-              padding: 12,
-              backgroundColor: "#fafafa",
-            }}
-          />
-        </View>
-      </View>
+        <LabeledInput
+          label="Toplam Sayfa"
+          value={pagesTotalText}
+          onChangeText={setPagesTotalText}
+          placeholder="Örn: 320"
+          keyboardType="number-pad"
+        />
+      </SectionCard>
 
       {/* Durum kartı */}
-      <View
-        style={{
-          borderWidth: 1,
-          borderColor: "#eee",
-          borderRadius: 16,
-          padding: 14,
-          backgroundColor: "#fff",
-          gap: 10,
-        }}
-      >
-        <Text style={{ fontWeight: "800" }}>Durum</Text>
-
+      <SectionCard title="Durum">
         <View style={{ flexDirection: "row", gap: 8, flexWrap: "wrap" }}>
           {(["reading", "read", "want"] as BookStatus[]).map((s) => {
             const active = s === status;
@@ -469,19 +564,23 @@ export default function AddBook() {
               <Pressable
                 key={s}
                 onPress={() => onChangeStatus(s)}
-                style={{
+                style={({ pressed }) => ({
                   paddingHorizontal: 14,
                   paddingVertical: 10,
                   borderRadius: 999,
                   borderWidth: 1,
-                  borderColor: active ? "#111" : "#ddd",
-                  backgroundColor: active ? "#111" : "#fff",
-                }}
+                  borderColor: active ? COLORS.primary : COLORS.border,
+                  backgroundColor: active
+                    ? COLORS.primary
+                    : pressed
+                      ? "#ece6dc"
+                      : COLORS.card,
+                })}
               >
                 <Text
                   style={{
-                    color: active ? "#fff" : "#111",
-                    fontWeight: "800",
+                    color: active ? COLORS.whiteSoft : COLORS.text,
+                    fontWeight: "900",
                   }}
                 >
                   {statusLabel[s]}
@@ -490,124 +589,70 @@ export default function AddBook() {
             );
           })}
         </View>
-      </View>
+      </SectionCard>
 
       {/* Reading / Read için okunan sayfa kartı */}
       {(status === "reading" || status === "read") && (
-        <View
-          style={{
-            borderWidth: 1,
-            borderColor: "#eee",
-            borderRadius: 16,
-            padding: 14,
-            backgroundColor: "#fff",
-            gap: 10,
-          }}
+        <SectionCard
+          title={status === "reading" ? "Okuma İlerlemesi" : "Okuma Bilgisi"}
         >
-          <Text style={{ fontWeight: "800" }}>
-            {status === "reading" ? "Okuma İlerlemesi" : "Okuma Bilgisi"}
-          </Text>
+          <LabeledInput
+            label="Okunan Sayfa"
+            value={pagesReadText}
+            onChangeText={setPagesReadText}
+            placeholder="Örn: 45"
+            keyboardType="number-pad"
+          />
 
-          <View style={{ gap: 6 }}>
-            <Text style={{ fontWeight: "700" }}>Okunan Sayfa</Text>
-            <TextInput
-              value={pagesReadText}
-              onChangeText={setPagesReadText}
-              placeholder="Örn: 45"
-              keyboardType="number-pad"
-              style={{
-                borderWidth: 1,
-                borderColor: "#ddd",
-                borderRadius: 12,
-                padding: 12,
-                backgroundColor: "#fafafa",
-              }}
-            />
-          </View>
-
-          <Text style={{ color: "#888", fontSize: 12 }}>
+          <Text style={{ color: COLORS.muted, fontSize: 12 }}>
             Okunan sayfa toplamdan büyükse otomatik düzeltilir.
           </Text>
-        </View>
+        </SectionCard>
       )}
 
       {/* Sadece read için değerlendirme kartı */}
       {status === "read" && (
-        <View
-          style={{
-            borderWidth: 1,
-            borderColor: "#eee",
-            borderRadius: 16,
-            padding: 14,
-            backgroundColor: "#fff",
-            gap: 12,
-          }}
-        >
-          <Text style={{ fontWeight: "800" }}>Değerlendirme</Text>
-
+        <SectionCard title="Değerlendirme">
           {/* Yıldız puanı */}
           <View style={{ gap: 8 }}>
-            <Text style={{ fontWeight: "700" }}>Puan</Text>
+            <Text style={{ fontWeight: "800", color: COLORS.text }}>Puan</Text>
             <StarRating value={rating} onChange={setRating} />
 
             <Pressable
               onPress={() => setRating(0)}
               style={{ alignSelf: "flex-start" }}
             >
-              <Text style={{ color: "#666" }}>Puanı temizle</Text>
+              <Text style={{ color: COLORS.primary, fontWeight: "800" }}>
+                Puanı temizle
+              </Text>
             </Pressable>
           </View>
 
           {/* Not alanı */}
-          <View style={{ gap: 6 }}>
-            <Text style={{ fontWeight: "700" }}>Not</Text>
-            <TextInput
-              value={note}
-              onChangeText={setNote}
-              placeholder="Kitap hakkında kısa notun…"
-              multiline
-              style={{
-                borderWidth: 1,
-                borderColor: "#ddd",
-                borderRadius: 12,
-                padding: 12,
-                minHeight: 110,
-                textAlignVertical: "top",
-                backgroundColor: "#fafafa",
-              }}
-            />
-          </View>
-        </View>
+          <LabeledInput
+            label="Not"
+            value={note}
+            onChangeText={setNote}
+            placeholder="Kitap hakkında kısa notun…"
+            multiline
+          />
+        </SectionCard>
       )}
 
-      {/* Kaydet butonu */}
-      <Pressable
+      {/* Ana aksiyonlar */}
+      <SoftButton
+        label="Kaydet"
+        icon="save-outline"
         onPress={onSubmit}
-        style={{
-          marginTop: 4,
-          backgroundColor: canSave ? "#111" : "#999",
-          paddingVertical: 14,
-          borderRadius: 14,
-          alignItems: "center",
-        }}
-      >
-        <Text style={{ color: "#fff", fontWeight: "900" }}>Kaydet</Text>
-      </Pressable>
+        variant="primary"
+        disabled={!canSave}
+      />
 
-      {/* Vazgeç butonu */}
-      <Pressable
+      <SoftButton
+        label="Vazgeç"
+        icon="arrow-back-outline"
         onPress={() => router.back()}
-        style={{
-          paddingVertical: 14,
-          borderRadius: 14,
-          alignItems: "center",
-          borderWidth: 1,
-          borderColor: "#ddd",
-          backgroundColor: "#fff",
-        }}
-      >
-        <Text style={{ fontWeight: "900" }}>Vazgeç</Text>
-      </Pressable>
+      />
     </ScrollView>
   );
 }
