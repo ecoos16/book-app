@@ -1,11 +1,10 @@
-// app/(tabs)/chat/[id].tsx
-
 import { Ionicons } from "@expo/vector-icons";
 import { router, useLocalSearchParams } from "expo-router";
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   FlatList,
   Image,
+  Keyboard,
   KeyboardAvoidingView,
   Platform,
   Pressable,
@@ -14,13 +13,9 @@ import {
   TextInput,
   View,
 } from "react-native";
+import { useAuth } from "../../../context/AuthContext";
 import { useChat } from "../../../context/ChatContext";
-import { CURRENT_USER } from "../../../data/mockUsers";
 import type { ChatParticipant, Message } from "../../../types/chat";
-
-/**
- * Ortak renk paleti
- */
 const COLORS = {
   bg: "#fbf9f5",
   card: "#fffdf9",
@@ -34,9 +29,6 @@ const COLORS = {
   whiteSoft: "#fff7f4",
 };
 
-/**
- * Mesaj saatini HH:mm formatında gösterir
- */
 function formatMessageTime(timestamp: number) {
   return new Date(timestamp).toLocaleTimeString("tr-TR", {
     hour: "2-digit",
@@ -44,9 +36,6 @@ function formatMessageTime(timestamp: number) {
   });
 }
 
-/**
- * Avatar yoksa isimden baş harf üretir
- */
 function getInitials(name: string) {
   return name
     .split(" ")
@@ -57,107 +46,72 @@ function getInitials(name: string) {
 }
 
 export default function ChatDetailScreen() {
-  /**
-   * Route parametreleri
-   */
   const { id, prefill } = useLocalSearchParams<{
     id: string;
     prefill?: string;
   }>();
 
-  /**
-   * Chat context
-   */
+  const { user: authUser } = useAuth();
+
   const {
     getConversationById,
     getMessagesByConversationId,
     sendMessage,
     markConversationAsRead,
     typingByConversation,
+    fetchMessagesForConversation,
+    subscribeToConversation,
+    unsubscribeFromConversation,
   } = useChat();
 
-  /**
-   * Input state
-   */
   const [text, setText] = useState("");
+  const [sending, setSending] = useState(false);
 
-  /**
-   * Prefill sadece bir kez uygulansın
-   */
   const prefillAppliedRef = useRef(false);
-
-  /**
-   * Liste referansı
-   */
   const listRef = useRef<FlatList<Message>>(null);
 
-  /**
-   * Aktif konuşma
-   */
   const conversation = useMemo(() => {
     if (!id) return undefined;
     return getConversationById(id);
   }, [id, getConversationById]);
 
-  /**
-   * Mesajlar
-   */
   const messages = useMemo(() => {
     if (!id) return [];
     return getMessagesByConversationId(id);
   }, [id, getMessagesByConversationId]);
 
-  /**
-   * Karşı taraf
-   */
+  const currentUserId = authUser?.id ?? "";
+
   const otherUser = useMemo(() => {
     return conversation?.participants.find(
-      (participant: ChatParticipant) => participant.id !== CURRENT_USER.id,
+      (participant: ChatParticipant) => participant.id !== currentUserId,
     );
-  }, [conversation]);
+  }, [conversation, currentUserId]);
 
-  /**
-   * Karşı taraf yazıyor mu?
-   */
   const isTyping = useMemo(() => {
     if (!id) return false;
     return Boolean(typingByConversation[id]);
   }, [id, typingByConversation]);
 
-  /**
-   * Gönder butonu aktif mi?
-   */
   const isSendDisabled = useMemo(() => {
-    return text.trim().length === 0;
-  }, [text]);
+    return text.trim().length === 0 || sending;
+  }, [text, sending]);
 
-  /**
-   * Son mesaj
-   */
   const lastMessage = useMemo(() => {
     if (!messages.length) return undefined;
     return messages[messages.length - 1];
   }, [messages]);
 
-  /**
-   * Son mesaj bana mı ait?
-   */
   const isLastMessageMine = useMemo(() => {
-    return lastMessage?.senderId === CURRENT_USER.id;
-  }, [lastMessage]);
+    return lastMessage?.senderId === currentUserId;
+  }, [lastMessage, currentUserId]);
 
-  /**
-   * Benim son mesajım için küçük durum metni
-   */
   const lastOwnMessageStatus = useMemo(() => {
     if (!lastMessage || !isLastMessageMine) return null;
     if (isTyping) return "Yanıt yazıyor...";
     return "Gönderildi";
   }, [lastMessage, isLastMessageMine, isTyping]);
 
-  /**
-   * Prefill input'a bir kez yerleştir
-   */
   useEffect(() => {
     if (prefillAppliedRef.current) return;
 
@@ -167,24 +121,27 @@ export default function ChatDetailScreen() {
     }
   }, [prefill]);
 
-  /**
-   * Sohbet ekranı açılınca sadece ilgili konuşmadaki
-   * karşı taraf mesajlarını okundu say
-   *
-   * Dikkat:
-   * markConversationAsRead dependency array'e eklenirse
-   * context her render'da yeni referans üretebildiği için
-   * sonsuz döngü oluşabilir.
-   */
+  useEffect(() => {
+    if (!id) return;
+
+    fetchMessagesForConversation(id);
+    subscribeToConversation(id);
+
+    return () => {
+      unsubscribeFromConversation();
+    };
+  }, [
+    id,
+    fetchMessagesForConversation,
+    subscribeToConversation,
+    unsubscribeFromConversation,
+  ]);
+
   useEffect(() => {
     if (!id) return;
     markConversationAsRead(id);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [id]);
+  }, [id, markConversationAsRead]);
 
-  /**
-   * Mesaj değişince aşağı kaydır
-   */
   useEffect(() => {
     if (!messages.length) return;
 
@@ -195,9 +152,6 @@ export default function ChatDetailScreen() {
     return () => clearTimeout(timer);
   }, [messages.length]);
 
-  /**
-   * Typing görünürken de aşağı kaydır
-   */
   useEffect(() => {
     if (!isTyping) return;
 
@@ -208,20 +162,26 @@ export default function ChatDetailScreen() {
     return () => clearTimeout(timer);
   }, [isTyping]);
 
-  /**
-   * Mesaj gönder
-   */
-  const handleSend = () => {
-    if (!id) return;
-    if (isSendDisabled) return;
+  const handleSend = async () => {
+    if (!id || isSendDisabled) return;
 
-    sendMessage(id, text);
-    setText("");
+    const currentText = text.trim();
+    if (!currentText) return;
+
+    Keyboard.dismiss(); // 👈 BUNU EKLE
+
+    try {
+      setSending(true);
+      setText("");
+      await sendMessage(id, currentText);
+    } catch (error) {
+      console.log("SEND MESSAGE SCREEN ERROR:", error);
+      setText(currentText);
+    } finally {
+      setSending(false);
+    }
   };
 
-  /**
-   * Konuşma yoksa fallback
-   */
   if (!conversation) {
     return (
       <View style={styles.notFoundContainer}>
@@ -258,7 +218,6 @@ export default function ChatDetailScreen() {
       behavior={Platform.OS === "ios" ? "padding" : undefined}
       keyboardVerticalOffset={90}
     >
-      {/* ================= HEADER ================= */}
       <View style={styles.header}>
         <Pressable
           onPress={() => router.back()}
@@ -291,7 +250,6 @@ export default function ChatDetailScreen() {
         </View>
       </View>
 
-      {/* ================= MESAJ LİSTESİ ================= */}
       <FlatList<Message>
         ref={listRef}
         data={messages}
@@ -304,11 +262,8 @@ export default function ChatDetailScreen() {
         }
         onLayout={() => listRef.current?.scrollToEnd({ animated: false })}
         renderItem={({ item, index }) => {
-          const isMine = item.senderId === CURRENT_USER.id;
+          const isMine = item.senderId === currentUserId;
 
-          /**
-           * Son benim mesajım mı?
-           */
           const isLastOwnBubble =
             isMine &&
             index === messages.length - 1 &&
@@ -381,7 +336,6 @@ export default function ChatDetailScreen() {
         }
       />
 
-      {/* ================= INPUT ALANI ================= */}
       <View style={styles.inputBar}>
         <TextInput
           value={text}
@@ -389,9 +343,15 @@ export default function ChatDetailScreen() {
           placeholder="Mesaj yaz..."
           placeholderTextColor="#9a9389"
           style={styles.input}
-          multiline
+          multiline={false}
           maxLength={500}
-          textAlignVertical="top"
+          returnKeyType="send"
+          blurOnSubmit={false}
+          onSubmitEditing={() => {
+            if (text.trim()) {
+              handleSend();
+            }
+          }}
         />
 
         <Pressable
@@ -414,7 +374,7 @@ export default function ChatDetailScreen() {
               isSendDisabled && styles.sendButtonTextDisabled,
             ]}
           >
-            Gönder
+            {sending ? "..." : "Gönder"}
           </Text>
         </Pressable>
       </View>
@@ -423,17 +383,10 @@ export default function ChatDetailScreen() {
 }
 
 const styles = StyleSheet.create({
-  /**
-   * Ana kapsayıcı
-   */
   container: {
     flex: 1,
     backgroundColor: COLORS.bg,
   },
-
-  /**
-   * Header
-   */
   header: {
     paddingTop: 18,
     paddingBottom: 14,
@@ -445,7 +398,6 @@ const styles = StyleSheet.create({
     gap: 12,
     backgroundColor: COLORS.bg,
   },
-
   iconButton: {
     width: 40,
     height: 40,
@@ -456,7 +408,6 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: COLORS.border,
   },
-
   headerAvatar: {
     width: 50,
     height: 50,
@@ -475,7 +426,6 @@ const styles = StyleSheet.create({
     fontWeight: "900",
     color: COLORS.primary,
   },
-
   headerTextArea: {
     flex: 1,
   },
@@ -489,15 +439,10 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: COLORS.muted,
   },
-
-  /**
-   * Mesaj listesi
-   */
   messagesContent: {
     padding: 16,
     paddingBottom: 28,
   },
-
   messageRow: {
     flexDirection: "row",
     marginBottom: 10,
@@ -508,10 +453,6 @@ const styles = StyleSheet.create({
   messageRowOther: {
     justifyContent: "flex-start",
   },
-
-  /**
-   * Balonlar
-   */
   messageBubble: {
     maxWidth: "78%",
     paddingHorizontal: 13,
@@ -529,7 +470,6 @@ const styles = StyleSheet.create({
     borderColor: COLORS.border,
     borderBottomLeftRadius: 7,
   },
-
   typingBubble: {
     backgroundColor: COLORS.graySoft,
     borderColor: COLORS.border,
@@ -540,10 +480,6 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontStyle: "italic",
   },
-
-  /**
-   * Son durum
-   */
   lastStatusRow: {
     alignItems: "flex-end",
     marginTop: -4,
@@ -554,10 +490,6 @@ const styles = StyleSheet.create({
     fontSize: 11,
     color: COLORS.muted,
   },
-
-  /**
-   * Mesaj metni / saat
-   */
   messageText: {
     fontSize: 15,
     lineHeight: 21,
@@ -568,7 +500,6 @@ const styles = StyleSheet.create({
   messageTextOther: {
     color: COLORS.text,
   },
-
   messageTime: {
     marginTop: 6,
     fontSize: 11,
@@ -581,10 +512,6 @@ const styles = StyleSheet.create({
     color: COLORS.muted,
     textAlign: "left",
   },
-
-  /**
-   * Boş durum
-   */
   emptyCard: {
     marginTop: 18,
     padding: 18,
@@ -604,10 +531,6 @@ const styles = StyleSheet.create({
     color: COLORS.muted,
     lineHeight: 21,
   },
-
-  /**
-   * Alt input bar
-   */
   inputBar: {
     flexDirection: "row",
     alignItems: "flex-end",
@@ -619,7 +542,6 @@ const styles = StyleSheet.create({
     borderTopColor: COLORS.border,
     backgroundColor: COLORS.bg,
   },
-
   input: {
     flex: 1,
     minHeight: 48,
@@ -633,7 +555,6 @@ const styles = StyleSheet.create({
     color: COLORS.text,
     backgroundColor: COLORS.card,
   },
-
   sendButton: {
     backgroundColor: COLORS.primary,
     paddingHorizontal: 16,
@@ -654,18 +575,10 @@ const styles = StyleSheet.create({
   sendButtonTextDisabled: {
     color: "#8d877e",
   },
-
-  /**
-   * Basma efekti
-   */
   buttonPressed: {
     opacity: 0.9,
     transform: [{ scale: 0.98 }],
   },
-
-  /**
-   * Not found
-   */
   notFoundContainer: {
     flex: 1,
     backgroundColor: COLORS.bg,
@@ -694,7 +607,6 @@ const styles = StyleSheet.create({
     lineHeight: 21,
     fontSize: 14,
   },
-
   backButton: {
     marginTop: 18,
     backgroundColor: COLORS.primary,

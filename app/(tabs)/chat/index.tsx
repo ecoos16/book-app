@@ -1,5 +1,3 @@
-// app/(tabs)/chat/index.tsx
-
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
 import React, { useMemo } from "react";
@@ -13,17 +11,14 @@ import {
   Text,
   View,
 } from "react-native";
+import { useAuth } from "../../../context/AuthContext";
 import { useChat } from "../../../context/ChatContext";
-import { CURRENT_USER } from "../../../data/mockUsers";
 import type {
   ChatParticipant,
   Conversation,
   Message,
 } from "../../../types/chat";
 
-/**
- * Ortak renk paleti
- */
 const COLORS = {
   bg: "#fbf9f5",
   card: "#fffdf9",
@@ -41,9 +36,6 @@ const COLORS = {
   dangerText: "#a22b2b",
 };
 
-/**
- * Tarih alanını kısa formatta gösterir
- */
 function formatChatDate(timestamp?: number) {
   if (!timestamp) return "";
 
@@ -54,9 +46,6 @@ function formatChatDate(timestamp?: number) {
   });
 }
 
-/**
- * Avatar yoksa isim baş harfi üretir
- */
 function getInitials(name: string) {
   return name
     .split(" ")
@@ -67,34 +56,25 @@ function getInitials(name: string) {
 }
 
 export default function ChatListScreen() {
-  /**
-   * Chat context verileri
-   */
+  const { user: authUser } = useAuth();
   const { conversations, messages, deleteConversation, typingByConversation } =
     useChat();
 
-  /**
-   * En güncel konuşmalar üstte olacak şekilde sırala
-   */
+  const currentUserId = authUser?.id ?? "";
+
   const sortedConversations = useMemo(() => {
     return [...conversations].sort((a, b) => b.updatedAt - a.updatedAt);
   }, [conversations]);
 
-  /**
-   * Bir konuşmadaki okunmamış mesaj sayısını hesaplar
-   */
   function getUnreadCount(conversationId: string) {
     return messages.filter(
       (message: Message) =>
         message.conversationId === conversationId &&
-        message.senderId !== CURRENT_USER.id &&
+        message.senderId !== currentUserId &&
         !message.isRead,
     ).length;
   }
 
-  /**
-   * Son mesajı getir
-   */
   function getLastMessage(conversationId: string) {
     const conversationMessages = messages
       .filter((message) => message.conversationId === conversationId)
@@ -103,16 +83,10 @@ export default function ChatListScreen() {
     return conversationMessages[0];
   }
 
-  /**
-   * Konuşmayı aç
-   */
   const handleOpenChat = (conversationId: string) => {
-    router.push(`/chat/${conversationId}`);
+    router.push(`/(tabs)/chat/${conversationId}`);
   };
 
-  /**
-   * Konuşmayı sil
-   */
   const handleDeleteChat = (conversationId: string) => {
     Alert.alert("Sohbeti Sil", "Bu konuşmayı silmek istediğine emin misin?", [
       { text: "Vazgeç", style: "cancel" },
@@ -126,7 +100,6 @@ export default function ChatListScreen() {
 
   return (
     <SafeAreaView style={styles.container}>
-      {/* ================= HEADER ================= */}
       <View style={styles.header}>
         <View style={styles.headerTextArea}>
           <Text style={styles.title}>Sohbet</Text>
@@ -136,7 +109,7 @@ export default function ChatListScreen() {
         </View>
 
         <Pressable
-          onPress={() => router.push("/chat/new")}
+          onPress={() => router.push("/(tabs)/chat/new")}
           style={({ pressed }) => [
             styles.newButton,
             pressed && styles.buttonPressed,
@@ -147,7 +120,6 @@ export default function ChatListScreen() {
         </Pressable>
       </View>
 
-      {/* ================= EMPTY STATE ================= */}
       {sortedConversations.length === 0 ? (
         <View style={styles.emptyCard}>
           <View style={styles.emptyIconWrap}>
@@ -165,7 +137,7 @@ export default function ChatListScreen() {
           </Text>
 
           <Pressable
-            onPress={() => router.push("/chat/new")}
+            onPress={() => router.push("/(tabs)/chat/new")}
             style={({ pressed }) => [
               styles.emptyActionButton,
               pressed && styles.buttonPressed,
@@ -181,12 +153,9 @@ export default function ChatListScreen() {
           contentContainerStyle={styles.listContent}
           showsVerticalScrollIndicator={false}
           renderItem={({ item }) => {
-            /**
-             * Karşı tarafı bul
-             */
             const otherUser = item.participants.find(
               (participant: ChatParticipant) =>
-                participant.id !== CURRENT_USER.id,
+                participant.id !== currentUserId,
             );
 
             const unreadCount = getUnreadCount(item.id);
@@ -195,16 +164,13 @@ export default function ChatListScreen() {
 
             if (!otherUser) return null;
 
-            /**
-             * Preview metni
-             */
             let previewText = "Henüz mesaj yok";
 
             if (isTyping) {
               previewText = `${otherUser.name} yazıyor...`;
             } else if (lastMessage) {
               previewText =
-                lastMessage.senderId === CURRENT_USER.id
+                lastMessage.senderId === currentUserId
                   ? `Sen: ${lastMessage.text}`
                   : lastMessage.text;
             }
@@ -297,17 +263,10 @@ export default function ChatListScreen() {
 }
 
 const styles = StyleSheet.create({
-  /**
-   * Sayfa kapsayıcı
-   */
   container: {
     flex: 1,
     backgroundColor: COLORS.bg,
   },
-
-  /**
-   * Header
-   */
   header: {
     paddingHorizontal: 18,
     paddingTop: 12,
@@ -331,10 +290,6 @@ const styles = StyleSheet.create({
     color: COLORS.muted,
     lineHeight: 20,
   },
-
-  /**
-   * Yeni sohbet butonu
-   */
   newButton: {
     backgroundColor: COLORS.primary,
     paddingHorizontal: 16,
@@ -349,19 +304,11 @@ const styles = StyleSheet.create({
     fontWeight: "800",
     fontSize: 14,
   },
-
-  /**
-   * Liste alanı
-   */
   listContent: {
     paddingHorizontal: 18,
     paddingBottom: 28,
     gap: 12,
   },
-
-  /**
-   * Sohbet kartı
-   */
   chatCard: {
     flexDirection: "row",
     gap: 12,
@@ -380,10 +327,6 @@ const styles = StyleSheet.create({
     opacity: 0.94,
     transform: [{ scale: 0.995 }],
   },
-
-  /**
-   * Avatar
-   */
   avatar: {
     width: 58,
     height: 58,
@@ -403,10 +346,6 @@ const styles = StyleSheet.create({
     fontWeight: "900",
     color: COLORS.primary,
   },
-
-  /**
-   * Kart bilgi alanı
-   */
   chatInfo: {
     flex: 1,
     justifyContent: "center",
@@ -427,10 +366,6 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: COLORS.muted,
   },
-
-  /**
-   * Son mesaj preview
-   */
   chatPreview: {
     marginTop: 6,
     fontSize: 14,
@@ -440,10 +375,6 @@ const styles = StyleSheet.create({
     color: COLORS.primary,
     fontStyle: "italic",
   },
-
-  /**
-   * Alt aksiyon satırı
-   */
   bottomRow: {
     flexDirection: "row",
     alignItems: "center",
@@ -456,10 +387,6 @@ const styles = StyleSheet.create({
     gap: 8,
     flexWrap: "wrap",
   },
-
-  /**
-   * Butonlar
-   */
   smallButton: {
     paddingHorizontal: 12,
     paddingVertical: 8,
@@ -484,10 +411,6 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: "800",
   },
-
-  /**
-   * Okunmamış rozet
-   */
   unreadBadge: {
     minWidth: 30,
     height: 30,
@@ -508,10 +431,6 @@ const styles = StyleSheet.create({
     borderRadius: 5,
     backgroundColor: "#d8d2c7",
   },
-
-  /**
-   * Boş durum
-   */
   emptyCard: {
     marginHorizontal: 18,
     marginTop: 24,
@@ -554,10 +473,6 @@ const styles = StyleSheet.create({
     color: COLORS.whiteSoft,
     fontWeight: "900",
   },
-
-  /**
-   * Basma efekti
-   */
   buttonPressed: {
     opacity: 0.9,
     transform: [{ scale: 0.98 }],

@@ -6,6 +6,7 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   Alert,
   Image,
+  Keyboard,
   Pressable,
   ScrollView,
   Text,
@@ -93,6 +94,9 @@ function LabeledInput({
   placeholder,
   multiline = false,
   keyboardType,
+  inputRef,
+  returnKeyType,
+  onSubmitEditing,
 }: {
   label: string;
   value: string;
@@ -100,18 +104,24 @@ function LabeledInput({
   placeholder: string;
   multiline?: boolean;
   keyboardType?: "default" | "number-pad";
+  inputRef?: React.RefObject<TextInput | null>;
+  returnKeyType?: "next" | "done" | "default";
+  onSubmitEditing?: () => void;
 }) {
   return (
     <View style={{ gap: 6 }}>
       <Text style={{ fontWeight: "800", color: COLORS.text }}>{label}</Text>
 
       <TextInput
+        ref={inputRef}
         value={value}
         onChangeText={onChangeText}
         placeholder={placeholder}
         placeholderTextColor="#9a9389"
         multiline={multiline}
         keyboardType={keyboardType}
+        returnKeyType={multiline ? "default" : returnKeyType}
+        onSubmitEditing={multiline ? undefined : onSubmitEditing}
         style={{
           borderWidth: 1,
           borderColor: COLORS.border,
@@ -183,7 +193,10 @@ export default function AddBook() {
    * Global context içinden yeni kitap ekleme fonksiyonu
    */
   const { addBook } = useBooks();
-
+  const authorRef = useRef<TextInput>(null);
+  const pagesTotalRef = useRef<TextInput>(null);
+  const pagesReadRef = useRef<TextInput>(null);
+  const noteRef = useRef<TextInput>(null);
   /**
    * Route parametreleri
    * Liste ekranlarından veya search ekranından bilgi gelebilir
@@ -391,6 +404,7 @@ export default function AddBook() {
    * Form gönderme
    */
   const onSubmit = () => {
+    Keyboard.dismiss();
     if (!canSave) {
       Alert.alert("Eksik bilgi", "Kitap adı ve yazar zorunlu.");
       return;
@@ -450,12 +464,10 @@ export default function AddBook() {
           Kitabı ara, bilgileri otomatik doldur ve listene ekle.
         </Text>
       </View>
-
       {/* Arama kartı */}
       <SectionCard title="Kitap Ara">
         <BookSearchPicker onSelect={handleSelectGoogleBook} />
       </SectionCard>
-
       {/* Seçilen kitap önizleme kartı */}
       {(selectedGoogleBook || thumbnail || title || author) && (
         <View
@@ -528,32 +540,45 @@ export default function AddBook() {
           </View>
         </View>
       )}
-
       {/* Temel bilgi kartı */}
       <SectionCard title="Temel Bilgiler">
         <LabeledInput
           label="Kitap Adı"
           value={title}
           onChangeText={setTitle}
-          placeholder="Örn: 1984"
+          placeholder="Örn: Kürk Mantolu Madonna"
+          inputRef={undefined}
+          returnKeyType="next"
+          onSubmitEditing={() => authorRef.current?.focus()}
         />
 
         <LabeledInput
           label="Yazar"
           value={author}
           onChangeText={setAuthor}
-          placeholder="Örn: George Orwell"
+          placeholder="Örn: Sabahattin Ali"
+          inputRef={authorRef}
+          returnKeyType="next"
+          onSubmitEditing={() => pagesTotalRef.current?.focus()}
         />
 
         <LabeledInput
           label="Toplam Sayfa"
           value={pagesTotalText}
           onChangeText={setPagesTotalText}
-          placeholder="Örn: 320"
+          placeholder="Örn: 160"
           keyboardType="number-pad"
+          inputRef={pagesTotalRef}
+          returnKeyType="next"
+          onSubmitEditing={() => {
+            if (status === "reading" || status === "read") {
+              pagesReadRef.current?.focus();
+            } else {
+              onSubmit();
+            }
+          }}
         />
       </SectionCard>
-
       {/* Durum kartı */}
       <SectionCard title="Durum">
         <View style={{ flexDirection: "row", gap: 8, flexWrap: "wrap" }}>
@@ -590,7 +615,6 @@ export default function AddBook() {
           })}
         </View>
       </SectionCard>
-
       {/* Reading / Read için okunan sayfa kartı */}
       {(status === "reading" || status === "read") && (
         <SectionCard
@@ -600,8 +624,17 @@ export default function AddBook() {
             label="Okunan Sayfa"
             value={pagesReadText}
             onChangeText={setPagesReadText}
-            placeholder="Örn: 45"
+            placeholder="Örn: 40"
             keyboardType="number-pad"
+            inputRef={pagesReadRef}
+            returnKeyType={status === "read" ? "next" : "done"}
+            onSubmitEditing={() => {
+              if (status === "read") {
+                noteRef.current?.focus();
+              } else {
+                onSubmit();
+              }
+            }}
           />
 
           <Text style={{ color: COLORS.muted, fontSize: 12 }}>
@@ -609,7 +642,6 @@ export default function AddBook() {
           </Text>
         </SectionCard>
       )}
-
       {/* Sadece read için değerlendirme kartı */}
       {status === "read" && (
         <SectionCard title="Değerlendirme">
@@ -633,12 +665,13 @@ export default function AddBook() {
             label="Not"
             value={note}
             onChangeText={setNote}
-            placeholder="Kitap hakkında kısa notun…"
+            placeholder="Kitap hakkında kısa notun..."
             multiline
+            inputRef={noteRef}
           />
         </SectionCard>
       )}
-
+      Keyboard.dismiss();
       {/* Ana aksiyonlar */}
       <SoftButton
         label="Kaydet"
@@ -647,7 +680,6 @@ export default function AddBook() {
         variant="primary"
         disabled={!canSave}
       />
-
       <SoftButton
         label="Vazgeç"
         icon="arrow-back-outline"

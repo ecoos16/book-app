@@ -9,7 +9,6 @@ import React, {
   useState,
   type ReactNode,
 } from "react";
-import { MOCK_USERS } from "../data/mockUsers";
 import type { Post, PostComment } from "../types/post";
 
 /**
@@ -65,7 +64,7 @@ type PostsContextValue = {
 /**
  * Storage key
  */
-const STORAGE_KEY = "POSTS_V2";
+const STORAGE_KEY = "POSTS_V3";
 
 const PostsContext = createContext<PostsContextValue | null>(null);
 
@@ -139,54 +138,13 @@ function normalizePost(p: any): Post {
   };
 }
 
-/**
- * Seed postları üret
- * İlk açılışta boş bir topluluk görünmemesi için
- */
-function buildSeedPosts(): Post[] {
-  const now = Date.now();
-
-  return MOCK_USERS.slice(0, 3).map((user, index) =>
-    normalizePost({
-      id: `seed_post_${user.id}`,
-      bookId: `seed_book_${index}`,
-      bookTitle:
-        index === 0
-          ? "Kürk Mantolu Madonna"
-          : index === 1
-            ? "Hamnet"
-            : "The Midnight Library",
-      bookAuthor:
-        index === 0
-          ? "Sabahattin Ali"
-          : index === 1
-            ? "Maggie O'Farrell"
-            : "Matt Haig",
-      bookThumbnail: undefined,
-      userId: user.id,
-      userName: user.name,
-      userAvatar: user.avatar,
-      shareText:
-        index === 0
-          ? "Bitirince uzun süre etkisinden çıkamadım."
-          : index === 1
-            ? "Dili çok güçlüydü, bazı bölümlerde durup düşündüm."
-            : "Yazarın verdiği his çok sakindi.",
-      createdAt: now - index * 1000 * 60 * 60 * 24,
-      likes: [13, 4, 7][index] ?? 0,
-      isLiked: false,
-      comments: [],
-    }),
-  );
-}
-
 export function PostsProvider({ children }: { children: ReactNode }) {
   const [posts, setPosts] = useState<Post[]>([]);
   const [isHydrated, setIsHydrated] = useState(false);
 
   /**
    * İlk açılışta storage'dan postları yükle
-   * Veri yoksa seed postlarla başlat
+   * Veri yoksa boş başlat
    */
   useEffect(() => {
     let mounted = true;
@@ -206,10 +164,10 @@ export function PostsProvider({ children }: { children: ReactNode }) {
           safePosts.sort((a, b) => b.createdAt - a.createdAt);
           setPosts(safePosts);
         } else {
-          setPosts(buildSeedPosts());
+          setPosts([]);
         }
       } catch {
-        setPosts(buildSeedPosts());
+        setPosts([]);
       } finally {
         if (mounted) setIsHydrated(true);
       }
@@ -242,7 +200,12 @@ export function PostsProvider({ children }: { children: ReactNode }) {
       comments: [],
     });
 
-    setPosts((prev) => [newPost, ...prev].map(normalizePost));
+    setPosts((prev) =>
+      [newPost, ...prev]
+        .map(normalizePost)
+        .sort((a, b) => b.createdAt - a.createdAt),
+    );
+
     return newPost.id;
   };
 
@@ -264,9 +227,6 @@ export function PostsProvider({ children }: { children: ReactNode }) {
 
   /**
    * Like toggle
-   *
-   * isLiked true ise like sayısını 1 azalt
-   * false ise 1 artır
    */
   const toggleLike: PostsContextValue["toggleLike"] = (id) => {
     setPosts((prev) =>
@@ -360,9 +320,6 @@ export function PostsProvider({ children }: { children: ReactNode }) {
     }
   };
 
-  /**
-   * Context value
-   */
   const value = useMemo<PostsContextValue>(
     () => ({
       posts,
@@ -386,9 +343,6 @@ export function PostsProvider({ children }: { children: ReactNode }) {
   );
 }
 
-/**
- * Context hook
- */
 export function usePosts() {
   const ctx = useContext(PostsContext);
 

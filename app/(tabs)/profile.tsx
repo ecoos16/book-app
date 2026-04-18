@@ -1,10 +1,10 @@
-// app/(tabs)/profile.tsx
-
+//app/(tabs)/profile.tsx
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
 import React, { useMemo, useState } from "react";
 import {
   Alert,
+  Image,
   Pressable,
   ScrollView,
   Text,
@@ -12,18 +12,14 @@ import {
   View,
 } from "react-native";
 
+import { useAuth } from "../../context/AuthContext";
 import { useBooks } from "../../context/BooksContext";
 import { usePosts } from "../../context/PostsContext";
 import { useReadingGoal } from "../../context/ReadingGoalContext";
 import type { ReadingLogItem } from "../../context/ReadingLogContext";
 import { useReadingLog } from "../../context/ReadingLogContext";
 import { useUser } from "../../context/UserContext";
-import { CURRENT_USER } from "../../data/mockUsers";
 
-/**
- * ReadSphere ortak renk paleti
- * Home ve Library ile aynı tasarım dilini korur.
- */
 const COLORS = {
   bg: "#fbf9f5",
   card: "#fffdf9",
@@ -41,14 +37,12 @@ const COLORS = {
   dangerBorder: "#ffd8d8",
   dangerText: "#a22b2b",
   white: "#fff",
+  lavenderSoft: "#f5eefc",
+  blueSoft: "#edf4ff",
 };
 
 type TabKey = "stats" | "posts";
 
-/**
- * Basit baş harf üretici
- * Örn: "Ecesu Orhan" -> EO
- */
 function getInitials(name?: string) {
   if (!name?.trim()) return "U";
 
@@ -61,9 +55,6 @@ function getInitials(name?: string) {
   return `${parts[0][0] ?? ""}${parts[1][0] ?? ""}`.toUpperCase();
 }
 
-/**
- * Toplam biten kitaba göre okur seviyesi
- */
 function getReaderLevel(readCount: number) {
   if (readCount >= 20) {
     return {
@@ -96,16 +87,10 @@ function getReaderLevel(readCount: number) {
   };
 }
 
-/**
- * Bugünün tarihini YYYY-MM-DD formatında döndürür
- */
 function todayKey() {
   return new Date().toISOString().slice(0, 10);
 }
 
-/**
- * Kart stilli küçük istatistik kutusu
- */
 function StatCard({
   label,
   value,
@@ -163,9 +148,6 @@ function StatCard({
   );
 }
 
-/**
- * Yumuşak buton
- */
 function SoftButton({
   label,
   onPress,
@@ -237,9 +219,6 @@ function SoftButton({
   );
 }
 
-/**
- * Profil sekme düğmesi
- */
 function ProfileTabButton({
   active,
   label,
@@ -280,7 +259,33 @@ function ProfileTabButton({
   );
 }
 
+function Chip({ label, bg = "#fff" }: { label: string; bg?: string }) {
+  return (
+    <View
+      style={{
+        paddingHorizontal: 12,
+        paddingVertical: 8,
+        borderRadius: 999,
+        borderWidth: 1,
+        borderColor: COLORS.border,
+        backgroundColor: bg,
+      }}
+    >
+      <Text
+        style={{
+          color: COLORS.text,
+          fontWeight: "700",
+          fontSize: 13,
+        }}
+      >
+        {label}
+      </Text>
+    </View>
+  );
+}
+
 export default function Profile() {
+  const { user: authUser } = useAuth();
   const { books, isHydrated, clearAll } = useBooks();
   const { posts, removePost } = usePosts();
   const { goal, setGoal } = useReadingGoal();
@@ -295,19 +300,14 @@ export default function Profile() {
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
 
   const steps = [10, 20, 30, 40, 50];
+  const currentUserId = authUser?.id ?? "";
 
-  /**
-   * Belirli bir günde toplam okunan sayfa
-   */
   const getTotalForDate = (dateKey: string) => {
     return logs
       .filter((l: ReadingLogItem) => l.date === dateKey)
       .reduce((sum: number, l: ReadingLogItem) => sum + (l.pages ?? 0), 0);
   };
 
-  /**
-   * Günlük hedef aşılırsa kullanıcıyı bilgilendir
-   */
   const maybeNotifyGoalReached = (dateKey: string, incomingPages: number) => {
     const current = getTotalForDate(dateKey);
     const next = current + incomingPages;
@@ -318,9 +318,6 @@ export default function Profile() {
     }
   };
 
-  /**
-   * Günlük hedef kaydet
-   */
   const onSaveGoal = () => {
     const n = Number(goalInput) || 0;
 
@@ -333,9 +330,6 @@ export default function Profile() {
     Alert.alert("Kaydedildi", `Günlük hedef ${n} sayfa olarak güncellendi.`);
   };
 
-  /**
-   * Hızlı sayfa ekleme
-   */
   const onQuickAdd = (n: number) => {
     const dateKey = logDate.trim();
 
@@ -353,9 +347,6 @@ export default function Profile() {
     Alert.alert("✅ Eklendi", `${dateKey} için +${pages} sayfa eklendi.`);
   };
 
-  /**
-   * Manuel sayfa ekleme
-   */
   const onManualAdd = () => {
     const dateKey = logDate.trim();
     const pages = Number(logPages) || 0;
@@ -377,9 +368,6 @@ export default function Profile() {
     Alert.alert("✅ Eklendi", `${dateKey} için ${pages} sayfa eklendi.`);
   };
 
-  /**
-   * Haftalık okuma özeti
-   */
   const weekly = useMemo(() => {
     const today = new Date();
     const labels = ["Pzt", "Sal", "Çar", "Per", "Cum", "Cts", "Paz"];
@@ -402,9 +390,6 @@ export default function Profile() {
     return { days, total };
   }, [logs]);
 
-  /**
-   * Kitap sayıları
-   */
   const stats = useMemo(() => {
     const total = books.length;
     const reading = books.filter((b) => b.status === "reading").length;
@@ -414,18 +399,12 @@ export default function Profile() {
     return { total, reading, read, want };
   }, [books]);
 
-  /**
-   * Kullanıcının paylaşımları
-   */
   const myShares = useMemo(() => {
     return posts
-      .filter((p) => p.userId === CURRENT_USER.id)
+      .filter((p) => p.userId === currentUserId)
       .sort((a, b) => b.createdAt - a.createdAt);
-  }, [posts]);
+  }, [posts, currentUserId]);
 
-  /**
-   * Profil özet verileri
-   */
   const profileSummary = useMemo(() => {
     const totalPosts = myShares.length;
     const totalLikes = myShares.reduce((sum, p) => sum + (p.likes ?? 0), 0);
@@ -450,9 +429,6 @@ export default function Profile() {
     };
   }, [myShares, stats]);
 
-  /**
-   * Üst kartta özet gösterim
-   */
   const userCardSummary = useMemo(() => {
     return {
       readingNow: stats.reading,
@@ -461,30 +437,29 @@ export default function Profile() {
     };
   }, [stats]);
 
-  /**
-   * Okur seviye etiketi
-   */
   const readerLevel = useMemo(() => getReaderLevel(stats.read), [stats.read]);
 
-  /**
-   * Haftalık hedef ilerlemesi
-   * Günlük hedef * 7
-   */
   const weeklyGoal = (Number(goal) || 0) * 7;
   const weeklyPercent =
     weeklyGoal > 0
       ? Math.min(100, Math.round((weekly.total / weeklyGoal) * 100))
       : 0;
 
-  /**
-   * Kullanıcı adı
-   */
   const displayName =
-    user?.name?.trim() || CURRENT_USER.name || "ReadSphere Kullanıcısı";
+    user?.name?.trim() || authUser?.email || "ReadSphere Kullanıcısı";
 
-  /**
-   * Paylaşım silme
-   */
+  const profileUsername = user?.username?.trim()
+    ? `@${user.username.trim()}`
+    : "@readsphereuser";
+
+  const favoriteGenres = user?.favoriteGenres ?? [];
+  const favoriteAuthors = user?.favoriteAuthors ?? [];
+  const favoriteBook = user?.favoriteBook ?? "";
+  const readingMood = user?.readingMood ?? "";
+  const bookValue = user?.bookValue ?? "";
+  const readerType = user?.readerType ?? "";
+  const bio = user?.bio ?? "";
+
   const onDeleteShare = (postId: string) => {
     removePost(postId);
     setConfirmDeleteId(null);
@@ -499,7 +474,6 @@ export default function Profile() {
         paddingBottom: 120,
       }}
     >
-      {/* ================= ÜST PROFİL KARTI ================= */}
       <View
         style={{
           borderRadius: 28,
@@ -514,41 +488,46 @@ export default function Profile() {
           elevation: 2,
         }}
       >
-        {/* Üst renkli bant */}
         <View
           style={{
-            height: 84,
+            height: 96,
             backgroundColor: COLORS.primarySoft,
           }}
         />
 
         <View style={{ padding: 18, paddingTop: 0, gap: 14 }}>
-          {/* Avatar */}
           <View
             style={{
-              width: 78,
-              height: 78,
-              borderRadius: 39,
+              width: 86,
+              height: 86,
+              borderRadius: 43,
               backgroundColor: COLORS.primary,
               alignItems: "center",
               justifyContent: "center",
-              marginTop: -39,
+              marginTop: -43,
               borderWidth: 4,
               borderColor: COLORS.card,
+              overflow: "hidden",
             }}
           >
-            <Text
-              style={{
-                color: "#fff7f4",
-                fontWeight: "900",
-                fontSize: 24,
-              }}
-            >
-              {getInitials(displayName)}
-            </Text>
+            {user?.avatar ? (
+              <Image
+                source={{ uri: user.avatar }}
+                style={{ width: 86, height: 86 }}
+              />
+            ) : (
+              <Text
+                style={{
+                  color: "#fff7f4",
+                  fontWeight: "900",
+                  fontSize: 24,
+                }}
+              >
+                {getInitials(displayName)}
+              </Text>
+            )}
           </View>
 
-          {/* İsim + açıklama */}
           <View style={{ gap: 6 }}>
             <Text
               style={{
@@ -562,17 +541,38 @@ export default function Profile() {
 
             <Text
               style={{
-                color: COLORS.muted,
-                lineHeight: 21,
+                color: COLORS.primary,
+                fontWeight: "800",
                 fontSize: 14,
               }}
             >
-              Kitaplarını takip ediyor, paylaşımlar yapıyor ve okuma hedeflerini
-              yönetiyorsun.
+              {profileUsername}
             </Text>
+
+            {!!bio ? (
+              <Text
+                style={{
+                  color: COLORS.muted,
+                  lineHeight: 21,
+                  fontSize: 14,
+                }}
+              >
+                {bio}
+              </Text>
+            ) : (
+              <Text
+                style={{
+                  color: COLORS.muted,
+                  lineHeight: 21,
+                  fontSize: 14,
+                }}
+              >
+                Kitaplarını takip ediyor, paylaşımlar yapıyor ve okuma
+                hedeflerini yönetiyorsun.
+              </Text>
+            )}
           </View>
 
-          {/* Seviye rozeti */}
           <View
             style={{
               alignSelf: "flex-start",
@@ -598,85 +598,125 @@ export default function Profile() {
             {readerLevel.description}
           </Text>
 
-          {/* Küçük rozetler */}
           <View style={{ flexDirection: "row", gap: 8, flexWrap: "wrap" }}>
-            <View
-              style={{
-                paddingHorizontal: 12,
-                paddingVertical: 8,
-                borderRadius: 999,
-                borderWidth: 1,
-                borderColor: COLORS.border,
-                backgroundColor: COLORS.card,
-              }}
-            >
-              <Text style={{ fontWeight: "800", color: COLORS.text }}>
-                📚 {userCardSummary.finishedBooks} kitap okundu
-              </Text>
-            </View>
-
-            <View
-              style={{
-                paddingHorizontal: 12,
-                paddingVertical: 8,
-                borderRadius: 999,
-                borderWidth: 1,
-                borderColor: COLORS.border,
-                backgroundColor: COLORS.card,
-              }}
-            >
-              <Text style={{ fontWeight: "800", color: COLORS.text }}>
-                ✍️ {profileSummary.totalPosts} paylaşım
-              </Text>
-            </View>
-
-            <View
-              style={{
-                paddingHorizontal: 12,
-                paddingVertical: 8,
-                borderRadius: 999,
-                borderWidth: 1,
-                borderColor: COLORS.border,
-                backgroundColor: COLORS.card,
-              }}
-            >
-              <Text style={{ fontWeight: "800", color: COLORS.text }}>
-                ❤️ {profileSummary.totalLikes} beğeni
-              </Text>
-            </View>
+            <Chip label={`📚 ${userCardSummary.finishedBooks} kitap okundu`} />
+            <Chip label={`✍️ ${profileSummary.totalPosts} paylaşım`} />
+            <Chip label={`❤️ ${profileSummary.totalLikes} beğeni`} />
           </View>
 
-          {/* Mini özet */}
           <View style={{ flexDirection: "row", gap: 10 }}>
-            <StatCard
-              label="Okuyor"
-              value={userCardSummary.readingNow}
-              icon="book-outline"
-              accent="peach"
-            />
-            <StatCard
-              label="Bitti"
-              value={userCardSummary.finishedBooks}
-              icon="checkmark-done-outline"
-              accent="green"
-            />
-            <StatCard
-              label="Listemde"
-              value={userCardSummary.wishlistCount}
-              icon="star-outline"
-            />
-          </View>
+            <View style={{ flex: 1 }}>
+              <SoftButton
+                label="Mesajlara Git"
+                icon="chatbubble-ellipses-outline"
+                onPress={() => router.push("/(tabs)/chat")}
+              />
+            </View>
 
-          {/* Mesajlar */}
-          <SoftButton
-            label="Mesajlara Git"
-            icon="chatbubble-ellipses-outline"
-            onPress={() => router.push("/chat")}
-          />
+            <View style={{ flex: 1 }}>
+              <SoftButton
+                label="Profili Düzenle"
+                icon="create-outline"
+                onPress={() => router.push("/edit-profile")}
+              />
+            </View>
+          </View>
         </View>
       </View>
 
-      {/* ================= BAŞLIK ================= */}
+      <View
+        style={{
+          borderRadius: 24,
+          borderWidth: 1,
+          borderColor: COLORS.border,
+          backgroundColor: COLORS.card,
+          padding: 16,
+          gap: 14,
+        }}
+      >
+        <Text
+          style={{
+            fontSize: 18,
+            fontWeight: "900",
+            color: COLORS.text,
+          }}
+        >
+          Profil vibe’ın
+        </Text>
+
+        {!!readerType && (
+          <View style={{ gap: 6 }}>
+            <Text style={{ color: COLORS.muted, fontWeight: "700" }}>
+              Okur vibe’ın
+            </Text>
+            <Chip label={readerType} bg={COLORS.lavenderSoft} />
+          </View>
+        )}
+
+        {!!readingMood && (
+          <View style={{ gap: 6 }}>
+            <Text style={{ color: COLORS.muted, fontWeight: "700" }}>
+              Şu sıralar modun
+            </Text>
+            <Chip label={readingMood} bg={COLORS.blueSoft} />
+          </View>
+        )}
+
+        {!!bookValue && (
+          <View style={{ gap: 6 }}>
+            <Text style={{ color: COLORS.muted, fontWeight: "700" }}>
+              Kitapta en çok aradığın şey
+            </Text>
+            <Chip label={bookValue} bg={COLORS.peachSoft} />
+          </View>
+        )}
+
+        {!!favoriteBook && (
+          <View style={{ gap: 6 }}>
+            <Text style={{ color: COLORS.muted, fontWeight: "700" }}>
+              Tek kitap seçecek olsan
+            </Text>
+            <Text
+              style={{
+                color: COLORS.text,
+                fontWeight: "800",
+                fontSize: 15,
+              }}
+            >
+              {favoriteBook}
+            </Text>
+          </View>
+        )}
+
+        {favoriteGenres.length > 0 && (
+          <View style={{ gap: 8 }}>
+            <Text style={{ color: COLORS.muted, fontWeight: "700" }}>
+              Sevdiğin türler
+            </Text>
+
+            <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
+              {favoriteGenres.map((genre) => (
+                <Chip key={genre} label={genre} />
+              ))}
+            </View>
+          </View>
+        )}
+
+        {favoriteAuthors.length > 0 && (
+          <View style={{ gap: 8 }}>
+            <Text style={{ color: COLORS.muted, fontWeight: "700" }}>
+              Favori yazarların
+            </Text>
+
+            <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
+              {favoriteAuthors.map((author) => (
+                <Chip key={author} label={author} bg={COLORS.cream} />
+              ))}
+            </View>
+          </View>
+        )}
+      </View>
+
       <View style={{ gap: 4 }}>
         <Text
           style={{
@@ -694,7 +734,6 @@ export default function Profile() {
         </Text>
       </View>
 
-      {/* ================= TAB SWITCH ================= */}
       <View
         style={{
           flexDirection: "row",
@@ -713,7 +752,6 @@ export default function Profile() {
         />
       </View>
 
-      {/* ================= STATS TAB ================= */}
       {tab === "stats" && (
         <>
           {!isHydrated ? (
@@ -730,7 +768,6 @@ export default function Profile() {
             </View>
           ) : (
             <>
-              {/* Temel kitap istatistikleri */}
               <View style={{ gap: 10 }}>
                 <Text
                   style={{
@@ -772,7 +809,6 @@ export default function Profile() {
                 </View>
               </View>
 
-              {/* Profil özeti */}
               <View
                 style={{
                   gap: 12,
@@ -816,7 +852,6 @@ export default function Profile() {
                 </View>
               </View>
 
-              {/* En çok beğeni alan paylaşım */}
               <View
                 style={{
                   gap: 10,
@@ -882,7 +917,6 @@ export default function Profile() {
                 )}
               </View>
 
-              {/* Günlük hedef */}
               <View
                 style={{
                   gap: 12,
@@ -933,7 +967,6 @@ export default function Profile() {
                 </Text>
               </View>
 
-              {/* Günlük okuma ekle */}
               <View
                 style={{
                   gap: 12,
@@ -1061,7 +1094,6 @@ export default function Profile() {
                 </View>
               </View>
 
-              {/* Haftalık hedef ilerlemesi */}
               <View
                 style={{
                   gap: 12,
@@ -1109,7 +1141,6 @@ export default function Profile() {
                 </Text>
               </View>
 
-              {/* Bu hafta okuma */}
               <View
                 style={{
                   gap: 12,
@@ -1159,7 +1190,6 @@ export default function Profile() {
                 </View>
               </View>
 
-              {/* Alt aksiyonlar */}
               <View style={{ gap: 10 }}>
                 <SoftButton
                   label="Kitap Ekle"
@@ -1198,7 +1228,6 @@ export default function Profile() {
         </>
       )}
 
-      {/* ================= POSTS TAB ================= */}
       {tab === "posts" && (
         <View style={{ gap: 12 }}>
           {myShares.length === 0 ? (

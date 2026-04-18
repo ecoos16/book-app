@@ -1,20 +1,20 @@
-// app/share/[id].tsx
-
 import { Ionicons } from "@expo/vector-icons";
 import { router, useLocalSearchParams } from "expo-router";
 import React, { useEffect, useMemo, useState } from "react";
 import {
   Alert,
   Image,
+  Keyboard,
   Pressable,
   ScrollView,
   Text,
   TextInput,
   View,
 } from "react-native";
+import { useAuth } from "../../context/AuthContext";
 import { useBooks } from "../../context/BooksContext";
 import { usePosts } from "../../context/PostsContext";
-import { CURRENT_USER } from "../../data/mockUsers";
+import { useUser } from "../../context/UserContext";
 
 /**
  * Ortak renk paleti
@@ -47,9 +47,7 @@ function SoftButton({
   variant?: "secondary" | "primary";
 }) {
   const backgroundColor = variant === "primary" ? COLORS.primary : COLORS.card;
-
   const borderColor = variant === "primary" ? COLORS.primary : COLORS.border;
-
   const textColor = variant === "primary" ? COLORS.whiteSoft : COLORS.text;
 
   return (
@@ -88,6 +86,12 @@ export default function ShareBookScreen() {
     id: string;
     postId?: string;
   }>();
+
+  /**
+   * Gerçek kullanıcı bilgisi
+   */
+  const { user: authUser } = useAuth();
+  const { user: appUser } = useUser();
 
   /**
    * Context verileri
@@ -196,10 +200,19 @@ export default function ShareBookScreen() {
    * Yeni paylaşım veya güncelleme işlemi
    */
   function handleSubmit() {
+    Keyboard.dismiss();
     const trimmed = text.trim();
 
     if (!trimmed) {
       Alert.alert("Eksik bilgi", "Lütfen paylaşım metni yaz.");
+      return;
+    }
+
+    if (!authUser?.id) {
+      Alert.alert(
+        "Oturum hatası",
+        "Paylaşım yapabilmek için tekrar giriş yap.",
+      );
       return;
     }
 
@@ -228,9 +241,9 @@ export default function ShareBookScreen() {
       bookTitle: safeBook.title,
       bookAuthor: safeBook.author,
       bookThumbnail: safeBook.thumbnail,
-      userId: CURRENT_USER.id,
-      userName: CURRENT_USER.name,
-      userAvatar: CURRENT_USER.avatar,
+      userId: authUser.id,
+      userName: appUser.name || authUser.email || "ReadSphere Kullanıcısı",
+      userAvatar: appUser.avatar,
       shareText: trimmed,
     });
 
@@ -335,19 +348,22 @@ export default function ShareBookScreen() {
         <TextInput
           value={text}
           onChangeText={setText}
-          placeholder="Bu kitap sende nasıl bir etki bıraktı?"
+          placeholder="Bu kitap hakkında ne düşünüyorsun?"
           placeholderTextColor="#9a9389"
           multiline
-          textAlignVertical="top"
-          maxLength={700}
+          returnKeyType="done"
+          blurOnSubmit
+          onSubmitEditing={handleSubmit}
           style={{
-            minHeight: 140,
+            minHeight: 160,
             borderWidth: 1,
             borderColor: COLORS.border,
-            borderRadius: 14,
-            padding: 12,
+            borderRadius: 16,
+            padding: 14,
             backgroundColor: COLORS.graySoft,
             color: COLORS.text,
+            textAlignVertical: "top",
+            lineHeight: 22,
           }}
         />
 

@@ -1,620 +1,580 @@
-// context/ChatContext.tsx
-
-import AsyncStorage from "@react-native-async-storage/async-storage";
 import React, {
   createContext,
   useCallback,
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from "react";
-import { CURRENT_USER, MOCK_USERS } from "../data/mockUsers";
+import { supabase } from "../lib/supabase";
 import type { ChatParticipant, Conversation, Message } from "../types/chat";
+import { useAuth } from "./AuthContext";
+import { useUser } from "./UserContext";
 
-/**
- * AsyncStorage key'leri
- */
-const CHAT_CONVERSATIONS_KEY = "CHAT_CONVERSATIONS_V1";
-const CHAT_MESSAGES_KEY = "CHAT_MESSAGES_V1";
-
-/**
- * Basit benzersiz id üretici
- */
-function makeId() {
-  return `${Date.now()}_${Math.random().toString(16).slice(2)}`;
-}
-
-/**
- * Rastgele eleman seçici
- */
-function pickRandom<T>(items: T[]) {
-  return items[Math.floor(Math.random() * items.length)];
-}
-
-/**
- * Chat context dışına açılacak yapı
- */
 type ChatContextType = {
   conversations: Conversation[];
   messages: Message[];
   loading: boolean;
   typingByConversation: Record<string, boolean>;
 
-  createConversation: (participant: ChatParticipant) => string;
+  createConversation: (participant: ChatParticipant) => Promise<string>;
   getOrCreateConversationByParticipant: (
     participant: ChatParticipant,
-  ) => string;
+  ) => Promise<string>;
 
-  sendMessage: (conversationId: string, text: string) => void;
-  deleteConversation: (conversationId: string) => void;
+  sendMessage: (conversationId: string, text: string) => Promise<void>;
+  deleteConversation: (conversationId: string) => Promise<void>;
 
   getConversationById: (conversationId: string) => Conversation | undefined;
   getMessagesByConversationId: (conversationId: string) => Message[];
 
-  markConversationAsRead: (conversationId: string) => void;
+  markConversationAsRead: (conversationId: string) => Promise<void>;
   clearAllChats: () => void;
+
+  fetchMessagesForConversation: (conversationId: string) => Promise<void>;
+  subscribeToConversation: (conversationId: string) => void;
+  unsubscribeFromConversation: () => void;
 };
 
-/**
- * Context oluştur
- */
 const ChatContext = createContext<ChatContextType | undefined>(undefined);
 
-/**
- * Kullanıcının yazdığı mesaja göre otomatik cevap üret
- */
-function pickAutoReply(userText: string) {
-  const text = userText.toLocaleLowerCase("tr-TR").trim();
-
-  const containsAny = (words: string[]) =>
-    words.some((word) => text.includes(word));
-
-  if (!text) {
-    return "Tam olarak ne demek istediğini anlayamadım ama merak ettim 🙂";
-  }
-
-  if (containsAny(["merhaba", "selam", "selammm", "slm", "hey", "hi"])) {
-    return pickRandom([
-      "Selammm 👋",
-      "Merhaba, nasılsın?",
-      "Selam, ne okuyorsun şu sıralar?",
-    ]);
-  }
-
-  if (containsAny(["nasılsın", "naber", "iyi misin"])) {
-    return pickRandom([
-      "İyiyim, sen nasılsın? 🙂",
-      "İyiyim ya, sen ne yapıyorsun?",
-      "Fena değilim, bugün biraz okuma yaptım.",
-    ]);
-  }
-
-  if (containsAny(["teşekkür", "sağ ol", "sağol", "thanks", "teşekkürler"])) {
-    return pickRandom(["Ne demek 💛", "Rica ederim 🙂", "Her zaman"]);
-  }
-
-  if (
-    containsAny(["kitap", "roman", "hikaye", "yazar", "okuyorum", "okudum"])
-  ) {
-    return pickRandom([
-      "Kitap konusu açılınca ben direkt ilgileniyorum 😄",
-      "Onu ben de merak ediyorum aslında.",
-      "Yorumunu okuyunca benim de okuyasım geldi.",
-      "Bu aralar güzel kitap önerisi arıyordum ben de.",
-    ]);
-  }
-
-  if (containsAny(["çok iyi", "mükemmel", "bayıldım", "harika", "efsane"])) {
-    return pickRandom([
-      "Aynı hissi ben de yaşamıştım.",
-      "Gerçekten o kadar iyi miydi? Daha da merak ettim.",
-      "Harika dediysen kesin bakacağım buna.",
-    ]);
-  }
-
-  if (containsAny(["sevmedim", "beğenmedim", "kötü", "sıkıcı", "yavaş"])) {
-    return pickRandom([
-      "Aaa cidden mi, ben daha farklı bekliyordum.",
-      "O hissi ben de bazı kitaplarda yaşıyorum.",
-      "Demek sana çok geçmedi, anladım.",
-    ]);
-  }
-
-  if (containsAny(["bitirdim", "bitti", "final", "sonu"])) {
-    return pickRandom([
-      "Finali nasıl buldun peki?",
-      "Bitirdiysen net yorumunu merak ediyorum.",
-      "Sonu güçlü müydü bari?",
-    ]);
-  }
-
-  if (containsAny(["spoiler", "spoiler verme", "spoiler vermee"])) {
-    return pickRandom([
-      "Tamam tamam spoiler yok 😄",
-      "Merak etme, ağzımı sıkı tutuyorum.",
-      "Spoiler vermem söz ✋",
-    ]);
-  }
-
-  if (containsAny(["öner", "öneri", "önersene", "ne okuyayım"])) {
-    return pickRandom([
-      "Tarzını bilirsem daha iyi öneri yaparım 🙂",
-      "Ne tür sevdiğine göre güzel öneriler çıkar aslında.",
-      "İstersen türüne göre birkaç kitap önerebilirim.",
-    ]);
-  }
-
-  if (containsAny(["sence", "?"])) {
-    return pickRandom([
-      "Bence şans verilebilir ya.",
-      "Bence konusu ilgini çekiyorsa okunur.",
-      "Ben olsam denerdim açıkçası.",
-    ]);
-  }
-
-  if (containsAny(["şu an", "şuan", "şimdi", "bugün"])) {
-    return pickRandom([
-      "Bugün ben de biraz okuma modundayım.",
-      "Şu an konuşmak iyi geldi açıkçası.",
-      "Bugün kitap konuşmak ayrı iyi gidiyor 😄",
-    ]);
-  }
-
-  return pickRandom([
-    "Aynen ya, dediğini anladım.",
-    "Bunu söylemen iyi oldu, merak ettim şimdi.",
-    "Haklı olabilirsin aslında.",
-    "Ben de benzer düşünmüştüm.",
-    "Devamını anlatsana 🙂",
-  ]);
-}
-
-/**
- * Seed data üret
- */
-function createSeedData(): {
-  conversations: Conversation[];
-  messages: Message[];
-} {
-  const now = Date.now();
-
-  const eylul = MOCK_USERS.find((user) => user.id === "u1");
-  const mert = MOCK_USERS.find((user) => user.id === "u2");
-  const zeynep = MOCK_USERS.find((user) => user.id === "u3");
-
-  const seedUsers = [eylul, mert, zeynep].filter(Boolean) as ChatParticipant[];
-
-  const conversations: Conversation[] = [];
-  const messages: Message[] = [];
-
-  seedUsers.forEach((participant, index) => {
-    const conversationId = `seed_conv_${participant.id}`;
-    const baseTime = now - (index + 1) * 1000 * 60 * 60 * 5;
-
-    const firstMessage: Message = {
-      id: `seed_msg_${participant.id}_1`,
-      conversationId,
-      senderId: participant.id,
-      senderName: participant.name,
-      senderAvatar: participant.avatar,
-      text:
-        participant.id === "u1"
-          ? "Yeni başladığın kitabı merak ettim 👀"
-          : participant.id === "u2"
-            ? "1984 nasıl gidiyor?"
-            : "Bir ara favori kitaplarını konuşalım mı?",
-      createdAt: baseTime,
-      isRead: false,
-    };
-
-    const secondMessage: Message = {
-      id: `seed_msg_${participant.id}_2`,
-      conversationId,
-      senderId: CURRENT_USER.id,
-      senderName: CURRENT_USER.name,
-      senderAvatar: CURRENT_USER.avatar,
-      text:
-        participant.id === "u1"
-          ? "Daha başındayım ama şimdiden sardı."
-          : participant.id === "u2"
-            ? "Şu an ortalarındayım, baya karanlık gidiyor."
-            : "Olur, ben de konuşmak istiyordum.",
-      createdAt: baseTime + 1000 * 60 * 6,
-      isRead: true,
-    };
-
-    const thirdMessage: Message = {
-      id: `seed_msg_${participant.id}_3`,
-      conversationId,
-      senderId: participant.id,
-      senderName: participant.name,
-      senderAvatar: participant.avatar,
-      text:
-        participant.id === "u1"
-          ? "Bitirince mutlaka yaz bana 😄"
-          : participant.id === "u2"
-            ? "Spoiler vermem ama final çok iyi."
-            : "Tamam, akşam yazarım ✨",
-      createdAt: baseTime + 1000 * 60 * 13,
-      isRead: false,
-    };
-
-    const conversation: Conversation = {
-      id: conversationId,
-      participants: [CURRENT_USER, participant],
-      createdAt: baseTime,
-      updatedAt: thirdMessage.createdAt,
-      lastMessageText: thirdMessage.text,
-      lastMessageAt: thirdMessage.createdAt,
-      lastSenderId: thirdMessage.senderId,
-    };
-
-    conversations.push(conversation);
-    messages.push(firstMessage, secondMessage, thirdMessage);
-  });
-
-  return { conversations, messages };
-}
-
-/**
- * Konuşmaları yeni -> eski sıralar
- */
 function sortConversations(items: Conversation[]) {
   return [...items].sort((a, b) => b.updatedAt - a.updatedAt);
 }
 
+type DbProfile = {
+  id: string;
+  full_name: string | null;
+  username: string | null;
+  avatar_url: string | null;
+};
+
+type DbConversationRow = {
+  id: string;
+  created_at: string;
+  updated_at: string;
+  title: string | null;
+  is_group: boolean;
+};
+
+type DbParticipantRow = {
+  conversation_id: string;
+  user_id: string;
+  last_read_at: string | null;
+  profiles: DbProfile | DbProfile[] | null;
+};
+
+type DbMessageRow = {
+  id: string;
+  conversation_id: string;
+  sender_id: string;
+  content: string;
+  created_at: string;
+  profiles: DbProfile | DbProfile[] | null;
+};
+
+function pickSingleProfile(
+  profile: DbProfile | DbProfile[] | null,
+): DbProfile | null {
+  if (!profile) return null;
+  if (Array.isArray(profile)) return profile[0] ?? null;
+  return profile;
+}
+
 export function ChatProvider({ children }: { children: React.ReactNode }) {
-  /**
-   * Tüm konuşmalar
-   */
+  const { user: authUser } = useAuth();
+  const { user: appUser } = useUser();
+
   const [conversations, setConversations] = useState<Conversation[]>([]);
-
-  /**
-   * Tüm mesajlar
-   */
   const [messages, setMessages] = useState<Message[]>([]);
-
-  /**
-   * İlk yükleme tamamlandı mı?
-   */
   const [loading, setLoading] = useState(true);
-
-  /**
-   * Karşı tarafın yazıyor bilgisini tutar
-   */
   const [typingByConversation, setTypingByConversation] = useState<
     Record<string, boolean>
   >({});
 
-  /**
-   * İlk açılışta verileri yükle
-   */
-  useEffect(() => {
-    let mounted = true;
+  const activeChannelRef = useRef<ReturnType<typeof supabase.channel> | null>(
+    null,
+  );
 
-    (async () => {
-      try {
-        const [storedConversations, storedMessages] = await Promise.all([
-          AsyncStorage.getItem(CHAT_CONVERSATIONS_KEY),
-          AsyncStorage.getItem(CHAT_MESSAGES_KEY),
-        ]);
+  const me: ChatParticipant = useMemo(
+    () => ({
+      id: authUser?.id || "guest",
+      name: appUser.name || authUser?.email || "Kullanıcı",
+      avatar: appUser.avatar,
+    }),
+    [authUser?.id, authUser?.email, appUser.name, appUser.avatar],
+  );
 
-        if (!mounted) return;
+  const mapParticipant = useCallback(
+    (
+      rawProfile: DbProfile | DbProfile[] | null,
+      fallbackId: string,
+    ): ChatParticipant => {
+      const profile = pickSingleProfile(rawProfile);
 
-        const parsedConversations: Conversation[] = storedConversations
-          ? JSON.parse(storedConversations)
-          : [];
+      return {
+        id: profile?.id ?? fallbackId,
+        name:
+          profile?.full_name?.trim() ||
+          profile?.username?.trim() ||
+          "Kullanıcı",
+        avatar: profile?.avatar_url ?? undefined,
+      };
+    },
+    [],
+  );
 
-        const parsedMessages: Message[] = storedMessages
-          ? JSON.parse(storedMessages)
-          : [];
+  const mapMessage = useCallback(
+    (row: DbMessageRow): Message => {
+      const sender = mapParticipant(row.profiles, row.sender_id);
 
-        if (parsedConversations.length === 0 && parsedMessages.length === 0) {
-          const seed = createSeedData();
-          setConversations(seed.conversations);
-          setMessages(seed.messages);
-        } else {
-          setConversations(sortConversations(parsedConversations));
-          setMessages(parsedMessages);
-        }
-      } catch (error) {
-        console.log("❌ Chat verileri yüklenemedi:", error);
+      return {
+        id: row.id,
+        conversationId: row.conversation_id,
+        senderId: row.sender_id,
+        senderName: sender.name,
+        senderAvatar: sender.avatar,
+        text: row.content,
+        createdAt: new Date(row.created_at).getTime(),
+        isRead: row.sender_id === me.id,
+      };
+    },
+    [mapParticipant, me.id],
+  );
 
-        const seed = createSeedData();
-        setConversations(seed.conversations);
-        setMessages(seed.messages);
-      } finally {
-        if (mounted) setLoading(false);
+  const fetchConversations = useCallback(async () => {
+    if (!authUser?.id) {
+      setConversations([]);
+      return;
+    }
+
+    const { data: participantRows, error: participantsError } =
+      await supabase.from("conversation_participants").select(`
+        conversation_id,
+        user_id,
+        last_read_at,
+        profiles:user_id (
+          id,
+          full_name,
+          username,
+          avatar_url
+        )
+      `);
+
+    if (participantsError) {
+      console.log("FETCH PARTICIPANTS ERROR:", participantsError);
+      return;
+    }
+
+    const typedParticipantRows = (participantRows ?? []) as DbParticipantRow[];
+
+    const myConversationIds = typedParticipantRows
+      .filter((row) => row.user_id === authUser.id)
+      .map((row) => row.conversation_id);
+
+    if (myConversationIds.length === 0) {
+      setConversations([]);
+      return;
+    }
+
+    const { data: conversationRows, error: conversationsError } = await supabase
+      .from("conversations")
+      .select("id, created_at, updated_at, title, is_group")
+      .in("id", myConversationIds)
+      .order("updated_at", { ascending: false });
+
+    if (conversationsError) {
+      console.log("FETCH CONVERSATIONS ERROR:", conversationsError);
+      return;
+    }
+
+    const { data: latestMessages, error: latestMessagesError } = await supabase
+      .from("messages")
+      .select(
+        `
+        id,
+        conversation_id,
+        sender_id,
+        content,
+        created_at,
+        profiles:sender_id (
+          id,
+          full_name,
+          username,
+          avatar_url
+        )
+      `,
+      )
+      .in("conversation_id", myConversationIds)
+      .order("created_at", { ascending: false });
+
+    if (latestMessagesError) {
+      console.log("FETCH LATEST MESSAGES ERROR:", latestMessagesError);
+    }
+
+    const typedLatestMessages = (latestMessages ?? []) as DbMessageRow[];
+
+    const latestByConversation = new Map<string, DbMessageRow>();
+    for (const row of typedLatestMessages) {
+      if (!latestByConversation.has(row.conversation_id)) {
+        latestByConversation.set(row.conversation_id, row);
       }
-    })();
+    }
 
-    return () => {
-      mounted = false;
-    };
-  }, []);
+    const participantsByConversation = new Map<string, ChatParticipant[]>();
+    for (const row of typedParticipantRows) {
+      const current = participantsByConversation.get(row.conversation_id) ?? [];
+      current.push(mapParticipant(row.profiles, row.user_id));
+      participantsByConversation.set(row.conversation_id, current);
+    }
 
-  /**
-   * Konuşmaları kaydet
-   */
-  useEffect(() => {
-    if (loading) return;
+    const typedConversationRows = (conversationRows ??
+      []) as DbConversationRow[];
 
-    AsyncStorage.setItem(
-      CHAT_CONVERSATIONS_KEY,
-      JSON.stringify(conversations),
-    ).catch((error) => {
-      console.log("❌ Chat conversations kaydedilemedi:", error);
-    });
-  }, [conversations, loading]);
+    const nextConversations: Conversation[] = typedConversationRows.map(
+      (conv) => {
+        const lastMsg = latestByConversation.get(conv.id);
 
-  /**
-   * Mesajları kaydet
-   */
-  useEffect(() => {
-    if (loading) return;
-
-    AsyncStorage.setItem(CHAT_MESSAGES_KEY, JSON.stringify(messages)).catch(
-      (error) => {
-        console.log("❌ Chat messages kaydedilemedi:", error);
+        return {
+          id: conv.id,
+          participants: participantsByConversation.get(conv.id) ?? [],
+          createdAt: new Date(conv.created_at).getTime(),
+          updatedAt: new Date(conv.updated_at).getTime(),
+          lastMessageText: lastMsg?.content,
+          lastMessageAt: lastMsg
+            ? new Date(lastMsg.created_at).getTime()
+            : undefined,
+          lastSenderId: lastMsg?.sender_id,
+        };
       },
     );
-  }, [messages, loading]);
 
-  /**
-   * Aynı kullanıcıyla var olan konuşmayı bul
-   */
-  const findConversationByParticipant = useCallback(
-    (participantId: string) => {
-      return conversations.find((conversation) => {
+    setConversations(sortConversations(nextConversations));
+  }, [authUser?.id, mapParticipant]);
+
+  const fetchMessagesForConversation = useCallback(
+    async (conversationId: string) => {
+      const { data, error } = await supabase
+        .from("messages")
+        .select(
+          `
+          id,
+          conversation_id,
+          sender_id,
+          content,
+          created_at,
+          profiles:sender_id (
+            id,
+            full_name,
+            username,
+            avatar_url
+          )
+        `,
+        )
+        .eq("conversation_id", conversationId)
+        .order("created_at", { ascending: true });
+
+      if (error) {
+        console.log("FETCH MESSAGES ERROR:", error);
+        return;
+      }
+
+      const typedRows = (data ?? []) as DbMessageRow[];
+      const mapped = typedRows.map((row) => mapMessage(row));
+
+      setMessages((prev) => {
+        const otherConversations = prev.filter(
+          (m) => m.conversationId !== conversationId,
+        );
+        return [...otherConversations, ...mapped];
+      });
+    },
+    [mapMessage],
+  );
+
+  useEffect(() => {
+    let active = true;
+
+    const bootstrap = async () => {
+      if (!authUser?.id) {
+        setConversations([]);
+        setMessages([]);
+        setLoading(false);
+        return;
+      }
+
+      setLoading(true);
+      await fetchConversations();
+
+      if (active) {
+        setLoading(false);
+      }
+    };
+
+    bootstrap();
+
+    return () => {
+      active = false;
+    };
+  }, [authUser?.id, fetchConversations]);
+
+  const unsubscribeFromConversation = useCallback(() => {
+    if (activeChannelRef.current) {
+      supabase.removeChannel(activeChannelRef.current);
+      activeChannelRef.current = null;
+    }
+  }, []);
+
+  const subscribeToConversation = useCallback(
+    (conversationId: string) => {
+      unsubscribeFromConversation();
+
+      const channel = supabase
+        .channel(`messages:${conversationId}`)
+        .on(
+          "postgres_changes",
+          {
+            event: "INSERT",
+            schema: "public",
+            table: "messages",
+            filter: `conversation_id=eq.${conversationId}`,
+          },
+          async (payload) => {
+            const inserted = payload.new as {
+              id: string;
+              conversation_id: string;
+              sender_id: string;
+              content: string;
+              created_at: string;
+            };
+
+            const { data: senderProfileRaw } = await supabase
+              .from("profiles")
+              .select("id, full_name, username, avatar_url")
+              .eq("id", inserted.sender_id)
+              .single();
+
+            const senderProfile = senderProfileRaw as DbProfile | null;
+
+            const incoming: Message = {
+              id: inserted.id,
+              conversationId: inserted.conversation_id,
+              senderId: inserted.sender_id,
+              senderName:
+                senderProfile?.full_name?.trim() ||
+                senderProfile?.username?.trim() ||
+                "Kullanıcı",
+              senderAvatar: senderProfile?.avatar_url ?? undefined,
+              text: inserted.content,
+              createdAt: new Date(inserted.created_at).getTime(),
+              isRead: inserted.sender_id === me.id,
+            };
+
+            setMessages((prev) => {
+              if (prev.some((m) => m.id === incoming.id)) return prev;
+              return [...prev, incoming].sort(
+                (a, b) => a.createdAt - b.createdAt,
+              );
+            });
+
+            setConversations((prev) =>
+              sortConversations(
+                prev.map((conversation) =>
+                  conversation.id === conversationId
+                    ? {
+                        ...conversation,
+                        updatedAt: incoming.createdAt,
+                        lastMessageText: incoming.text,
+                        lastMessageAt: incoming.createdAt,
+                        lastSenderId: incoming.senderId,
+                      }
+                    : conversation,
+                ),
+              ),
+            );
+          },
+        )
+        .subscribe();
+
+      activeChannelRef.current = channel;
+    },
+    [me.id, unsubscribeFromConversation],
+  );
+
+  const createConversation = useCallback(
+    async (participant: ChatParticipant) => {
+      if (!authUser?.id) {
+        throw new Error("Oturum açık değil.");
+      }
+
+      const existing = conversations.find((conversation) => {
         const ids = conversation.participants.map((p) => p.id).sort();
-        const expected = [CURRENT_USER.id, participantId].sort();
+        const expected = [me.id, participant.id].sort();
 
         return (
           ids.length === 2 && ids[0] === expected[0] && ids[1] === expected[1]
         );
       });
-    },
-    [conversations],
-  );
 
-  /**
-   * Yeni konuşma oluştur
-   */
-  const createConversation = useCallback(
-    (participant: ChatParticipant) => {
-      const existingConversation = findConversationByParticipant(
-        participant.id,
-      );
-
-      if (existingConversation) {
-        return existingConversation.id;
+      if (existing) {
+        return existing.id;
       }
 
-      const now = Date.now();
+      const { data: newConversation, error: conversationError } = await supabase
+        .from("conversations")
+        .insert({
+          is_group: false,
+          created_by: authUser.id,
+        })
+        .select("id")
+        .single();
 
-      const newConversation: Conversation = {
-        id: makeId(),
-        participants: [CURRENT_USER, participant],
-        createdAt: now,
-        updatedAt: now,
-        lastMessageText: undefined,
-        lastMessageAt: undefined,
-        lastSenderId: undefined,
-      };
+      if (conversationError || !newConversation) {
+        console.log("CREATE CONVERSATION ERROR:", conversationError);
+        throw new Error(
+          conversationError?.message || "Konuşma oluşturulamadı.",
+        );
+      }
 
-      setConversations((prev) => sortConversations([newConversation, ...prev]));
+      const conversationId = newConversation.id;
 
-      return newConversation.id;
+      const { error: participantsError } = await supabase
+        .from("conversation_participants")
+        .insert([
+          {
+            conversation_id: conversationId,
+            user_id: authUser.id,
+          },
+          {
+            conversation_id: conversationId,
+            user_id: participant.id,
+          },
+        ]);
+
+      if (participantsError) {
+        console.log("CREATE PARTICIPANTS ERROR:", participantsError);
+
+        await supabase.from("conversations").delete().eq("id", conversationId);
+
+        throw new Error(participantsError.message);
+      }
+
+      await fetchConversations();
+      return conversationId;
     },
-    [findConversationByParticipant],
+    [authUser?.id, conversations, fetchConversations, me.id],
   );
 
-  /**
-   * Konuşmayı bul ya da oluştur
-   */
   const getOrCreateConversationByParticipant = useCallback(
-    (participant: ChatParticipant) => {
-      const existingConversation = findConversationByParticipant(
-        participant.id,
-      );
+    async (participant: ChatParticipant) => {
+      const existing = conversations.find((conversation) => {
+        const ids = conversation.participants.map((p) => p.id).sort();
+        const expected = [me.id, participant.id].sort();
 
-      if (existingConversation) {
-        return existingConversation.id;
+        return (
+          ids.length === 2 && ids[0] === expected[0] && ids[1] === expected[1]
+        );
+      });
+
+      if (existing) {
+        return existing.id;
       }
 
       return createConversation(participant);
     },
-    [findConversationByParticipant, createConversation],
+    [conversations, createConversation, me.id],
   );
 
-  /**
-   * Mesaj gönder
-   */
   const sendMessage = useCallback(
-    (conversationId: string, text: string) => {
+    async (conversationId: string, text: string) => {
       const trimmed = text.trim();
       if (!trimmed) return;
+      if (!authUser?.id) return;
 
-      const activeConversation = conversations.find(
-        (conversation) => conversation.id === conversationId,
-      );
+      const { error } = await supabase.from("messages").insert({
+        conversation_id: conversationId,
+        sender_id: authUser.id,
+        content: trimmed,
+      });
 
-      const otherUser = activeConversation?.participants.find(
-        (participant) => participant.id !== CURRENT_USER.id,
-      );
+      if (error) {
+        console.log("SEND MESSAGE ERROR:", error);
+        throw new Error(error.message);
+      }
 
-      const now = Date.now();
-
-      const newMessage: Message = {
-        id: makeId(),
-        conversationId,
-        senderId: CURRENT_USER.id,
-        senderName: CURRENT_USER.name,
-        senderAvatar: CURRENT_USER.avatar,
-        text: trimmed,
-        createdAt: now,
-        isRead: true,
-      };
-
-      setMessages((prev) => [...prev, newMessage]);
-
-      setConversations((prev) =>
-        sortConversations(
-          prev.map((conversation) =>
-            conversation.id === conversationId
-              ? {
-                  ...conversation,
-                  updatedAt: now,
-                  lastMessageText: trimmed,
-                  lastMessageAt: now,
-                  lastSenderId: CURRENT_USER.id,
-                }
-              : conversation,
-          ),
-        ),
-      );
-
-      if (!otherUser) return;
-
-      setTypingByConversation((prev) => ({
-        ...prev,
-        [conversationId]: true,
-      }));
-
-      const autoReply = pickAutoReply(trimmed);
-
-      setTimeout(
-        () => {
-          const replyTime = Date.now();
-
-          const replyMessage: Message = {
-            id: makeId(),
-            conversationId,
-            senderId: otherUser.id,
-            senderName: otherUser.name,
-            senderAvatar: otherUser.avatar,
-            text: autoReply,
-            createdAt: replyTime,
-            isRead: false,
-          };
-
-          setTypingByConversation((prev) => ({
-            ...prev,
-            [conversationId]: false,
-          }));
-
-          setMessages((prev) => [...prev, replyMessage]);
-
-          setConversations((prev) =>
-            sortConversations(
-              prev.map((conversation) =>
-                conversation.id === conversationId
-                  ? {
-                      ...conversation,
-                      updatedAt: replyTime,
-                      lastMessageText: autoReply,
-                      lastMessageAt: replyTime,
-                      lastSenderId: otherUser.id,
-                    }
-                  : conversation,
-              ),
-            ),
-          );
-        },
-        1200 + Math.random() * 1000,
-      );
+      await supabase
+        .from("conversations")
+        .update({
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", conversationId);
     },
-    [conversations],
+    [authUser?.id],
   );
 
-  /**
-   * ID ile konuşma getir
-   */
+  const deleteConversation = useCallback(async (conversationId: string) => {
+    const { error } = await supabase
+      .from("conversations")
+      .delete()
+      .eq("id", conversationId);
+
+    if (error) {
+      console.log("DELETE CONVERSATION ERROR:", error);
+      return;
+    }
+
+    setConversations((prev) => prev.filter((c) => c.id !== conversationId));
+    setMessages((prev) =>
+      prev.filter((m) => m.conversationId !== conversationId),
+    );
+  }, []);
+
   const getConversationById = useCallback(
-    (conversationId: string) => {
-      return conversations.find(
-        (conversation) => conversation.id === conversationId,
-      );
-    },
+    (conversationId: string) =>
+      conversations.find((c) => c.id === conversationId),
     [conversations],
   );
 
-  /**
-   * Konuşma mesajlarını getir
-   */
   const getMessagesByConversationId = useCallback(
-    (conversationId: string) => {
-      return messages
+    (conversationId: string) =>
+      messages
         .filter((message) => message.conversationId === conversationId)
-        .sort((a, b) => a.createdAt - b.createdAt);
-    },
+        .sort((a, b) => a.createdAt - b.createdAt),
     [messages],
   );
 
-  /**
-   * Konuşmayı sil
-   */
-  const deleteConversation = useCallback((conversationId: string) => {
-    setConversations((prev) =>
-      prev.filter((conversation) => conversation.id !== conversationId),
-    );
+  const markConversationAsRead = useCallback(
+    async (conversationId: string) => {
+      if (!authUser?.id) return;
 
-    setMessages((prev) =>
-      prev.filter((message) => message.conversationId !== conversationId),
-    );
+      await supabase
+        .from("conversation_participants")
+        .update({
+          last_read_at: new Date().toISOString(),
+        })
+        .eq("conversation_id", conversationId)
+        .eq("user_id", authUser.id);
 
-    setTypingByConversation((prev) => {
-      const next = { ...prev };
-      delete next[conversationId];
-      return next;
-    });
-  }, []);
-
-  /**
-   * Karşı taraftan gelen mesajları okundu işaretle
-   *
-   * Önemli:
-   * Eğer hiçbir şey değişmiyorsa aynı prev referansı döndürülür.
-   * Böylece gereksiz render ve sonsuz update loop önlenir.
-   */
-  const markConversationAsRead = useCallback((conversationId: string) => {
-    setMessages((prev) => {
-      let changed = false;
-
-      const next = prev.map((message) => {
-        if (
+      setMessages((prev) =>
+        prev.map((message) =>
           message.conversationId === conversationId &&
-          message.senderId !== CURRENT_USER.id &&
+          message.senderId !== me.id &&
           !message.isRead
-        ) {
-          changed = true;
+            ? { ...message, isRead: true }
+            : message,
+        ),
+      );
+    },
+    [authUser?.id, me.id],
+  );
 
-          return {
-            ...message,
-            isRead: true,
-          };
-        }
-
-        return message;
-      });
-
-      return changed ? next : prev;
-    });
-  }, []);
-
-  /**
-   * Tüm chat verilerini temizle
-   */
   const clearAllChats = useCallback(() => {
     setConversations([]);
     setMessages([]);
     setTypingByConversation({});
   }, []);
 
-  /**
-   * Context değeri
-   */
   const value = useMemo<ChatContextType>(
     () => ({
       conversations,
@@ -629,6 +589,9 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
       getMessagesByConversationId,
       markConversationAsRead,
       clearAllChats,
+      fetchMessagesForConversation,
+      subscribeToConversation,
+      unsubscribeFromConversation,
     }),
     [
       conversations,
@@ -643,15 +606,15 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
       getMessagesByConversationId,
       markConversationAsRead,
       clearAllChats,
+      fetchMessagesForConversation,
+      subscribeToConversation,
+      unsubscribeFromConversation,
     ],
   );
 
   return <ChatContext.Provider value={value}>{children}</ChatContext.Provider>;
 }
 
-/**
- * Context hook
- */
 export function useChat() {
   const context = useContext(ChatContext);
 

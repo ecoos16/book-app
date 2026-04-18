@@ -1,14 +1,16 @@
-// app/(auth)/login.tsx
-
 import { Ionicons } from "@expo/vector-icons";
-import { Link, router } from "expo-router";
-import React from "react";
-import { Pressable, Text, View } from "react-native";
+import { Link } from "expo-router";
+import React, { useRef, useState } from "react";
+import {
+  ActivityIndicator,
+  Alert,
+  Pressable,
+  Text,
+  TextInput,
+  View,
+} from "react-native";
+import { useAuth } from "../../context/AuthContext";
 
-/**
- * ReadSphere ortak renk paleti
- * Home / Library / Profile ile uyumlu
- */
 const COLORS = {
   bg: "#fbf9f5",
   card: "#fffdf9",
@@ -21,17 +23,33 @@ const COLORS = {
   whiteSoft: "#fff7f4",
 };
 
-/**
- * Login ekranı
- *
- * Amaç:
- * - sade ama premium bir giriş ekranı sunmak
- * - uygulamanın sıcak okuma temasını ilk ekranda hissettirmek
- * - mevcut akışı bozmamak:
- *   giriş -> /(tabs)/home
- *   kayıt -> /(auth)/register
- */
 export default function Login() {
+  const { signIn } = useAuth();
+
+  const passwordRef = useRef<TextInput>(null);
+
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+
+  const handleLogin = async () => {
+    if (!email.trim() || !password.trim()) {
+      Alert.alert("Eksik bilgi", "Lütfen email ve şifre gir.");
+      return;
+    }
+
+    setSubmitting(true);
+
+    const { error } = await signIn(email, password);
+
+    setSubmitting(false);
+
+    if (error) {
+      Alert.alert("Giriş başarısız", error);
+      return;
+    }
+  };
+
   return (
     <View
       style={{
@@ -42,14 +60,12 @@ export default function Login() {
         paddingVertical: 32,
       }}
     >
-      {/* ================= ÜST ALAN ================= */}
       <View
         style={{
           alignItems: "center",
           marginBottom: 36,
         }}
       >
-        {/* Logo benzeri yuvarlak ikon alanı */}
         <View
           style={{
             width: 88,
@@ -59,7 +75,6 @@ export default function Login() {
             alignItems: "center",
             justifyContent: "center",
             marginBottom: 18,
-
             shadowColor: COLORS.primary,
             shadowOpacity: 0.18,
             shadowRadius: 16,
@@ -70,7 +85,6 @@ export default function Login() {
           <Ionicons name="book-outline" size={36} color={COLORS.whiteSoft} />
         </View>
 
-        {/* Uygulama adı */}
         <Text
           style={{
             fontSize: 34,
@@ -82,7 +96,6 @@ export default function Login() {
           ReadSphere
         </Text>
 
-        {/* Sayfa başlığı */}
         <Text
           style={{
             fontSize: 24,
@@ -94,7 +107,6 @@ export default function Login() {
           Giriş
         </Text>
 
-        {/* Açıklama */}
         <Text
           style={{
             color: COLORS.muted,
@@ -109,7 +121,6 @@ export default function Login() {
         </Text>
       </View>
 
-      {/* ================= ORTA KART ================= */}
       <View
         style={{
           backgroundColor: COLORS.card,
@@ -118,7 +129,6 @@ export default function Login() {
           borderRadius: 28,
           padding: 22,
           gap: 16,
-
           shadowColor: "#2f2a24",
           shadowOpacity: 0.06,
           shadowRadius: 14,
@@ -126,7 +136,6 @@ export default function Login() {
           elevation: 2,
         }}
       >
-        {/* Bilgilendirme kutucuğu */}
         <View
           style={{
             backgroundColor: COLORS.primarySoft,
@@ -157,9 +166,51 @@ export default function Login() {
           </Text>
         </View>
 
-        {/* Ana giriş butonu */}
+        <TextInput
+          placeholder="Email"
+          placeholderTextColor="#9a9389"
+          autoCapitalize="none"
+          keyboardType="email-address"
+          value={email}
+          onChangeText={setEmail}
+          returnKeyType="next"
+          onSubmitEditing={() => passwordRef.current?.focus()}
+          style={{
+            borderWidth: 1,
+            borderColor: COLORS.border,
+            borderRadius: 18,
+            paddingHorizontal: 16,
+            paddingVertical: 14,
+            backgroundColor: "#fff",
+            color: COLORS.text,
+            fontSize: 15,
+          }}
+        />
+
+        <TextInput
+          ref={passwordRef}
+          placeholder="Şifre"
+          placeholderTextColor="#9a9389"
+          secureTextEntry
+          value={password}
+          onChangeText={setPassword}
+          returnKeyType="done"
+          onSubmitEditing={handleLogin}
+          style={{
+            borderWidth: 1,
+            borderColor: COLORS.border,
+            borderRadius: 18,
+            paddingHorizontal: 16,
+            paddingVertical: 14,
+            backgroundColor: "#fff",
+            color: COLORS.text,
+            fontSize: 15,
+          }}
+        />
+
         <Pressable
-          onPress={() => router.replace("/(tabs)/home")}
+          onPress={handleLogin}
+          disabled={submitting}
           style={({ pressed, hovered }) => ({
             backgroundColor: pressed
               ? COLORS.primaryDark
@@ -172,23 +223,33 @@ export default function Login() {
             justifyContent: "center",
             flexDirection: "row",
             gap: 8,
+            opacity: submitting ? 0.7 : 1,
             transform: [{ scale: pressed ? 0.985 : 1 }],
           })}
         >
-          <Ionicons name="log-in-outline" size={18} color={COLORS.whiteSoft} />
-          <Text
-            style={{
-              color: COLORS.whiteSoft,
-              textAlign: "center",
-              fontWeight: "900",
-              fontSize: 15,
-            }}
-          >
-            Giriş Yap
-          </Text>
+          {submitting ? (
+            <ActivityIndicator color={COLORS.whiteSoft} />
+          ) : (
+            <>
+              <Ionicons
+                name="log-in-outline"
+                size={18}
+                color={COLORS.whiteSoft}
+              />
+              <Text
+                style={{
+                  color: COLORS.whiteSoft,
+                  textAlign: "center",
+                  fontWeight: "900",
+                  fontSize: 15,
+                }}
+              >
+                Giriş Yap
+              </Text>
+            </>
+          )}
         </Pressable>
 
-        {/* Kayıt ol alanı */}
         <View
           style={{
             alignItems: "center",
@@ -220,7 +281,6 @@ export default function Login() {
         </View>
       </View>
 
-      {/* ================= ALT MOTTO ================= */}
       <View
         style={{
           marginTop: 28,

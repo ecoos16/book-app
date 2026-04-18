@@ -1,20 +1,24 @@
-// app/(tabs)/home.tsx
-
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { Image, Pressable, ScrollView, Text, View } from "react-native";
 
+import BirthdayCelebration from "../../components/BirthdayCelebration";
+import BookSearchPicker from "../../components/BookSearchPicker";
+import { useAuth } from "../../context/AuthContext";
 import { useBooks } from "../../context/BooksContext";
 import { useChat } from "../../context/ChatContext";
 import { usePosts } from "../../context/PostsContext";
-import { CURRENT_USER } from "../../data/mockUsers";
+import { useUser } from "../../context/UserContext";
+import { supabase } from "../../lib/supabase";
 
-/**
- * ReadSphere için ortak renkler
- * Stitch tasarımlarındaki sıcak / premium hissi korumak için
- * krem, kahve, yumuşak yeşil ve nötr tonlar kullanıldı.
- */
+type ProfileRow = {
+  id: string;
+  first_name: string | null;
+  last_name: string | null;
+  birth_date: string | null;
+};
+
 const COLORS = {
   bg: "#fbf9f5",
   card: "#fffdf9",
@@ -33,9 +37,6 @@ const COLORS = {
   dangerText: "#a22b2b",
 };
 
-/**
- * Verilen zaman damgasını "kaç dk / sa / gün önce" şeklinde gösterir.
- */
 function formatTimeAgo(timestamp: number) {
   const diffMs = Date.now() - timestamp;
   const minutes = Math.floor(diffMs / (1000 * 60));
@@ -48,10 +49,6 @@ function formatTimeAgo(timestamp: number) {
   return `${days} gün önce`;
 }
 
-/**
- * Kullanıcı adından baş harf üretir.
- * Örn: "Ecesu Orhan" -> EO
- */
 function getInitials(name?: string) {
   if (!name?.trim()) return "U";
 
@@ -64,9 +61,6 @@ function getInitials(name?: string) {
   return `${parts[0][0] ?? ""}${parts[1][0] ?? ""}`.toUpperCase();
 }
 
-/**
- * Home ekranında kullanılan bölüm başlığı
- */
 function SectionHeader({
   title,
   subtitle,
@@ -127,9 +121,6 @@ function SectionHeader({
   );
 }
 
-/**
- * Son eklenenler bölümünde kullanılacak küçük kitap kartı
- */
 function RecentBookCard({
   title,
   author,
@@ -166,7 +157,6 @@ function RecentBookCard({
         elevation: 2,
       })}
     >
-      {/* Kapak alanı */}
       <View
         style={{
           height: 180,
@@ -192,7 +182,6 @@ function RecentBookCard({
         )}
       </View>
 
-      {/* İçerik alanı */}
       <View style={{ gap: 5 }}>
         <Text
           numberOfLines={2}
@@ -242,9 +231,6 @@ function RecentBookCard({
   );
 }
 
-/**
- * Topluluk akışında kullanılan aksiyon pill butonu
- */
 function ActionPill({
   label,
   icon,
@@ -315,100 +301,93 @@ function ActionPill({
   );
 }
 
-/**
- * Home ekranı
- *
- * Bu ekran:
- * - üst karşılama kartı
- * - arama alanı
- * - son eklenen kitaplar
- * - topluluk akışı
- * - kendi paylaşımları
- * - floating add button
- * bölümlerini içerir.
- */
 export default function Home() {
+  const { user: authUser } = useAuth();
+  const { user: appUser } = useUser();
   const { books } = useBooks();
   const { posts, isHydrated, toggleLike, removePost } = usePosts();
   const { getOrCreateConversationByParticipant } = useChat();
 
-  /**
-   * Hangi post için silme onayı açık?
-   */
+  const [profile, setProfile] = useState<ProfileRow | null>(null);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
 
-  /**
-   * Son eklenen 3 kitap
-   */
+  useEffect(() => {
+    const fetchProfile = async () => {
+      if (!authUser?.id) return;
+
+      const { data, error } = await supabase
+        .from("profiles")
+        .select("id, first_name, last_name, birth_date")
+        .eq("id", authUser.id)
+        .single();
+
+      if (error) {
+        console.log("PROFILE FETCH ERROR:", error);
+        return;
+      }
+
+      setProfile(data);
+    };
+
+    fetchProfile();
+  }, [authUser?.id]);
+
+  const displayName =
+    appUser?.name?.trim() || authUser?.email || "ReadSphere Kullanıcısı";
+  const currentUserId = authUser?.id ?? "";
+
   const last3 = useMemo(() => books.slice(0, 3), [books]);
 
-  /**
-   * Postları yeni -> eski sırala
-   * NOT: mevcut yüklenen kodda `return [.posts]` hatalıydı.
-   * Doğrusu `return [...posts]`.
-   */
   const sortedPosts = useMemo(() => {
     return [...posts].sort((a, b) => b.createdAt - a.createdAt);
   }, [posts]);
 
-  /**
-   * Kullanıcının kendi postları
-   */
   const myPosts = useMemo(() => {
-    return sortedPosts.filter((p) => p.userId === CURRENT_USER.id);
-  }, [sortedPosts]);
+    return sortedPosts.filter((p) => p.userId === currentUserId);
+  }, [sortedPosts, currentUserId]);
 
-  /**
-   * Tüm topluluk postları
-   */
   const communityPosts = useMemo(() => {
     return sortedPosts;
   }, [sortedPosts]);
 
-  /**
-   * bookId ile local kitap bul
-   */
   function getLocalBook(bookId: string) {
     return books.find((b) => b.id === bookId);
   }
 
-  /**
-   * Paylaşım sil
-   */
   function handleDeletePost(postId: string) {
     removePost(postId);
     setConfirmDeleteId(null);
   }
 
-  /**
-   * Paylaşım sahibine mesaj at
-   * Konuşma yoksa oluşturur, sonra prefill ile chat ekranına gider.
-   */
-  function handleMessagePostOwner(post: {
+  async function handleMessagePostOwner(post: {
     userId: string;
     userName: string;
     userAvatar?: string;
     bookTitle?: string;
   }) {
-    if (post.userId === CURRENT_USER.id) return;
+    if (post.userId === currentUserId) return;
 
-    const conversationId = getOrCreateConversationByParticipant({
-      id: post.userId,
-      name: post.userName,
-      avatar: post.userAvatar,
-    });
+    try {
+      const conversationId = await getOrCreateConversationByParticipant({
+        id: post.userId,
+        name: post.userName,
+        avatar: post.userAvatar,
+      });
 
-    const prefillText = `${
-      post.bookTitle || "Paylaşımın"
-    } hakkında yazdığını gördüm, yorumun ilgimi çekti.`;
+      const prefillText = `${
+        post.bookTitle || "Paylaşımın"
+      } hakkında yazdığını gördüm, yorumun ilgimi çekti.`;
 
-    router.push({
-      pathname: "/chat/[id]",
-      params: {
-        id: conversationId,
-        prefill: prefillText,
-      },
-    });
+      router.push({
+        pathname: "/(tabs)/chat/[id]",
+        params: {
+          id: conversationId,
+          prefill: prefillText,
+        },
+      });
+    } catch (error) {
+      console.log("HOME START CHAT ERROR:", error);
+    }
   }
 
   return (
@@ -419,8 +398,8 @@ export default function Home() {
           gap: 22,
           paddingBottom: 130,
         }}
+        keyboardShouldPersistTaps="handled"
       >
-        {/* ================= ÜST KARŞILAMA KARTI ================= */}
         <View
           style={{
             borderRadius: 26,
@@ -460,7 +439,7 @@ export default function Home() {
                   fontSize: 14,
                 }}
               >
-                {getInitials(CURRENT_USER.name)}
+                {getInitials(displayName)}
               </Text>
             </View>
 
@@ -490,32 +469,15 @@ export default function Home() {
           </View>
         </View>
 
-        {/* ================= ARAMA ================= */}
-        <Pressable
-          onPress={() => router.push("/search" as any)}
-          style={({ pressed, hovered }) => ({
-            borderRadius: 18,
-            paddingVertical: 16,
-            paddingHorizontal: 16,
-            borderWidth: 1,
-            borderColor: COLORS.border,
-            backgroundColor: pressed
-              ? "#f6f1ea"
-              : hovered
-                ? "#fff9f3"
-                : COLORS.card,
-            flexDirection: "row",
-            alignItems: "center",
-            gap: 10,
-          })}
-        >
-          <Ionicons name="search-outline" size={18} color={COLORS.muted} />
-          <Text style={{ color: "#8a8379", fontSize: 15 }}>
-            Kitap veya yazar ara…
-          </Text>
-        </Pressable>
+        <BookSearchPicker
+          onSelect={(book) => {
+            router.push({
+              pathname: "/book/[id]",
+              params: { id: book.id },
+            });
+          }}
+        />
 
-        {/* ================= SON EKLENENLER ================= */}
         <View style={{ gap: 14 }}>
           <SectionHeader
             title="Son Eklenenler"
@@ -596,7 +558,6 @@ export default function Home() {
           )}
         </View>
 
-        {/* ================= TOPLULUK ================= */}
         <View style={{ gap: 14 }}>
           <SectionHeader
             title="Topluluk"
@@ -662,7 +623,7 @@ export default function Home() {
                   post.bookAuthor || localBook?.author || "Bilinmeyen Yazar";
                 const displayThumbnail =
                   post.bookThumbnail || localBook?.thumbnail;
-                const isMine = post.userId === CURRENT_USER.id;
+                const isMine = post.userId === currentUserId;
 
                 return (
                   <View
@@ -681,7 +642,6 @@ export default function Home() {
                       elevation: 2,
                     }}
                   >
-                    {/* ---------- ÜST KULLANICI SATIRI ---------- */}
                     <View
                       style={{
                         flexDirection: "row",
@@ -760,7 +720,6 @@ export default function Home() {
                       </Pressable>
                     </View>
 
-                    {/* ---------- KİTAP BİLGİ KARTI ---------- */}
                     <Pressable
                       onPress={() =>
                         router.push({
@@ -831,7 +790,6 @@ export default function Home() {
                       </View>
                     </Pressable>
 
-                    {/* ---------- PAYLAŞIM METNİ ---------- */}
                     {!!post.shareText && (
                       <Text
                         style={{
@@ -844,7 +802,6 @@ export default function Home() {
                       </Text>
                     )}
 
-                    {/* ---------- AKSİYONLAR ---------- */}
                     <View
                       style={{
                         flexDirection: "row",
@@ -914,7 +871,6 @@ export default function Home() {
                       )}
                     </View>
 
-                    {/* ---------- SİLME ONAYI ---------- */}
                     {isMine && confirmDeleteId === post.id && (
                       <View
                         style={{
@@ -960,7 +916,6 @@ export default function Home() {
           )}
         </View>
 
-        {/* ================= SENİN PAYLAŞIMLARIN ================= */}
         {isHydrated && (
           <View style={{ gap: 14 }}>
             <SectionHeader
@@ -1094,7 +1049,6 @@ export default function Home() {
         )}
       </ScrollView>
 
-      {/* ================= FLOATING ADD ================= */}
       <Pressable
         onPress={() => router.push("/add-book")}
         style={({ pressed, hovered }) => ({
@@ -1121,6 +1075,11 @@ export default function Home() {
       >
         <Ionicons name="add" size={28} color="#fff7f4" />
       </Pressable>
+
+      <BirthdayCelebration
+        birthDate={profile?.birth_date}
+        firstName={profile?.first_name}
+      />
     </View>
   );
 }

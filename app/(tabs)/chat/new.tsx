@@ -1,8 +1,6 @@
-// app/(tabs)/chat/new.tsx
-
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
-import React from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import {
   FlatList,
   Image,
@@ -12,13 +10,11 @@ import {
   Text,
   View,
 } from "react-native";
+import { useAuth } from "../../../context/AuthContext";
 import { useChat } from "../../../context/ChatContext";
-import { CURRENT_USER, MOCK_USERS } from "../../../data/mockUsers";
+import { supabase } from "../../../lib/supabase";
 import type { ChatParticipant } from "../../../types/chat";
 
-/**
- * Ortak renk paleti
- */
 const COLORS = {
   bg: "#fbf9f5",
   card: "#fffdf9",
@@ -32,9 +28,6 @@ const COLORS = {
   whiteSoft: "#fff7f4",
 };
 
-/**
- * Avatar yoksa isimden baş harf üretir
- */
 function getInitials(name: string) {
   return name
     .split(" ")
@@ -44,34 +37,87 @@ function getInitials(name: string) {
     .toUpperCase();
 }
 
+type ProfileRow = {
+  id: string;
+  full_name: string | null;
+  username: string | null;
+  avatar_url: string | null;
+};
+
 export default function NewChatScreen() {
-  /**
-   * Chat context
-   */
+  const { user: authUser } = useAuth();
   const { getOrCreateConversationByParticipant } = useChat();
 
-  /**
-   * Aktif kullanıcı dışındaki kullanıcılar
-   */
-  const availableUsers = MOCK_USERS.filter(
-    (user: ChatParticipant) => user.id !== CURRENT_USER.id,
-  );
+  const [users, setUsers] = useState<ChatParticipant[]>([]);
+  const [loading, setLoading] = useState(true);
 
-  /**
-   * Kullanıcı seçince sohbet aç
-   */
-  const handleStartChat = (participant: ChatParticipant) => {
-    const conversationId = getOrCreateConversationByParticipant(participant);
+  useEffect(() => {
+    let active = true;
 
-    router.replace({
-      pathname: "/chat/[id]",
-      params: { id: conversationId },
-    });
+    const fetchUsers = async () => {
+      if (!authUser?.id) {
+        setUsers([]);
+        setLoading(false);
+        return;
+      }
+
+      setLoading(true);
+
+      const { data, error } = await supabase
+        .from("profiles")
+        .select("id, full_name, username, avatar_url")
+        .neq("id", authUser.id)
+        .order("full_name", { ascending: true });
+
+      if (!active) return;
+
+      if (error) {
+        console.log("FETCH CHAT USERS ERROR:", error);
+        setUsers([]);
+        setLoading(false);
+        return;
+      }
+
+      const mapped: ChatParticipant[] = ((data ?? []) as ProfileRow[]).map(
+        (profile) => ({
+          id: profile.id,
+          name:
+            profile.full_name?.trim() ||
+            profile.username?.trim() ||
+            "Kullanıcı",
+          avatar: profile.avatar_url ?? undefined,
+        }),
+      );
+
+      setUsers(mapped);
+      setLoading(false);
+    };
+
+    fetchUsers();
+
+    return () => {
+      active = false;
+    };
+  }, [authUser?.id]);
+
+  const handleStartChat = async (participant: ChatParticipant) => {
+    try {
+      const conversationId =
+        await getOrCreateConversationByParticipant(participant);
+
+      router.replace({
+        pathname: "/(tabs)/chat/[id]",
+        params: { id: conversationId },
+      });
+    } catch (error) {
+      console.log("START CHAT ERROR:", error);
+    }
   };
+
+  const availableUsers = useMemo(() => users, [users]);
 
   return (
     <SafeAreaView style={styles.container}>
-      {/* ================= HEADER ================= */}
       <View style={styles.header}>
         <Pressable
           onPress={() => router.back()}
@@ -91,7 +137,6 @@ export default function NewChatScreen() {
         </View>
       </View>
 
-      {/* ================= KULLANICI LİSTESİ ================= */}
       <FlatList<ChatParticipant>
         data={availableUsers}
         keyExtractor={(item) => item.id}
@@ -105,9 +150,15 @@ export default function NewChatScreen() {
                 color={COLORS.primary}
               />
             </View>
-            <Text style={styles.emptyTitle}>Kullanıcı bulunamadı</Text>
+
+            <Text style={styles.emptyTitle}>
+              {loading ? "Kullanıcılar yükleniyor" : "Kullanıcı bulunamadı"}
+            </Text>
+
             <Text style={styles.emptyText}>
-              Şu anda sohbet başlatabileceğin başka kullanıcı görünmüyor.
+              {loading
+                ? "Lütfen kısa bir süre bekle."
+                : "Şu anda sohbet başlatabileceğin başka kullanıcı görünmüyor."}
             </Text>
           </View>
         }
@@ -147,17 +198,11 @@ export default function NewChatScreen() {
 }
 
 const styles = StyleSheet.create({
-  /**
-   * Ana kapsayıcı
-   */
   container: {
     flex: 1,
     backgroundColor: COLORS.bg,
   },
 
-  /**
-   * Header
-   */
   header: {
     paddingHorizontal: 16,
     paddingTop: 10,
@@ -166,6 +211,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     gap: 12,
   },
+
   iconButton: {
     width: 40,
     height: 40,
@@ -176,14 +222,17 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: COLORS.border,
   },
+
   headerTextArea: {
     flex: 1,
   },
+
   title: {
     fontSize: 28,
     fontWeight: "900",
     color: COLORS.text,
   },
+
   subtitle: {
     marginTop: 4,
     fontSize: 14,
@@ -191,18 +240,12 @@ const styles = StyleSheet.create({
     lineHeight: 20,
   },
 
-  /**
-   * Liste içeriği
-   */
   listContent: {
     paddingHorizontal: 16,
     paddingBottom: 24,
     gap: 12,
   },
 
-  /**
-   * Kullanıcı kartı
-   */
   userCard: {
     borderWidth: 1,
     borderColor: COLORS.border,
@@ -219,25 +262,25 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 5 },
     elevation: 1,
   },
+
   leftSide: {
     flexDirection: "row",
     alignItems: "center",
     gap: 12,
     flex: 1,
   },
+
   userInfo: {
     flex: 1,
   },
 
-  /**
-   * Avatar
-   */
   avatar: {
     width: 56,
     height: 56,
     borderRadius: 28,
     backgroundColor: COLORS.graySoft,
   },
+
   avatarFallback: {
     width: 56,
     height: 56,
@@ -246,44 +289,38 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
+
   avatarFallbackText: {
     fontSize: 15,
     fontWeight: "900",
     color: COLORS.primary,
   },
 
-  /**
-   * Metin alanı
-   */
   name: {
     fontSize: 16,
     fontWeight: "900",
     color: COLORS.text,
   },
+
   meta: {
     marginTop: 4,
     fontSize: 13,
     color: COLORS.muted,
   },
 
-  /**
-   * Başlat butonu
-   */
   startButton: {
     backgroundColor: COLORS.primary,
     paddingHorizontal: 14,
     paddingVertical: 10,
     borderRadius: 999,
   },
+
   startButtonText: {
     color: COLORS.whiteSoft,
     fontSize: 13,
     fontWeight: "900",
   },
 
-  /**
-   * Boş durum
-   */
   emptyCard: {
     marginTop: 24,
     padding: 20,
@@ -292,6 +329,7 @@ const styles = StyleSheet.create({
     borderColor: COLORS.border,
     backgroundColor: COLORS.card,
   },
+
   emptyIconWrap: {
     width: 52,
     height: 52,
@@ -301,11 +339,13 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     marginBottom: 14,
   },
+
   emptyTitle: {
     fontSize: 19,
     fontWeight: "900",
     color: COLORS.text,
   },
+
   emptyText: {
     marginTop: 8,
     fontSize: 14,
@@ -313,9 +353,6 @@ const styles = StyleSheet.create({
     color: COLORS.muted,
   },
 
-  /**
-   * Basma efekti
-   */
   buttonPressed: {
     opacity: 0.9,
     transform: [{ scale: 0.98 }],

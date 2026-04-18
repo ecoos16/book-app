@@ -1,5 +1,3 @@
-// components/BookSearchPicker.tsx
-
 import { Ionicons } from "@expo/vector-icons";
 import React, { useEffect, useRef, useState } from "react";
 import {
@@ -14,9 +12,6 @@ import {
 import { searchGoogleBooks } from "../lib/googleBooks";
 import type { GoogleBook } from "../types/googleBooks";
 
-/**
- * ReadSphere ortak renk paleti
- */
 const COLORS = {
   bg: "#fbf9f5",
   card: "#fffdf9",
@@ -27,59 +22,39 @@ const COLORS = {
   primarySoft: "#f3e2d2",
   graySoft: "#f3efe8",
   whiteSoft: "#fff7f4",
+  errorSoft: "#fff4f4",
+  errorBorder: "#ffd8d8",
+  errorText: "#a22b2b",
 };
 
-/**
- * Parent component, seçilen kitabı üst componente yollar
- */
 type Props = {
   onSelect: (item: GoogleBook) => void;
 };
 
 export default function BookSearchPicker({ onSelect }: Props) {
-  /**
-   * Kullanıcı arama metni
-   */
   const [query, setQuery] = useState("");
-
-  /**
-   * API sonuçları
-   */
   const [results, setResults] = useState<GoogleBook[]>([]);
-
-  /**
-   * Yükleniyor durumu
-   */
   const [loading, setLoading] = useState(false);
-
-  /**
-   * Debounce edilmiş query
-   */
   const [debouncedQuery, setDebouncedQuery] = useState("");
+  const [error, setError] = useState<string | null>(null);
 
-  /**
-   * Önceki isteği iptal etmek için AbortController
-   */
   const abortRef = useRef<AbortController | null>(null);
 
-  /**
-   * Debounce mekanizması
-   * Kullanıcı yazmayı bıraktıktan sonra 700ms beklenir
-   */
   useEffect(() => {
     const timer = setTimeout(() => {
       setDebouncedQuery(query.trim());
-    }, 700);
+    }, 500);
 
     return () => clearTimeout(timer);
   }, [query]);
 
-  /**
-   * Debounced query değiştiğinde API çağrısı yapılır
-   */
-  useEffect(() => {
-    if (debouncedQuery.length < 2) {
+  const runSearch = async (searchText: string) => {
+    const q = searchText.trim();
+
+    if (q.length < 2) {
       setResults([]);
+      setError(null);
+      setLoading(false);
       return;
     }
 
@@ -88,38 +63,46 @@ export default function BookSearchPicker({ onSelect }: Props) {
     const controller = new AbortController();
     abortRef.current = controller;
 
-    async function fetchBooks() {
-      try {
-        setLoading(true);
+    try {
+      setLoading(true);
+      setError(null);
 
-        const data = await searchGoogleBooks(
-          debouncedQuery,
-          10,
-          controller.signal,
-        );
+      console.log("🔎 BOOK SEARCH QUERY:", q);
 
-        setResults(data);
-      } catch (error: any) {
-        /**
-         * AbortError normaldir:
-         * kullanıcı yeni arama girmiştir
-         */
-        if (error?.name !== "AbortError") {
-          console.log("Kitap arama hatası:", error);
-        }
-      } finally {
-        setLoading(false);
+      const data = await searchGoogleBooks(q, 10, controller.signal);
+
+      console.log("📚 BOOK SEARCH RESULTS:", data);
+
+      setResults(data);
+
+      if (!data.length) {
+        setError("Sonuç bulunamadı.");
       }
+    } catch (error: any) {
+      if (error?.name === "AbortError") return;
+
+      console.log("❌ BOOK SEARCH ERROR:", error);
+
+      const message =
+        typeof error?.message === "string"
+          ? error.message
+          : "Arama sırasında bir hata oluştu.";
+
+      setResults([]);
+      setError(message);
+    } finally {
+      setLoading(false);
     }
+  };
 
-    fetchBooks();
+  useEffect(() => {
+    runSearch(debouncedQuery);
 
-    return () => controller.abort();
+    return () => {
+      abortRef.current?.abort();
+    };
   }, [debouncedQuery]);
 
-  /**
-   * Tek kitap kartı render helper'ı
-   */
   const renderBookCard = (item: GoogleBook) => {
     return (
       <Pressable
@@ -136,7 +119,6 @@ export default function BookSearchPicker({ onSelect }: Props) {
           alignItems: "center",
         })}
       >
-        {/* Kapak */}
         {item.thumbnail ? (
           <Image
             source={{ uri: item.thumbnail }}
@@ -160,7 +142,6 @@ export default function BookSearchPicker({ onSelect }: Props) {
           </View>
         )}
 
-        {/* Sağ bilgi alanı */}
         <View style={{ flex: 1 }}>
           <View
             style={{
@@ -169,7 +150,6 @@ export default function BookSearchPicker({ onSelect }: Props) {
               gap: 8,
             }}
           >
-            {/* Başlık */}
             <Text
               style={{
                 fontSize: 15,
@@ -182,7 +162,6 @@ export default function BookSearchPicker({ onSelect }: Props) {
               {item.title || "Başlıksız"}
             </Text>
 
-            {/* Kaynak rozeti */}
             {item.source ? (
               <View
                 style={{
@@ -207,7 +186,6 @@ export default function BookSearchPicker({ onSelect }: Props) {
             ) : null}
           </View>
 
-          {/* Yazar */}
           <Text
             style={{ color: COLORS.muted, marginTop: 4, fontSize: 13 }}
             numberOfLines={1}
@@ -215,7 +193,6 @@ export default function BookSearchPicker({ onSelect }: Props) {
             {item.authors?.join(", ") || "Yazar bilinmiyor"}
           </Text>
 
-          {/* Sayfa sayısı */}
           <Text style={{ color: COLORS.muted, marginTop: 4, fontSize: 12 }}>
             {item.pageCount ? `${item.pageCount} sayfa` : "Sayfa bilgisi yok"}
           </Text>
@@ -226,7 +203,6 @@ export default function BookSearchPicker({ onSelect }: Props) {
 
   return (
     <View style={{ gap: 12 }}>
-      {/* Arama inputu */}
       <View
         style={{
           borderWidth: 1,
@@ -249,15 +225,35 @@ export default function BookSearchPicker({ onSelect }: Props) {
           placeholderTextColor="#9a9389"
           autoCorrect={false}
           autoCapitalize="none"
+          returnKeyType="search"
+          onSubmitEditing={() => runSearch(query)}
           style={{
             flex: 1,
             fontSize: 15,
             color: COLORS.text,
           }}
         />
+
+        {!!query.trim() && (
+          <Pressable
+            onPress={() => {
+              setQuery("");
+              setDebouncedQuery("");
+              setResults([]);
+              setError(null);
+            }}
+          >
+            <Ionicons name="close-circle" size={18} color={COLORS.muted} />
+          </Pressable>
+        )}
       </View>
 
-      {/* Yükleniyor alanı */}
+      {query.trim().length > 0 && query.trim().length < 2 && (
+        <Text style={{ color: COLORS.muted, fontSize: 12 }}>
+          Aramak için en az 2 karakter yaz.
+        </Text>
+      )}
+
       {loading ? (
         <View
           style={{
@@ -277,16 +273,19 @@ export default function BookSearchPicker({ onSelect }: Props) {
         </View>
       ) : null}
 
-      {/* Sonuç bulunamadı */}
-      {!loading && debouncedQuery.length >= 2 && results.length === 0 ? (
+      {!loading && !!error && (
         <View
           style={{
             borderWidth: 1,
-            borderColor: COLORS.border,
+            borderColor:
+              error === "Sonuç bulunamadı."
+                ? COLORS.border
+                : COLORS.errorBorder,
             borderRadius: 18,
             paddingVertical: 22,
             paddingHorizontal: 16,
-            backgroundColor: COLORS.card,
+            backgroundColor:
+              error === "Sonuç bulunamadı." ? COLORS.card : COLORS.errorSoft,
             alignItems: "center",
             gap: 8,
           }}
@@ -304,17 +303,32 @@ export default function BookSearchPicker({ onSelect }: Props) {
             <Ionicons name="search-outline" size={24} color={COLORS.primary} />
           </View>
 
-          <Text style={{ fontWeight: "900", color: COLORS.text }}>
-            Sonuç bulunamadı
+          <Text
+            style={{
+              fontWeight: "900",
+              color:
+                error === "Sonuç bulunamadı." ? COLORS.text : COLORS.errorText,
+            }}
+          >
+            {error === "Sonuç bulunamadı."
+              ? "Sonuç bulunamadı"
+              : "Arama hatası"}
           </Text>
 
-          <Text style={{ color: COLORS.muted, textAlign: "center" }}>
-            Farklı bir kitap adı veya yazar adı deneyebilirsin.
+          <Text
+            style={{
+              color:
+                error === "Sonuç bulunamadı." ? COLORS.muted : COLORS.errorText,
+              textAlign: "center",
+            }}
+          >
+            {error === "Sonuç bulunamadı."
+              ? "Farklı bir kitap adı veya yazar adı deneyebilirsin."
+              : error}
           </Text>
         </View>
-      ) : null}
+      )}
 
-      {/* Sonuç listesi */}
       {results.length > 0 && (
         <View
           style={{
