@@ -1,23 +1,23 @@
 // app/book/[id].tsx
 
 import { Ionicons } from "@expo/vector-icons";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { router, useLocalSearchParams } from "expo-router";
-import React, { useMemo } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { Alert, Image, Pressable, ScrollView, Text, View } from "react-native";
 
 import { ProgressBar } from "../../components/ProgressBar";
+import { useAuth } from "../../context/AuthContext";
 import { useBooks } from "../../context/BooksContext";
 import { useChat } from "../../context/ChatContext";
 import { usePosts } from "../../context/PostsContext";
 import { useReadingGoal } from "../../context/ReadingGoalContext";
 import { useReadingLog } from "../../context/ReadingLogContext";
-import { CURRENT_USER } from "../../data/mockUsers";
-import type { BookStatus } from "../../types/book";
+import { supabase } from "../../lib/supabase";
+import type { Book, BookStatus } from "../../types/book";
 
-/**
- * ReadSphere ortak renk paleti
- * Home / Library / Profile / Chat ile aynı tasarım dilini korur.
- */
+const STORAGE_KEY = "BOOKS_V1";
+
 const COLORS = {
   bg: "#fbf9f5",
   card: "#fffdf9",
@@ -27,44 +27,127 @@ const COLORS = {
   primary: "#7d5739",
   primaryDark: "#6b4a2f",
   primarySoft: "#f3e2d2",
+  graySoft: "#f3efe8",
   greenSoft: "#dfe7cf",
   peachSoft: "#f7dfcc",
-  graySoft: "#f3efe8",
   whiteSoft: "#fff7f4",
   dangerSoft: "#fff4f4",
   dangerBorder: "#ffd8d8",
   dangerText: "#a22b2b",
 };
 
-/**
- * Kitap durum etiketleri
- */
 const statusLabel: Record<BookStatus, string> = {
   reading: "Okuyorum",
   read: "Okudum",
   want: "İstiyorum",
 };
 
-/**
- * Metni daha güvenli karşılaştırmak için normalize eder
- */
+type SameReader = {
+  user_id: string;
+  full_name: string | null;
+  username: string | null;
+  avatar_url: string | null;
+  book_id: string;
+  google_book_id: string;
+  title: string;
+  author: string;
+  status: string;
+  pages_read: number | null;
+  updated_at: string | null;
+};
+
 function normalizeText(value: unknown) {
   if (typeof value !== "string") return "";
-
   return value.trim().toLocaleLowerCase("tr").replace(/\s+/g, " ");
 }
 
-/**
- * Avatar yoksa isimden ilk harf çıkarır
- */
-function getInitial(name?: string) {
+function getInitial(name?: string | null) {
   if (!name?.trim()) return "U";
   return name.trim().charAt(0).toUpperCase();
 }
 
-/**
- * Ortak section kartı
- */
+function normalizeBook(b: any): Book {
+  const safePagesTotal =
+    typeof b?.pagesTotal === "number" && b.pagesTotal > 0
+      ? b.pagesTotal
+      : undefined;
+
+  const safePagesRead =
+    typeof b?.pagesRead === "number" && b.pagesRead >= 0
+      ? b.pagesRead
+      : undefined;
+
+  return {
+    id: typeof b?.id === "string" ? b.id : String(Date.now()),
+    title: typeof b?.title === "string" ? b.title : "",
+    author: typeof b?.author === "string" ? b.author : "",
+    thumbnail:
+      typeof b?.thumbnail === "string" && b.thumbnail.length > 0
+        ? b.thumbnail
+        : undefined,
+    googleId:
+      typeof b?.googleId === "string" && b.googleId.length > 0
+        ? b.googleId
+        : undefined,
+    description:
+      typeof b?.description === "string" && b.description.trim().length > 0
+        ? b.description.trim()
+        : undefined,
+    categories: Array.isArray(b?.categories)
+      ? b.categories.filter(
+          (x: unknown): x is string =>
+            typeof x === "string" && x.trim().length > 0,
+        )
+      : undefined,
+    publishedDate:
+      typeof b?.publishedDate === "string" && b.publishedDate.trim().length > 0
+        ? b.publishedDate.trim()
+        : undefined,
+    language:
+      typeof b?.language === "string" && b.language.trim().length > 0
+        ? b.language.trim()
+        : undefined,
+    status:
+      b?.status === "reading" || b?.status === "read" || b?.status === "want"
+        ? b.status
+        : "reading",
+    createdAt:
+      typeof b?.createdAt === "number"
+        ? b.createdAt
+        : typeof b?.createdAt === "string"
+          ? new Date(b.createdAt).getTime() || Date.now()
+          : Date.now(),
+    pagesTotal: safePagesTotal,
+    pagesRead:
+      typeof safePagesRead === "number"
+        ? typeof safePagesTotal === "number"
+          ? Math.min(safePagesRead, safePagesTotal)
+          : safePagesRead
+        : undefined,
+    rating:
+      typeof b?.rating === "number" && b.rating >= 1 && b.rating <= 5
+        ? b.rating
+        : undefined,
+    note:
+      typeof b?.note === "string" && b.note.trim().length > 0
+        ? b.note.trim()
+        : undefined,
+    shareText:
+      typeof b?.shareText === "string" && b.shareText.trim().length > 0
+        ? b.shareText.trim()
+        : undefined,
+    sharedAt:
+      typeof b?.sharedAt === "number"
+        ? b.sharedAt
+        : typeof b?.sharedAt === "string"
+          ? new Date(b.sharedAt).getTime() || undefined
+          : undefined,
+    likes: typeof b?.likes === "number" ? b.likes : 0,
+    isLiked: typeof b?.isLiked === "boolean" ? b.isLiked : false,
+    comments: Array.isArray(b?.comments) ? b.comments : [],
+  };
+}
+
 function SectionCard({
   title,
   children,
@@ -83,34 +166,26 @@ function SectionCard({
         gap: 12,
       }}
     >
-      <Text
-        style={{
-          fontWeight: "900",
-          color: COLORS.text,
-          fontSize: 17,
-        }}
-      >
+      <Text style={{ fontWeight: "900", color: COLORS.text, fontSize: 17 }}>
         {title}
       </Text>
-
       {children}
     </View>
   );
 }
 
-/**
- * Yumuşak pill buton
- */
 function SoftPillButton({
   label,
   icon,
   onPress,
   variant = "secondary",
+  disabled = false,
 }: {
   label: string;
   icon?: keyof typeof Ionicons.glyphMap;
   onPress: () => void;
   variant?: "secondary" | "primary" | "danger";
+  disabled?: boolean;
 }) {
   const backgroundColor =
     variant === "primary"
@@ -136,7 +211,9 @@ function SoftPillButton({
   return (
     <Pressable
       onPress={onPress}
+      disabled={disabled}
       style={({ pressed }) => ({
+        opacity: disabled ? 0.55 : 1,
         paddingHorizontal: 14,
         paddingVertical: 11,
         borderRadius: 999,
@@ -151,117 +228,246 @@ function SoftPillButton({
         alignItems: "center",
         justifyContent: "center",
         gap: 8,
-        transform: [{ scale: pressed ? 0.985 : 1 }],
       })}
     >
       {!!icon && <Ionicons name={icon} size={16} color={textColor} />}
-      <Text
-        style={{
-          color: textColor,
-          fontWeight: "900",
-          fontSize: 14,
-        }}
-      >
+      <Text style={{ color: textColor, fontWeight: "900", fontSize: 14 }}>
         {label}
       </Text>
     </Pressable>
   );
 }
 
-export default function BookDetail() {
-  /**
-   * Route parametresi
-   */
-  const { id } = useLocalSearchParams<{ id: string }>();
+function findBookInList(
+  list: Book[],
+  id: string,
+  googleId: string,
+  title: string,
+  author: string,
+) {
+  if (id) {
+    const byId = list.find((b) => b.id === id);
+    if (byId) return byId;
+  }
 
-  /**
-   * Context verileri
-   */
-  const { getById, removeBook, updateBook } = useBooks();
+  if (googleId) {
+    const byGoogleId = list.find((b) => b.googleId === googleId);
+    if (byGoogleId) return byGoogleId;
+  }
+
+  const normalizedTitle = normalizeText(title);
+  const normalizedAuthor = normalizeText(author);
+
+  if (normalizedTitle && normalizedAuthor) {
+    const byTitleAuthor = list.find(
+      (b) =>
+        normalizeText(b.title) === normalizedTitle &&
+        normalizeText(b.author) === normalizedAuthor,
+    );
+    if (byTitleAuthor) return byTitleAuthor;
+  }
+
+  return undefined;
+}
+
+export default function BookDetail() {
+  const params = useLocalSearchParams<{
+    id?: string | string[];
+    googleId?: string | string[];
+    title?: string | string[];
+    author?: string | string[];
+    bookJson?: string | string[];
+  }>();
+
+  const { user: authUser } = useAuth();
+  const { books, removeBook, updateBook } = useBooks();
   const { posts } = usePosts();
   const { getOrCreateConversationByParticipant } = useChat();
   const { step } = useReadingGoal();
   const { addLog } = useReadingLog();
 
-  /**
-   * İlgili kitabı bul
-   */
-  const book = id ? getById(id) : undefined;
+  const currentUserId = authUser?.id ?? "";
 
-  /**
-   * Kitap bulunamazsa güvenli boş durum
-   */
-  if (!book) {
-    return (
-      <ScrollView
-        style={{ flex: 1, backgroundColor: COLORS.bg }}
-        contentContainerStyle={{ padding: 16 }}
-      >
-        <View
-          style={{
-            marginTop: 20,
-            borderWidth: 1,
-            borderColor: COLORS.border,
-            borderRadius: 24,
-            paddingVertical: 32,
-            paddingHorizontal: 22,
-            backgroundColor: COLORS.card,
-            alignItems: "center",
-            gap: 10,
-          }}
-        >
-          <View
-            style={{
-              width: 64,
-              height: 64,
-              borderRadius: 32,
-              backgroundColor: COLORS.primarySoft,
-              alignItems: "center",
-              justifyContent: "center",
-            }}
-          >
-            <Ionicons name="book-outline" size={28} color={COLORS.primary} />
-          </View>
+  const routeId = Array.isArray(params.id) ? params.id[0] : params.id;
+  const routeGoogleId = Array.isArray(params.googleId)
+    ? params.googleId[0]
+    : params.googleId;
+  const routeTitle = Array.isArray(params.title)
+    ? params.title[0]
+    : params.title;
+  const routeAuthor = Array.isArray(params.author)
+    ? params.author[0]
+    : params.author;
+  const routeBookJson = Array.isArray(params.bookJson)
+    ? params.bookJson[0]
+    : params.bookJson;
 
-          <Text
-            style={{
-              fontSize: 20,
-              fontWeight: "900",
-              color: COLORS.text,
-            }}
-          >
-            Kitap bulunamadı
-          </Text>
+  const safeId = typeof routeId === "string" ? routeId : "";
+  const safeGoogleId = typeof routeGoogleId === "string" ? routeGoogleId : "";
+  const safeTitle = typeof routeTitle === "string" ? routeTitle : "";
+  const safeAuthor = typeof routeAuthor === "string" ? routeAuthor : "";
 
-          <Text
-            style={{
-              color: COLORS.muted,
-              textAlign: "center",
-              lineHeight: 21,
-            }}
-          >
-            Bu kitap silinmiş olabilir veya geçersiz bir bağlantı açılmış
-            olabilir.
-          </Text>
+  const fallbackBookFromRoute = useMemo(() => {
+    if (!routeBookJson || typeof routeBookJson !== "string") return undefined;
+    try {
+      return normalizeBook(JSON.parse(routeBookJson));
+    } catch {
+      return undefined;
+    }
+  }, [routeBookJson]);
 
-          <View style={{ marginTop: 8, minWidth: 140 }}>
-            <SoftPillButton
-              label="Geri"
-              icon="arrow-back-outline"
-              onPress={() => router.back()}
-            />
-          </View>
-        </View>
-      </ScrollView>
-    );
-  }
+  const [storageBook, setStorageBook] = useState<Book | undefined>(undefined);
+  const [loadingFallback, setLoadingFallback] = useState(true);
 
-  /**
-   * Aynı kitaba ait paylaşım yapan kullanıcıları bul
-   */
+  const [sameReaders, setSameReaders] = useState<SameReader[]>([]);
+  const [loadingReaders, setLoadingReaders] = useState(true);
+  const [creatingGroupChat, setCreatingGroupChat] = useState(false);
+
+  const contextBook = useMemo(
+    () => findBookInList(books, safeId, safeGoogleId, safeTitle, safeAuthor),
+    [books, safeId, safeGoogleId, safeTitle, safeAuthor],
+  );
+
+  useEffect(() => {
+    let mounted = true;
+    let attempts = 0;
+
+    async function pollStorage() {
+      try {
+        const raw = await AsyncStorage.getItem(STORAGE_KEY);
+        if (!mounted) return;
+
+        const parsed = raw ? (JSON.parse(raw) as unknown) : [];
+        const safeBooks = Array.isArray(parsed)
+          ? parsed.map(normalizeBook)
+          : [];
+        const found = findBookInList(
+          safeBooks,
+          safeId,
+          safeGoogleId,
+          safeTitle,
+          safeAuthor,
+        );
+
+        if (found) {
+          setStorageBook(found);
+          setLoadingFallback(false);
+          return;
+        }
+
+        attempts += 1;
+
+        if (attempts < 10) {
+          setTimeout(pollStorage, 250);
+          return;
+        }
+
+        setStorageBook(undefined);
+        setLoadingFallback(false);
+      } catch {
+        attempts += 1;
+
+        if (attempts < 10) {
+          setTimeout(pollStorage, 250);
+          return;
+        }
+
+        if (mounted) {
+          setStorageBook(undefined);
+          setLoadingFallback(false);
+        }
+      }
+    }
+
+    pollStorage();
+
+    return () => {
+      mounted = false;
+    };
+  }, [safeId, safeGoogleId, safeTitle, safeAuthor]);
+
+  const book = contextBook ?? storageBook ?? fallbackBookFromRoute;
+
+  useEffect(() => {
+    async function fetchReaders() {
+      if (!authUser?.id) {
+        setSameReaders([]);
+        setLoadingReaders(false);
+        return;
+      }
+
+      if (!book || book.status !== "reading") {
+        setSameReaders([]);
+        setLoadingReaders(false);
+        return;
+      }
+
+      if (!book.googleId) {
+        console.log("❌ GOOGLE ID YOK → eşleşme çıkmaz");
+        setSameReaders([]);
+        setLoadingReaders(false);
+        return;
+      }
+
+      setLoadingReaders(true);
+
+      const { data, error } = await supabase.rpc(
+        "get_same_book_readers_by_google_id",
+        {
+          p_google_book_id: book.googleId,
+          p_current_user_id: authUser.id,
+          p_limit: 20,
+        },
+      );
+
+      if (error) {
+        console.log("READERS ERROR:", error);
+        setSameReaders([]);
+      } else {
+        setSameReaders((data ?? []) as SameReader[]);
+      }
+
+      setLoadingReaders(false);
+    }
+
+    fetchReaders();
+  }, [book, authUser?.id]);
+
+  const readersCount = useMemo(() => {
+    if (!sameReaders) return 0;
+    return sameReaders.filter((r) => r.user_id !== currentUserId).length;
+  }, [sameReaders, currentUserId]);
+
+  const topReader = useMemo(() => {
+    if (!sameReaders || sameReaders.length === 0) return null;
+
+    const filtered = sameReaders.filter((r) => r.user_id !== currentUserId);
+
+    if (filtered.length === 0) return null;
+
+    return filtered.sort(
+      (a, b) => (b.pages_read ?? 0) - (a.pages_read ?? 0),
+    )[0];
+  }, [sameReaders, currentUserId]);
+
+  const readersBadgeText =
+    book?.status === "reading"
+      ? readersCount > 0
+        ? `Bu kitabı seninle birlikte ${readersCount} kişi okuyor`
+        : "Şu an bu kitabı tek başına okuyorsun"
+      : null;
+
+  const normalizedBookTitle = useMemo(
+    () => normalizeText(book?.title),
+    [book?.title],
+  );
+  const normalizedBookAuthor = useMemo(
+    () => normalizeText(book?.author),
+    [book?.author],
+  );
+
   const relatedPeople = useMemo(() => {
-    const normalizedBookTitle = normalizeText(book.title);
-    const normalizedBookAuthor = normalizeText(book.author);
+    if (!book) return [];
 
     const matchingPosts = posts.filter((post) => {
       const sameBookId = post.bookId === book.id;
@@ -282,10 +488,6 @@ export default function BookDetail() {
       return sameBookId || (sameTitle && sameAuthor);
     });
 
-    /**
-     * Aynı kişi birden fazla paylaşım yaptıysa
-     * en yeni paylaşımı temsilci olarak tut
-     */
     const uniqueUsersMap = new Map<
       string,
       {
@@ -316,37 +518,41 @@ export default function BookDetail() {
     return Array.from(uniqueUsersMap.values()).sort(
       (a, b) => b.latestCreatedAt - a.latestCreatedAt,
     );
-  }, [book.id, book.title, book.author, posts]);
+  }, [book, normalizedBookTitle, normalizedBookAuthor, posts]);
 
-  /**
-   * Kendim dışındaki okurlar
-   */
-  const otherReaders = useMemo(() => {
-    return relatedPeople.filter((person) => person.userId !== CURRENT_USER.id);
-  }, [relatedPeople]);
+  const otherReaders = useMemo(
+    () => relatedPeople.filter((person) => person.userId !== currentUserId),
+    [relatedPeople, currentUserId],
+  );
 
-  /**
-   * Kitabı silme onayı
-   */
   const confirmDelete = () => {
-    Alert.alert("Kitabı sil", `"${book.title}" silinecek. Emin misin?`, [
-      { text: "Vazgeç", style: "cancel" },
-      {
-        text: "Sil",
-        style: "destructive",
-        onPress: () => {
-          removeBook(book.id);
-          router.back();
+    if (!book) return;
+
+    Alert.alert(
+      "Kitabı sil",
+      `"${book.title}" kitaplığından kaldırılacak.\n\nBu işlem geri alınamaz.`,
+      [
+        { text: "Vazgeç", style: "cancel" },
+        {
+          text: "Sil",
+          style: "destructive",
+          onPress: async () => {
+            try {
+              await Promise.resolve(removeBook(book.id));
+              router.back();
+            } catch (error) {
+              console.log("BOOK DELETE ERROR:", error);
+              Alert.alert("Hata", "Kitap silinirken bir sorun oluştu.");
+            }
+          },
         },
-      },
-    ]);
+      ],
+    );
   };
 
-  /**
-   * Durumu sırayla değiştir
-   * reading -> read -> want -> reading
-   */
   const cycleStatus = () => {
+    if (!book) return;
+
     const next: BookStatus =
       book.status === "reading"
         ? "read"
@@ -383,10 +589,8 @@ export default function BookDetail() {
     });
   };
 
-  /**
-   * Hızlı sayfa ekleme
-   */
   const addPages = () => {
+    if (!book) return;
     if (book.status !== "reading") return;
     if (!book.pagesTotal || book.pagesTotal <= 0) return;
 
@@ -409,36 +613,41 @@ export default function BookDetail() {
     addLog(diff);
   };
 
-  /**
-   * Bu kitabı paylaşan kullanıcıya mesaj gönder
-   */
-  const handleMessageReader = (person: {
+  const handleMessageReader = async (person: {
     userId: string;
     userName: string;
-    userAvatar?: string;
+    userAvatar?: string | null;
   }) => {
-    const conversationId = getOrCreateConversationByParticipant({
-      id: person.userId,
-      name: person.userName,
-      avatar: person.userAvatar,
-    });
+    if (!currentUserId) {
+      Alert.alert("Hata", "Önce giriş yapmalısın.");
+      return;
+    }
 
-    const prefillText = `${
-      book.title || "Bu kitap"
-    } hakkında paylaşımını gördüm, konuşmak istedim.`;
+    try {
+      const conversationId = await getOrCreateConversationByParticipant({
+        id: person.userId,
+        name: person.userName,
+        avatar: person.userAvatar ?? undefined,
+      });
 
-    router.push({
-      pathname: "/chat/[id]",
-      params: {
-        id: conversationId,
-        prefill: prefillText,
-      },
-    });
+      const prefillText = `Merhaba 👋
+"${book?.title}" hakkında seni gördüm.
+
+Bu kitap hakkında ne düşünüyorsun?`;
+
+      router.push({
+        pathname: "/(tabs)/chat/[id]",
+        params: {
+          id: String(conversationId),
+          prefill: prefillText,
+        },
+      });
+    } catch (error) {
+      console.log("BOOK DETAIL MESSAGE READER ERROR:", error);
+      Alert.alert("Hata", "Sohbet açılırken bir sorun oluştu.");
+    }
   };
 
-  /**
-   * İlgili paylaşım ekranına git
-   */
   const handleOpenRelatedPost = (postId: string) => {
     router.push({
       pathname: "/post-comments/[id]" as const,
@@ -446,20 +655,184 @@ export default function BookDetail() {
     });
   };
 
-  /**
-   * İlerleme yüzdesi
-   */
+  const handleCreateGroupChat = async () => {
+    if (!book) return;
+    if (!authUser?.id) {
+      Alert.alert("Hata", "Önce giriş yapmalısın.");
+      return;
+    }
+    if (sameReaders.length === 0) {
+      Alert.alert(
+        "Kimse yok",
+        "Bu kitap için şu an grup sohbeti başlatılabilecek başka okuyucu yok.",
+      );
+      return;
+    }
+
+    try {
+      setCreatingGroupChat(true);
+
+      const title = `${book.title} • Okuyanlar`;
+
+      const { data: conversationData, error: conversationError } =
+        await supabase
+          .from("conversations")
+          .insert({
+            is_group: true,
+            title,
+            created_by: authUser.id,
+          })
+          .select("id")
+          .single();
+
+      if (conversationError || !conversationData) {
+        throw new Error(conversationError?.message || "Grup oluşturulamadı.");
+      }
+
+      const participantIds = [
+        authUser.id,
+        ...sameReaders.map((reader) => reader.user_id),
+      ];
+
+      const uniqueParticipantIds = [...new Set(participantIds)];
+
+      const participantRows = uniqueParticipantIds.map((userId) => ({
+        conversation_id: conversationData.id,
+        user_id: userId,
+      }));
+
+      const { error: participantsError } = await supabase
+        .from("conversation_participants")
+        .upsert(participantRows, {
+          onConflict: "conversation_id,user_id",
+          ignoreDuplicates: true,
+        });
+
+      if (participantsError) {
+        throw new Error(participantsError.message);
+      }
+
+      router.push({
+        pathname: "/(tabs)/chat/[id]",
+        params: {
+          id: String(conversationData.id),
+        },
+      });
+    } catch (error: any) {
+      console.log("GROUP CHAT ERROR:", error);
+      Alert.alert(
+        "Grup sohbeti açılamadı",
+        error?.message || "Bir hata oluştu.",
+      );
+    } finally {
+      setCreatingGroupChat(false);
+    }
+  };
+
   const progressPercent =
-    book.pagesTotal && book.pagesTotal > 0
+    book?.pagesTotal && book.pagesTotal > 0
       ? Math.round(((book.pagesRead ?? 0) / book.pagesTotal) * 100)
       : 0;
+
+  if (!book && loadingFallback) {
+    return (
+      <ScrollView
+        style={{ flex: 1, backgroundColor: COLORS.bg }}
+        contentContainerStyle={{ padding: 16 }}
+      >
+        <View
+          style={{
+            marginTop: 20,
+            borderWidth: 1,
+            borderColor: COLORS.border,
+            borderRadius: 24,
+            paddingVertical: 32,
+            paddingHorizontal: 22,
+            backgroundColor: COLORS.card,
+            alignItems: "center",
+            gap: 10,
+          }}
+        >
+          <Text style={{ fontSize: 20, fontWeight: "900", color: COLORS.text }}>
+            Kitap yükleniyor
+          </Text>
+          <Text
+            style={{
+              color: COLORS.muted,
+              textAlign: "center",
+              lineHeight: 21,
+            }}
+          >
+            Kitap bilgileri hazırlanıyor...
+          </Text>
+        </View>
+      </ScrollView>
+    );
+  }
+
+  if (!book) {
+    return (
+      <ScrollView
+        style={{ flex: 1, backgroundColor: COLORS.bg }}
+        contentContainerStyle={{ padding: 16 }}
+      >
+        <View
+          style={{
+            marginTop: 20,
+            borderWidth: 1,
+            borderColor: COLORS.border,
+            borderRadius: 24,
+            paddingVertical: 32,
+            paddingHorizontal: 22,
+            backgroundColor: COLORS.card,
+            alignItems: "center",
+            gap: 10,
+          }}
+        >
+          <View
+            style={{
+              width: 64,
+              height: 64,
+              borderRadius: 32,
+              backgroundColor: COLORS.primarySoft,
+              alignItems: "center",
+              justifyContent: "center",
+            }}
+          >
+            <Ionicons name="book-outline" size={28} color={COLORS.primary} />
+          </View>
+
+          <Text style={{ fontSize: 20, fontWeight: "900", color: COLORS.text }}>
+            Kitap bulunamadı
+          </Text>
+
+          <Text
+            style={{
+              color: COLORS.muted,
+              textAlign: "center",
+              lineHeight: 21,
+            }}
+          >
+            Bu kitap henüz kitaplıkta bulunamadı.
+          </Text>
+
+          <View style={{ marginTop: 8, minWidth: 140 }}>
+            <SoftPillButton
+              label="Geri"
+              icon="arrow-back-outline"
+              onPress={() => router.back()}
+            />
+          </View>
+        </View>
+      </ScrollView>
+    );
+  }
 
   return (
     <ScrollView
       style={{ flex: 1, backgroundColor: COLORS.bg }}
       contentContainerStyle={{ padding: 16, gap: 14, paddingBottom: 120 }}
     >
-      {/* ================= ÜST KİTAP KARTI ================= */}
       <View
         style={{
           flexDirection: "row",
@@ -471,7 +844,6 @@ export default function BookDetail() {
           backgroundColor: COLORS.card,
         }}
       >
-        {/* Kapak alanı */}
         <View
           style={{
             width: 102,
@@ -507,7 +879,6 @@ export default function BookDetail() {
           )}
         </View>
 
-        {/* Sağ bilgi alanı */}
         <View style={{ flex: 1, gap: 8 }}>
           <Text
             style={{ fontSize: 24, fontWeight: "900", color: COLORS.text }}
@@ -517,17 +888,12 @@ export default function BookDetail() {
           </Text>
 
           <Text
-            style={{
-              color: COLORS.muted,
-              fontSize: 15,
-              fontWeight: "700",
-            }}
+            style={{ color: COLORS.muted, fontSize: 15, fontWeight: "700" }}
             numberOfLines={2}
           >
             {book.author}
           </Text>
 
-          {/* Durum rozeti */}
           <View
             style={{
               alignSelf: "flex-start",
@@ -550,15 +916,79 @@ export default function BookDetail() {
             </Text>
           </View>
 
+          {book.status === "reading" && (
+            <View
+              style={{
+                flexDirection: "row",
+                gap: 8,
+                flexWrap: "wrap",
+                marginTop: 4,
+              }}
+            >
+              {readersBadgeText ? (
+                <View
+                  style={{
+                    paddingHorizontal: 10,
+                    paddingVertical: 6,
+                    borderRadius: 999,
+                    backgroundColor: COLORS.peachSoft,
+                    borderWidth: 1,
+                    borderColor: COLORS.border,
+                  }}
+                >
+                  <Text
+                    style={{
+                      color: COLORS.primary,
+                      fontWeight: "800",
+                      fontSize: 12,
+                    }}
+                  >
+                    {readersBadgeText}
+                  </Text>
+                </View>
+              ) : null}
+
+              {topReader ? (
+                <View
+                  style={{
+                    paddingHorizontal: 10,
+                    paddingVertical: 6,
+                    borderRadius: 999,
+                    backgroundColor: COLORS.greenSoft,
+                    borderWidth: 1,
+                    borderColor: COLORS.border,
+                  }}
+                >
+                  <Text
+                    style={{
+                      color: COLORS.text,
+                      fontWeight: "800",
+                      fontSize: 12,
+                    }}
+                  >
+                    En aktif: {topReader.full_name || topReader.username}
+                  </Text>
+                </View>
+              ) : null}
+            </View>
+          )}
+
           {typeof book.pagesTotal === "number" && book.pagesTotal > 0 ? (
             <Text style={{ color: COLORS.muted, fontSize: 12 }}>
               Toplam sayfa: {book.pagesTotal}
             </Text>
           ) : null}
+
+          {book.googleId ? (
+            <Text
+              style={{ color: COLORS.primary, fontSize: 11, fontWeight: "800" }}
+            >
+              Google Books verisi
+            </Text>
+          ) : null}
         </View>
       </View>
 
-      {/* ================= KİTAP BİLGİSİ ================= */}
       <SectionCard title="Kitap Bilgisi">
         <Text style={{ color: COLORS.text }}>
           Durum:{" "}
@@ -574,7 +1004,47 @@ export default function BookDetail() {
         )}
       </SectionCard>
 
-      {/* ================= OKUMA İLERLEMESİ ================= */}
+      {book.description ? (
+        <SectionCard title="Kitap Açıklaması">
+          <Text style={{ color: COLORS.muted, lineHeight: 22 }}>
+            {book.description}
+          </Text>
+
+          {book.categories?.length ? (
+            <View
+              style={{
+                flexDirection: "row",
+                flexWrap: "wrap",
+                gap: 6,
+                marginTop: 8,
+              }}
+            >
+              {book.categories.map((cat) => (
+                <View
+                  key={cat}
+                  style={{
+                    paddingHorizontal: 10,
+                    paddingVertical: 5,
+                    borderRadius: 999,
+                    backgroundColor: COLORS.primarySoft,
+                  }}
+                >
+                  <Text
+                    style={{
+                      fontSize: 11,
+                      color: COLORS.primary,
+                      fontWeight: "700",
+                    }}
+                  >
+                    {cat}
+                  </Text>
+                </View>
+              ))}
+            </View>
+          ) : null}
+        </SectionCard>
+      ) : null}
+
       {book.status === "reading" && (
         <SectionCard title="Okuma İlerlemesi">
           <ProgressBar
@@ -582,9 +1052,17 @@ export default function BookDetail() {
             pagesTotal={book.pagesTotal}
           />
 
-          <Text style={{ textAlign: "center", color: COLORS.muted }}>
-            %{progressPercent} tamamlandı
-          </Text>
+          <View style={{ alignItems: "center", gap: 6 }}>
+            <Text
+              style={{ fontSize: 18, fontWeight: "900", color: COLORS.text }}
+            >
+              %{progressPercent}
+            </Text>
+
+            <Text style={{ color: COLORS.muted, fontSize: 12 }}>
+              {book.pagesRead ?? 0} / {book.pagesTotal} sayfa
+            </Text>
+          </View>
 
           <SoftPillButton
             label={`+${step} Sayfa Okudum`}
@@ -595,7 +1073,6 @@ export default function BookDetail() {
         </SectionCard>
       )}
 
-      {/* ================= OKUNDU ALANI ================= */}
       {book.status === "read" && (
         <>
           <SectionCard title="Puan">
@@ -614,7 +1091,6 @@ export default function BookDetail() {
         </>
       )}
 
-      {/* ================= WANT ALANI ================= */}
       {book.status === "want" && (
         <SectionCard title="Okuma Listesi">
           <Text style={{ color: COLORS.muted, lineHeight: 22 }}>
@@ -623,7 +1099,6 @@ export default function BookDetail() {
         </SectionCard>
       )}
 
-      {/* ================= BU KİTABI PAYLAŞANLAR ================= */}
       <SectionCard title="Bu Kitabı Paylaşanlar">
         {relatedPeople.length === 0 ? (
           <Text style={{ color: COLORS.muted, lineHeight: 22 }}>
@@ -653,7 +1128,6 @@ export default function BookDetail() {
                     gap: 12,
                   }}
                 >
-                  {/* Kullanıcı satırı */}
                   <View
                     style={{
                       flexDirection: "row",
@@ -695,11 +1169,16 @@ export default function BookDetail() {
                         {person.userName}
                       </Text>
 
+                      <Text style={{ color: COLORS.primary, fontSize: 12 }}>
+                        Bu kitabı paylaştı
+                      </Text>
+
                       <Text
                         style={{
                           color: COLORS.muted,
                           fontSize: 13,
                           lineHeight: 18,
+                          marginTop: 4,
                         }}
                         numberOfLines={2}
                       >
@@ -708,7 +1187,6 @@ export default function BookDetail() {
                     </View>
                   </View>
 
-                  {/* Aksiyonlar */}
                   <View
                     style={{
                       flexDirection: "row",
@@ -735,20 +1213,145 @@ export default function BookDetail() {
         )}
       </SectionCard>
 
-      {/* ================= ALT AKSİYONLAR ================= */}
+      {book.status === "reading" && (
+        <SectionCard title="Bu Kitabı Okuyanlar">
+          {loadingReaders ? (
+            <Text style={{ color: COLORS.muted }}>Yükleniyor...</Text>
+          ) : sameReaders.length === 0 ? (
+            <Text style={{ color: COLORS.muted }}>
+              Bu kitabı okuyan başka kullanıcı bulunamadı.
+            </Text>
+          ) : (
+            <>
+              <Text style={{ color: COLORS.muted }}>
+                Seninle birlikte {readersCount} kişi bu kitabı okuyor 📚
+              </Text>
+
+              {topReader ? (
+                <View
+                  style={{
+                    padding: 12,
+                    borderRadius: 16,
+                    backgroundColor: COLORS.greenSoft,
+                    borderWidth: 1,
+                    borderColor: COLORS.border,
+                  }}
+                >
+                  <Text style={{ color: COLORS.text, fontWeight: "900" }}>
+                    En aktif okuyucu:{" "}
+                    {topReader.full_name || topReader.username}
+                  </Text>
+                  <Text style={{ color: COLORS.muted, marginTop: 4 }}>
+                    {topReader.pages_read || 0} sayfa ile önde
+                  </Text>
+                </View>
+              ) : null}
+
+              <SoftPillButton
+                label="Aynı kitabı okuyanlarla grup chat"
+                icon="people-outline"
+                variant="primary"
+                onPress={handleCreateGroupChat}
+                disabled={creatingGroupChat || sameReaders.length === 0}
+              />
+
+              {sameReaders
+                .filter((person) => person.user_id !== currentUserId)
+                .map((person) => (
+                  <View
+                    key={person.user_id}
+                    style={{
+                      padding: 14,
+                      borderRadius: 18,
+                      borderWidth: 1,
+                      borderColor: COLORS.border,
+                      backgroundColor: COLORS.graySoft,
+                      gap: 12,
+                    }}
+                  >
+                    <View
+                      style={{
+                        flexDirection: "row",
+                        gap: 10,
+                        alignItems: "center",
+                      }}
+                    >
+                      {person.avatar_url ? (
+                        <Image
+                          source={{ uri: person.avatar_url }}
+                          style={{
+                            width: 44,
+                            height: 44,
+                            borderRadius: 22,
+                          }}
+                        />
+                      ) : (
+                        <View
+                          style={{
+                            width: 44,
+                            height: 44,
+                            borderRadius: 22,
+                            backgroundColor: COLORS.primarySoft,
+                            alignItems: "center",
+                            justifyContent: "center",
+                          }}
+                        >
+                          <Text
+                            style={{ fontWeight: "900", color: COLORS.primary }}
+                          >
+                            {getInitial(person.full_name || person.username)}
+                          </Text>
+                        </View>
+                      )}
+
+                      <View style={{ flex: 1 }}>
+                        <Text style={{ fontWeight: "900", color: COLORS.text }}>
+                          {person.full_name || person.username}
+                        </Text>
+
+                        <Text style={{ color: COLORS.primary, fontSize: 12 }}>
+                          Bu kitabı okuyor
+                        </Text>
+
+                        <Text style={{ color: COLORS.muted, fontSize: 12 }}>
+                          {person.pages_read || 0} sayfa okudu
+                        </Text>
+                      </View>
+                    </View>
+
+                    <SoftPillButton
+                      label="Mesaj Gönder"
+                      icon="mail-outline"
+                      onPress={() =>
+                        handleMessageReader({
+                          userId: person.user_id,
+                          userName:
+                            person.full_name || person.username || "Kullanıcı",
+                          userAvatar: person.avatar_url,
+                        })
+                      }
+                    />
+                  </View>
+                ))}
+            </>
+          )}
+        </SectionCard>
+      )}
+
       <SoftPillButton
         label="Düzenle"
         icon="create-outline"
-        onPress={() =>
-          router.push({
-            pathname: "/edit-book/[id]" as const,
-            params: { id: book.id },
-          })
-        }
+        onPress={() => router.push(`/edit-book/${book.id}` as const)}
       />
 
       <SoftPillButton
-        label="Durumu Değiştir"
+        label={
+          book.status === "reading"
+            ? "Okudum olarak işaretle"
+            : book.status === "read"
+              ? "İstiyorum listesine al"
+              : "Okumaya başla"
+        }
         icon="swap-horizontal-outline"
         onPress={cycleStatus}
         variant="primary"
@@ -757,12 +1360,7 @@ export default function BookDetail() {
       <SoftPillButton
         label="Paylaş"
         icon="share-social-outline"
-        onPress={() =>
-          router.push({
-            pathname: "/share/[id]" as const,
-            params: { id: book.id },
-          })
-        }
+        onPress={() => router.push(`/share/${book.id}` as const)}
         variant="primary"
       />
 

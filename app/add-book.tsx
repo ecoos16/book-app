@@ -17,12 +17,9 @@ import {
 import BookSearchPicker from "../components/BookSearchPicker";
 import { StarRating } from "../components/StarRating";
 import { useBooks } from "../context/BooksContext";
-import type { BookStatus } from "../types/book";
+import type { Book, BookStatus } from "../types/book";
 import type { GoogleBook } from "../types/googleBooks";
 
-/**
- * ReadSphere ortak renk paleti
- */
 const COLORS = {
   bg: "#fbf9f5",
   card: "#fffdf9",
@@ -32,25 +29,25 @@ const COLORS = {
   primary: "#7d5739",
   primaryDark: "#6b4a2f",
   primarySoft: "#f3e2d2",
-  peachSoft: "#f7dfcc",
-  greenSoft: "#dfe7cf",
   graySoft: "#f3efe8",
   whiteSoft: "#fff7f4",
 };
 
-/**
- * Durum etiketleri
- * UI'da kullanıcıya Türkçe olarak gösterilecek karşılıklar
- */
-const statusLabel: Record<BookStatus, string> = {
+const STATUS_LABEL: Record<BookStatus, string> = {
   reading: "Okuyorum",
   read: "Okudum",
   want: "İstiyorum",
 };
 
-/**
- * Ortak section kartı
- */
+type AddBookParams = {
+  title?: string;
+  author?: string;
+  pagesTotal?: string;
+  thumbnail?: string;
+  googleId?: string;
+  status?: BookStatus;
+};
+
 function SectionCard({
   title,
   children,
@@ -78,15 +75,11 @@ function SectionCard({
       >
         {title}
       </Text>
-
       {children}
     </View>
   );
 }
 
-/**
- * Etiketli input alanı
- */
 function LabeledInput({
   label,
   value,
@@ -137,9 +130,6 @@ function LabeledInput({
   );
 }
 
-/**
- * Ortak buton
- */
 function SoftButton({
   label,
   icon,
@@ -154,9 +144,7 @@ function SoftButton({
   disabled?: boolean;
 }) {
   const backgroundColor = variant === "primary" ? COLORS.primary : COLORS.card;
-
   const borderColor = variant === "primary" ? COLORS.primary : COLORS.border;
-
   const textColor = variant === "primary" ? COLORS.whiteSoft : COLORS.text;
 
   return (
@@ -188,223 +176,199 @@ function SoftButton({
   );
 }
 
+function toSafeNumber(value: string): number | undefined {
+  const onlyDigits = value.replace(/[^\d]/g, "");
+  if (!onlyDigits) return undefined;
+
+  const numberValue = Number(onlyDigits);
+  if (!Number.isFinite(numberValue)) return undefined;
+
+  return Math.max(0, Math.floor(numberValue));
+}
+
+function getSafeStatus(value: unknown): BookStatus | undefined {
+  return value === "reading" || value === "read" || value === "want"
+    ? value
+    : undefined;
+}
+
+function mapGoogleBookToForm(item: GoogleBook) {
+  return {
+    title: item.title?.trim() || "",
+    author:
+      Array.isArray(item.authors) && item.authors.length > 0
+        ? item.authors.join(", ")
+        : "",
+    pagesTotalText:
+      typeof item.pageCount === "number" && item.pageCount > 0
+        ? String(item.pageCount)
+        : "",
+    thumbnail: item.thumbnail || undefined,
+    googleId: item.id || undefined,
+  };
+}
+
+function getIncomingParams(params: AddBookParams) {
+  const title = typeof params.title === "string" ? params.title : "";
+  const author = typeof params.author === "string" ? params.author : "";
+  const pagesTotalText =
+    typeof params.pagesTotal === "string" ? params.pagesTotal : "";
+  const thumbnail =
+    typeof params.thumbnail === "string" ? params.thumbnail : undefined;
+  const googleId =
+    typeof params.googleId === "string" ? params.googleId : undefined;
+  const status = getSafeStatus(params.status);
+
+  return {
+    title,
+    author,
+    pagesTotalText,
+    thumbnail,
+    googleId,
+    status,
+    hasIncoming:
+      !!title ||
+      !!author ||
+      !!pagesTotalText ||
+      !!thumbnail ||
+      !!googleId ||
+      !!status,
+  };
+}
+
+function normalizeText(value: string) {
+  return value.trim().toLocaleLowerCase("tr").replace(/\s+/g, " ");
+}
+
 export default function AddBook() {
-  /**
-   * Global context içinden yeni kitap ekleme fonksiyonu
-   */
-  const { addBook } = useBooks();
+  const { addBook, books } = useBooks();
+
+  const params = useLocalSearchParams<AddBookParams>();
+  const didHydrate = useRef(false);
+
   const authorRef = useRef<TextInput>(null);
   const pagesTotalRef = useRef<TextInput>(null);
   const pagesReadRef = useRef<TextInput>(null);
   const noteRef = useRef<TextInput>(null);
-  /**
-   * Route parametreleri
-   * Liste ekranlarından veya search ekranından bilgi gelebilir
-   */
-  const params = useLocalSearchParams<{
-    title?: string;
-    author?: string;
-    pagesTotal?: string;
-    thumbnail?: string;
-    googleId?: string;
-    status?: BookStatus;
-  }>();
 
-  /**
-   * API'den seçilen son kitabı tutuyoruz
-   * Önizleme kartında kullanıyoruz
-   */
   const [selectedGoogleBook, setSelectedGoogleBook] =
     useState<GoogleBook | null>(null);
 
-  /**
-   * Temel form state'leri
-   */
   const [title, setTitle] = useState("");
   const [author, setAuthor] = useState("");
-
-  /**
-   * Kitabın listede hangi durumda olacağı
-   */
   const [status, setStatus] = useState<BookStatus>("reading");
 
-  /**
-   * "Okudum" durumuna özel alanlar
-   */
-  const [rating, setRating] = useState<number>(0);
+  const [rating, setRating] = useState(0);
   const [note, setNote] = useState("");
 
-  /**
-   * Sayfa bilgileri
-   * TextInput kullandığımız için string tutuyoruz
-   */
   const [pagesTotalText, setPagesTotalText] = useState("");
   const [pagesReadText, setPagesReadText] = useState("");
 
-  /**
-   * API'den gelen kapak ve benzersiz id
-   */
   const [thumbnail, setThumbnail] = useState<string | undefined>(undefined);
   const [googleId, setGoogleId] = useState<string | undefined>(undefined);
 
-  /**
-   * Parametrelerden gelen verinin formu sadece 1 kez doldurması için ref
-   */
-  const didHydrate = useRef(false);
-
-  /**
-   * Ekran ilk açıldığında route'tan gelen verileri forma bas
-   */
   useEffect(() => {
     if (didHydrate.current) return;
 
-    const incomingTitle = typeof params.title === "string" ? params.title : "";
-    const incomingAuthor =
-      typeof params.author === "string" ? params.author : "";
-    const incomingPagesTotal =
-      typeof params.pagesTotal === "string" ? params.pagesTotal : "";
-    const incomingThumbnail =
-      typeof params.thumbnail === "string" ? params.thumbnail : "";
-    const incomingGoogleId =
-      typeof params.googleId === "string" ? params.googleId : "";
+    const incoming = getIncomingParams(params);
+    if (!incoming.hasIncoming) return;
 
-    const incomingStatus =
-      params.status === "reading" ||
-      params.status === "read" ||
-      params.status === "want"
-        ? params.status
-        : undefined;
+    setTitle(incoming.title);
+    setAuthor(incoming.author);
+    setPagesTotalText(incoming.pagesTotalText);
+    setThumbnail(incoming.thumbnail);
+    setGoogleId(incoming.googleId);
 
-    const hasIncoming = !!(
-      incomingTitle ||
-      incomingAuthor ||
-      incomingPagesTotal ||
-      incomingThumbnail ||
-      incomingGoogleId ||
-      incomingStatus
-    );
+    if (incoming.status) {
+      setStatus(incoming.status);
 
-    if (!hasIncoming) return;
+      if (incoming.status === "read" && incoming.pagesTotalText) {
+        setPagesReadText(incoming.pagesTotalText);
+      }
 
-    if (incomingTitle) setTitle(incomingTitle);
-    if (incomingAuthor) setAuthor(incomingAuthor);
-    if (incomingPagesTotal) setPagesTotalText(incomingPagesTotal);
-    if (incomingThumbnail) setThumbnail(incomingThumbnail);
-    if (incomingGoogleId) setGoogleId(incomingGoogleId);
-    if (incomingStatus) setStatus(incomingStatus);
-
-    /**
-     * Eğer route'tan gelen durum "read" ise ve toplam sayfa da geldiyse
-     * kitabı tamamlanmış gibi işaretleyebiliriz
-     */
-    if (incomingStatus === "read" && incomingPagesTotal) {
-      setPagesReadText(incomingPagesTotal);
+      if (incoming.status === "want") {
+        setPagesReadText("");
+      }
     }
 
     didHydrate.current = true;
-  }, [
-    params.title,
-    params.author,
-    params.pagesTotal,
-    params.thumbnail,
-    params.googleId,
-    params.status,
-  ]);
+  }, [params]);
 
-  /**
-   * Kaydet butonu aktif mi?
-   * Kitap adı ve yazar zorunlu
-   */
   const canSave = useMemo(() => {
     return title.trim().length > 0 && author.trim().length > 0;
   }, [title, author]);
 
-  /**
-   * String numeric inputu güvenli sayıya çevir
-   */
-  const toSafeNumber = (t: string) => {
-    const onlyDigits = t.replace(/[^\d]/g, "");
+  const existingMatch = useMemo(() => {
+    const normalizedTitle = normalizeText(title);
+    const normalizedAuthor = normalizeText(author);
 
-    if (!onlyDigits) return undefined;
+    if (!normalizedTitle || !normalizedAuthor) return undefined;
 
-    const n = Number(onlyDigits);
+    return books.find((book) => {
+      if (googleId && book.googleId && book.googleId === googleId) {
+        return true;
+      }
 
-    if (!Number.isFinite(n)) return undefined;
+      return (
+        normalizeText(book.title) === normalizedTitle &&
+        normalizeText(book.author) === normalizedAuthor
+      );
+    });
+  }, [books, title, author, googleId]);
 
-    return Math.max(0, Math.floor(n));
-  };
-
-  /**
-   * Kullanıcı durum değiştirince ilgili alanları temizle / ayarla
-   */
-  const onChangeStatus = (next: BookStatus) => {
+  const handleChangeStatus = (next: BookStatus) => {
     setStatus(next);
 
-    // "Okudum" dışındaki durumlarda puan ve not gereksiz
     if (next !== "read") {
       setRating(0);
       setNote("");
     }
 
-    // "Okudum" seçildiyse ve toplam sayfa bilgisi varsa
     if (next === "read" && pagesTotalText) {
       setPagesReadText(pagesTotalText);
     }
 
-    // "İstiyorum" seçildiyse okunan sayfa gereksiz
     if (next === "want") {
       setPagesReadText("");
     }
   };
 
-  /**
-   * API'den kitap seçilince formu doldur
-   */
   const handleSelectGoogleBook = (item: GoogleBook) => {
     setSelectedGoogleBook(item);
 
-    const nextTitle = item.title?.trim() || "";
+    const mapped = mapGoogleBookToForm(item);
 
-    const nextAuthor =
-      Array.isArray(item.authors) && item.authors.length > 0
-        ? item.authors.join(", ")
-        : "";
+    setTitle(mapped.title);
+    setAuthor(mapped.author);
+    setPagesTotalText(mapped.pagesTotalText);
+    setThumbnail(mapped.thumbnail);
+    setGoogleId(mapped.googleId);
 
-    const nextPagesTotal =
-      typeof item.pageCount === "number" && item.pageCount > 0
-        ? String(item.pageCount)
-        : "";
-
-    // Temel bilgiler
-    setTitle(nextTitle);
-    setAuthor(nextAuthor);
-    setPagesTotalText(nextPagesTotal);
-
-    // Metadata
-    setThumbnail(item.thumbnail || undefined);
-    setGoogleId(item.id || undefined);
-
-    /**
-     * Eğer kullanıcı "Okudum" durumundaysa
-     * ve sayfa sayısı geldiyse kitabı tamamlanmış kabul et
-     */
-    if (status === "read" && nextPagesTotal) {
-      setPagesReadText(nextPagesTotal);
+    if (status === "read" && mapped.pagesTotalText) {
+      setPagesReadText(mapped.pagesTotalText);
     }
 
-    /**
-     * Eğer durum "İstiyorum" ise okunan sayfa gereksiz
-     */
     if (status === "want") {
       setPagesReadText("");
     }
   };
 
-  /**
-   * Form gönderme
-   */
-  const onSubmit = () => {
+  const goToBookDetail = (book: Book) => {
+    router.replace({
+      pathname: "/book/[id]",
+      params: {
+        id: book.id,
+        googleId: book.googleId ?? "",
+        title: book.title,
+        author: book.author,
+        bookJson: JSON.stringify(book),
+      },
+    });
+  };
+
+  const handleSubmit = () => {
     Keyboard.dismiss();
+
     if (!canSave) {
       Alert.alert("Eksik bilgi", "Kitap adı ve yazar zorunlu.");
       return;
@@ -412,25 +376,28 @@ export default function AddBook() {
 
     const pagesTotal = toSafeNumber(pagesTotalText);
 
-    const pagesRead =
+    const rawPagesRead =
       status === "reading" || status === "read"
         ? toSafeNumber(pagesReadText)
         : undefined;
 
     const fixedPagesRead =
-      typeof pagesTotal === "number" && typeof pagesRead === "number"
-        ? Math.min(pagesRead, pagesTotal)
-        : pagesRead;
+      typeof pagesTotal === "number" && typeof rawPagesRead === "number"
+        ? Math.min(rawPagesRead, pagesTotal)
+        : rawPagesRead;
 
-    /**
-     * Yeni kitabı context'e ekle
-     */
-    addBook({
+    const result = addBook({
       title: title.trim(),
       author: author.trim(),
       status,
       thumbnail,
       googleId,
+
+      description: selectedGoogleBook?.description,
+      categories: selectedGoogleBook?.categories,
+      publishedDate: selectedGoogleBook?.publishedDate,
+      language: selectedGoogleBook?.language,
+
       rating: status === "read" && rating > 0 ? rating : undefined,
       note:
         status === "read" && note.trim().length > 0 ? note.trim() : undefined,
@@ -446,7 +413,18 @@ export default function AddBook() {
           : undefined,
     });
 
-    router.back();
+    if (!result.created) {
+      Alert.alert(
+        "Bu kitap zaten var",
+        "Aynı kitap daha önce kitaplığına eklenmiş. Mevcut kayıt açılacak.",
+        [{ text: "Tamam", onPress: () => goToBookDetail(result.book) }],
+      );
+      return;
+    }
+
+    Alert.alert("Başarılı", "Kitap listene eklendi.", [
+      { text: "Tamam", onPress: () => goToBookDetail(result.book) },
+    ]);
   };
 
   return (
@@ -455,7 +433,6 @@ export default function AddBook() {
       contentContainerStyle={{ padding: 16, gap: 14, paddingBottom: 120 }}
       keyboardShouldPersistTaps="handled"
     >
-      {/* Başlık alanı */}
       <View style={{ gap: 4 }}>
         <Text style={{ fontSize: 28, fontWeight: "900", color: COLORS.text }}>
           Kitap Ekle
@@ -464,11 +441,11 @@ export default function AddBook() {
           Kitabı ara, bilgileri otomatik doldur ve listene ekle.
         </Text>
       </View>
-      {/* Arama kartı */}
+
       <SectionCard title="Kitap Ara">
         <BookSearchPicker onSelect={handleSelectGoogleBook} />
       </SectionCard>
-      {/* Seçilen kitap önizleme kartı */}
+
       {(selectedGoogleBook || thumbnail || title || author) && (
         <View
           style={{
@@ -481,7 +458,6 @@ export default function AddBook() {
             gap: 12,
           }}
         >
-          {/* Kapak görseli */}
           {thumbnail ? (
             <Image
               source={{ uri: thumbnail }}
@@ -507,7 +483,6 @@ export default function AddBook() {
             </View>
           )}
 
-          {/* Kitap özeti */}
           <View style={{ flex: 1, justifyContent: "center", gap: 4 }}>
             <Text
               style={{ fontWeight: "900", fontSize: 17, color: COLORS.text }}
@@ -537,17 +512,28 @@ export default function AddBook() {
                 API ile seçildi
               </Text>
             ) : null}
+
+            {existingMatch ? (
+              <Text
+                style={{
+                  color: "#9b5d00",
+                  fontSize: 12,
+                  fontWeight: "800",
+                }}
+              >
+                Bu kitap zaten kitaplığında var
+              </Text>
+            ) : null}
           </View>
         </View>
       )}
-      {/* Temel bilgi kartı */}
+
       <SectionCard title="Temel Bilgiler">
         <LabeledInput
           label="Kitap Adı"
           value={title}
           onChangeText={setTitle}
           placeholder="Örn: Kürk Mantolu Madonna"
-          inputRef={undefined}
           returnKeyType="next"
           onSubmitEditing={() => authorRef.current?.focus()}
         />
@@ -574,21 +560,21 @@ export default function AddBook() {
             if (status === "reading" || status === "read") {
               pagesReadRef.current?.focus();
             } else {
-              onSubmit();
+              handleSubmit();
             }
           }}
         />
       </SectionCard>
-      {/* Durum kartı */}
+
       <SectionCard title="Durum">
         <View style={{ flexDirection: "row", gap: 8, flexWrap: "wrap" }}>
-          {(["reading", "read", "want"] as BookStatus[]).map((s) => {
-            const active = s === status;
+          {(["reading", "read", "want"] as BookStatus[]).map((itemStatus) => {
+            const active = itemStatus === status;
 
             return (
               <Pressable
-                key={s}
-                onPress={() => onChangeStatus(s)}
+                key={itemStatus}
+                onPress={() => handleChangeStatus(itemStatus)}
                 style={({ pressed }) => ({
                   paddingHorizontal: 14,
                   paddingVertical: 10,
@@ -608,14 +594,14 @@ export default function AddBook() {
                     fontWeight: "900",
                   }}
                 >
-                  {statusLabel[s]}
+                  {STATUS_LABEL[itemStatus]}
                 </Text>
               </Pressable>
             );
           })}
         </View>
       </SectionCard>
-      {/* Reading / Read için okunan sayfa kartı */}
+
       {(status === "reading" || status === "read") && (
         <SectionCard
           title={status === "reading" ? "Okuma İlerlemesi" : "Okuma Bilgisi"}
@@ -632,7 +618,7 @@ export default function AddBook() {
               if (status === "read") {
                 noteRef.current?.focus();
               } else {
-                onSubmit();
+                handleSubmit();
               }
             }}
           />
@@ -642,10 +628,9 @@ export default function AddBook() {
           </Text>
         </SectionCard>
       )}
-      {/* Sadece read için değerlendirme kartı */}
+
       {status === "read" && (
         <SectionCard title="Değerlendirme">
-          {/* Yıldız puanı */}
           <View style={{ gap: 8 }}>
             <Text style={{ fontWeight: "800", color: COLORS.text }}>Puan</Text>
             <StarRating value={rating} onChange={setRating} />
@@ -660,7 +645,6 @@ export default function AddBook() {
             </Pressable>
           </View>
 
-          {/* Not alanı */}
           <LabeledInput
             label="Not"
             value={note}
@@ -671,19 +655,22 @@ export default function AddBook() {
           />
         </SectionCard>
       )}
-      Keyboard.dismiss();
-      {/* Ana aksiyonlar */}
+
       <SoftButton
         label="Kaydet"
         icon="save-outline"
-        onPress={onSubmit}
+        onPress={handleSubmit}
         variant="primary"
         disabled={!canSave}
       />
+
       <SoftButton
         label="Vazgeç"
         icon="arrow-back-outline"
-        onPress={() => router.back()}
+        onPress={() => {
+          Keyboard.dismiss();
+          router.back();
+        }}
       />
     </ScrollView>
   );

@@ -1,3 +1,5 @@
+// context/AuthContext.tsx
+
 import type { Session, User } from "@supabase/supabase-js";
 import React, {
   createContext,
@@ -41,37 +43,41 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    let isActive = true;
+    let isMounted = true;
 
-    const initializeAuth = async () => {
+    const init = async () => {
       try {
         const { data, error } = await supabase.auth.getSession();
 
         console.log("GET SESSION DATA:", data);
         console.log("GET SESSION ERROR:", error);
 
-        if (!isActive) return;
+        if (!isMounted) return;
 
-        setSession(data.session ?? null);
-        setUser(data.session?.user ?? null);
+        const currentSession = data.session ?? null;
+        setSession(currentSession);
+        setUser(currentSession?.user ?? null);
+
+        console.log("INITIAL USER:", currentSession?.user?.id ?? null);
       } catch (err) {
         console.log("GET SESSION CATCH ERROR:", err);
       } finally {
-        if (isActive) {
+        if (isMounted) {
           setLoading(false);
         }
       }
     };
 
-    initializeAuth();
+    init();
 
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange((event, newSession) => {
       console.log("AUTH STATE EVENT:", event);
       console.log("AUTH STATE SESSION:", newSession);
+      console.log("AUTH CHANGED USER:", newSession?.user?.id ?? null);
 
-      if (!isActive) return;
+      if (!isMounted) return;
 
       setSession(newSession ?? null);
       setUser(newSession?.user ?? null);
@@ -79,7 +85,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     });
 
     return () => {
-      isActive = false;
+      isMounted = false;
       subscription.unsubscribe();
     };
   }, []);
@@ -90,14 +96,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   ): Promise<SignInResult> => {
     try {
       const trimmedEmail = email.trim();
+      const trimmedPassword = password.trim();
 
-      if (!trimmedEmail || !password.trim()) {
+      if (!trimmedEmail || !trimmedPassword) {
         return { error: "Email ve şifre zorunludur." };
       }
 
+      setLoading(true);
+
       const { data, error } = await supabase.auth.signInWithPassword({
         email: trimmedEmail,
-        password,
+        password: trimmedPassword,
       });
 
       console.log("SIGN IN DATA:", data);
@@ -107,12 +116,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         return { error: error.message };
       }
 
+      const currentSession = data.session ?? null;
+      setSession(currentSession);
+      setUser(currentSession?.user ?? null);
+
+      console.log("SIGNED IN USER:", currentSession?.user?.id ?? null);
+
       return { error: null };
     } catch (err: any) {
       console.log("SIGN IN CATCH ERROR:", err);
       return {
         error: err?.message ?? "Giriş sırasında beklenmeyen bir hata oluştu.",
       };
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -135,6 +152,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           userId: null,
         };
       }
+
+      setLoading(true);
 
       console.log("SIGN UP BAŞLADI:", {
         email: trimmedEmail,
@@ -164,6 +183,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         };
       }
 
+      const currentSession = data.session ?? null;
+
+      if (currentSession) {
+        setSession(currentSession);
+        setUser(currentSession.user ?? null);
+        console.log("SIGNED UP USER:", currentSession.user?.id ?? null);
+      } else {
+        console.log("SIGNED UP USER:", data.user?.id ?? null);
+      }
+
       return {
         error: null,
         userId: data.user?.id ?? null,
@@ -174,19 +203,32 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         error: err?.message ?? "Kayıt sırasında beklenmeyen bir hata oluştu.",
         userId: null,
       };
+    } finally {
+      setLoading(false);
     }
   };
 
   const signOut = async () => {
     try {
+      console.log("SIGN OUT STARTED");
+      setLoading(true);
+
       const { error } = await supabase.auth.signOut();
       console.log("SIGN OUT ERROR:", error);
 
       if (error) {
-        console.log("Çıkış yapılırken hata oluştu:", error.message);
+        throw error;
       }
+
+      setSession(null);
+      setUser(null);
+
+      console.log("SIGNED OUT USER");
     } catch (err) {
       console.log("SIGN OUT CATCH ERROR:", err);
+      throw err;
+    } finally {
+      setLoading(false);
     }
   };
 

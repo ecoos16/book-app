@@ -1,3 +1,5 @@
+// app/_layout.tsx
+
 import { Stack, useRouter, useSegments } from "expo-router";
 import React, { useEffect } from "react";
 import { ActivityIndicator, View } from "react-native";
@@ -22,8 +24,26 @@ function RootNavigator() {
     const inAuthGroup = firstSegment === "(auth)";
     const inTabsGroup = firstSegment === "(tabs)";
 
-    // tabs dışı ama giriş yapılmış kullanıcı için izinli sayfalar
-    const allowedAuthenticatedRoutes = ["edit-profile"];
+    /**
+     * Tabs dışında olup giriş yapmış kullanıcı için erişime açık sayfalar
+     *
+     * Not:
+     * Expo Router'da dynamic route klasörlerinde ilk segment klasör adıdır.
+     * Örn:
+     * /book/123         -> firstSegment = "book"
+     * /lists/read       -> firstSegment = "lists"
+     * /edit-book/123    -> firstSegment = "edit-book"
+     */
+    const allowedAuthenticatedRoutes = [
+      "edit-profile",
+      "add-book",
+      "book",
+      "lists",
+      "edit-book",
+      "share",
+      "post-comments",
+      "chat",
+    ];
 
     const inAllowedStandaloneRoute =
       typeof firstSegment === "string" &&
@@ -58,8 +78,6 @@ function RootNavigator() {
 }
 
 export default function RootLayout() {
-  console.log("ROOT LAYOUT ÇALIŞTI");
-
   return (
     <AuthProvider>
       <UserProvider>

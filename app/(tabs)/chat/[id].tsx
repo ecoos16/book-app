@@ -1,3 +1,5 @@
+// chat/[id].tsx
+
 import { Ionicons } from "@expo/vector-icons";
 import { router, useLocalSearchParams } from "expo-router";
 import React, { useEffect, useMemo, useRef, useState } from "react";
@@ -16,6 +18,7 @@ import {
 import { useAuth } from "../../../context/AuthContext";
 import { useChat } from "../../../context/ChatContext";
 import type { ChatParticipant, Message } from "../../../types/chat";
+
 const COLORS = {
   bg: "#fbf9f5",
   card: "#fffdf9",
@@ -39,6 +42,7 @@ function formatMessageTime(timestamp: number) {
 function getInitials(name: string) {
   return name
     .split(" ")
+    .filter(Boolean)
     .map((part) => part[0])
     .join("")
     .slice(0, 2)
@@ -54,6 +58,7 @@ export default function ChatDetailScreen() {
   const { user: authUser } = useAuth();
 
   const {
+    loading,
     getConversationById,
     getMessagesByConversationId,
     sendMessage,
@@ -88,10 +93,35 @@ export default function ChatDetailScreen() {
     );
   }, [conversation, currentUserId]);
 
+  const otherParticipants = useMemo(() => {
+    return (
+      conversation?.participants.filter(
+        (participant: ChatParticipant) => participant.id !== currentUserId,
+      ) ?? []
+    );
+  }, [conversation, currentUserId]);
+
+  const isGroupChat = useMemo(() => {
+    return Boolean(conversation?.isGroup);
+  }, [conversation?.isGroup]);
+
+  const headerTitle = useMemo(() => {
+    if (!conversation) return "Sohbet";
+    if (isGroupChat) return conversation.title?.trim() || "Grup Sohbeti";
+    return otherUser?.name || "Sohbet";
+  }, [conversation, isGroupChat, otherUser]);
+
   const isTyping = useMemo(() => {
     if (!id) return false;
     return Boolean(typingByConversation[id]);
   }, [id, typingByConversation]);
+
+  const headerSubtitle = useMemo(() => {
+    if (isGroupChat) {
+      return `${conversation?.participants?.length ?? 0} katılımcı`;
+    }
+    return isTyping ? "yazıyor..." : "Doğrudan mesaj";
+  }, [isGroupChat, conversation?.participants?.length, isTyping]);
 
   const isSendDisabled = useMemo(() => {
     return text.trim().length === 0 || sending;
@@ -108,9 +138,9 @@ export default function ChatDetailScreen() {
 
   const lastOwnMessageStatus = useMemo(() => {
     if (!lastMessage || !isLastMessageMine) return null;
-    if (isTyping) return "Yanıt yazıyor...";
+    if (isTyping && !isGroupChat) return "Yanıt yazıyor...";
     return "Gönderildi";
-  }, [lastMessage, isLastMessageMine, isTyping]);
+  }, [lastMessage, isLastMessageMine, isTyping, isGroupChat]);
 
   useEffect(() => {
     if (prefillAppliedRef.current) return;
@@ -168,7 +198,7 @@ export default function ChatDetailScreen() {
     const currentText = text.trim();
     if (!currentText) return;
 
-    Keyboard.dismiss(); // 👈 BUNU EKLE
+    Keyboard.dismiss();
 
     try {
       setSending(true);
@@ -181,6 +211,25 @@ export default function ChatDetailScreen() {
       setSending(false);
     }
   };
+
+  if (loading && !conversation) {
+    return (
+      <View style={styles.notFoundContainer}>
+        <View style={styles.notFoundIconWrap}>
+          <Ionicons
+            name="chatbox-ellipses-outline"
+            size={32}
+            color={COLORS.primary}
+          />
+        </View>
+
+        <Text style={styles.notFoundTitle}>Sohbet yükleniyor</Text>
+        <Text style={styles.notFoundText}>
+          Konuşma bilgileri hazırlanıyor...
+        </Text>
+      </View>
+    );
+  }
 
   if (!conversation) {
     return (
@@ -229,7 +278,11 @@ export default function ChatDetailScreen() {
           <Ionicons name="arrow-back" size={18} color={COLORS.text} />
         </Pressable>
 
-        {otherUser?.avatar ? (
+        {isGroupChat ? (
+          <View style={styles.headerAvatarFallback}>
+            <Ionicons name="people-outline" size={22} color={COLORS.primary} />
+          </View>
+        ) : otherUser?.avatar ? (
           <Image
             source={{ uri: otherUser.avatar }}
             style={styles.headerAvatar}
@@ -243,12 +296,18 @@ export default function ChatDetailScreen() {
         )}
 
         <View style={styles.headerTextArea}>
-          <Text style={styles.headerTitle}>{otherUser?.name || "Sohbet"}</Text>
-          <Text style={styles.headerSubtitle}>
-            {isTyping ? "yazıyor..." : "Doğrudan mesaj"}
-          </Text>
+          <Text style={styles.headerTitle}>{headerTitle}</Text>
+          <Text style={styles.headerSubtitle}>{headerSubtitle}</Text>
         </View>
       </View>
+
+      {isGroupChat && (
+        <View style={styles.groupInfoBar}>
+          <Text style={styles.groupInfoText} numberOfLines={2}>
+            {otherParticipants.map((p) => p.name).join(", ")}
+          </Text>
+        </View>
+      )}
 
       <FlatList<Message>
         ref={listRef}
@@ -285,6 +344,12 @@ export default function ChatDetailScreen() {
                       : styles.messageBubbleOther,
                   ]}
                 >
+                  {!isMine && isGroupChat ? (
+                    <Text style={styles.groupSenderName}>
+                      {item.senderName}
+                    </Text>
+                  ) : null}
+
                   <Text
                     style={[
                       styles.messageText,
@@ -320,7 +385,9 @@ export default function ChatDetailScreen() {
             <View style={[styles.messageRow, styles.messageRowOther]}>
               <View style={[styles.messageBubble, styles.typingBubble]}>
                 <Text style={styles.typingText}>
-                  {otherUser?.name || "Biri"} yazıyor...
+                  {isGroupChat
+                    ? "Grupta biri yazıyor..."
+                    : `${otherUser?.name || "Biri"} yazıyor...`}
                 </Text>
               </View>
             </View>
@@ -439,6 +506,19 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: COLORS.muted,
   },
+  groupInfoBar: {
+    paddingHorizontal: 16,
+    paddingTop: 8,
+    paddingBottom: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: COLORS.border,
+    backgroundColor: COLORS.card,
+  },
+  groupInfoText: {
+    color: COLORS.muted,
+    fontSize: 13,
+    lineHeight: 19,
+  },
   messagesContent: {
     padding: 16,
     paddingBottom: 28,
@@ -469,6 +549,12 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.card,
     borderColor: COLORS.border,
     borderBottomLeftRadius: 7,
+  },
+  groupSenderName: {
+    color: COLORS.primary,
+    fontWeight: "900",
+    marginBottom: 6,
+    fontSize: 12,
   },
   typingBubble: {
     backgroundColor: COLORS.graySoft,

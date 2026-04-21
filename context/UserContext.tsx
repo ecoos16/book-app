@@ -82,10 +82,12 @@ const UserContext = createContext<UserContextType | null>(null);
 function mapProfileToUser(profile: ProfileRow): AppUser {
   const firstName = profile.first_name ?? "";
   const lastName = profile.last_name ?? "";
+
   const fullName =
     profile.full_name?.trim() ||
     `${firstName} ${lastName}`.trim() ||
     profile.username?.trim() ||
+    profile.email?.trim() ||
     "Misafir";
 
   return {
@@ -109,6 +111,27 @@ function mapProfileToUser(profile: ProfileRow): AppUser {
   };
 }
 
+function buildFallbackUser(authUser: any): AppUser {
+  const firstName = authUser?.user_metadata?.first_name ?? "";
+  const lastName = authUser?.user_metadata?.last_name ?? "";
+  const fullName =
+    authUser?.user_metadata?.full_name ||
+    `${firstName} ${lastName}`.trim() ||
+    authUser?.email ||
+    "ReadSphere Kullanıcısı";
+
+  return {
+    ...DEFAULT_USER,
+    id: authUser?.id ?? "",
+    name: fullName,
+    firstName,
+    lastName,
+    email: authUser?.email ?? "",
+    username: authUser?.user_metadata?.username ?? "",
+    avatar: authUser?.user_metadata?.avatar_url ?? undefined,
+  };
+}
+
 export function UserProvider({ children }: { children: React.ReactNode }) {
   const { user: authUser } = useAuth();
 
@@ -124,6 +147,9 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
 
     try {
       setLoading(true);
+
+      console.log("AUTH USER ID:", authUser?.id);
+      console.log("AUTH USER EMAIL:", authUser?.email);
 
       const { data, error } = await supabase
         .from("profiles")
@@ -149,36 +175,26 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
         `,
         )
         .eq("id", authUser.id)
-        .single();
+        .maybeSingle();
+
+      console.log("REFRESH USER DATA:", data);
+      console.log("REFRESH USER ERROR:", error);
 
       if (error) {
         console.log("USER PROFILE FETCH ERROR:", error);
+        setUserState(buildFallbackUser(authUser));
+        return;
+      }
 
-        setUserState({
-          ...DEFAULT_USER,
-          id: authUser.id,
-          name:
-            authUser.user_metadata?.full_name ||
-            authUser.email ||
-            "ReadSphere Kullanıcısı",
-          email: authUser.email ?? "",
-        });
+      if (!data) {
+        setUserState(buildFallbackUser(authUser));
         return;
       }
 
       setUserState(mapProfileToUser(data as ProfileRow));
     } catch (err) {
       console.log("USER PROFILE FETCH CATCH ERROR:", err);
-
-      setUserState({
-        ...DEFAULT_USER,
-        id: authUser.id,
-        name:
-          authUser.user_metadata?.full_name ||
-          authUser.email ||
-          "ReadSphere Kullanıcısı",
-        email: authUser.email ?? "",
-      });
+      setUserState(buildFallbackUser(authUser));
     } finally {
       setLoading(false);
     }
@@ -196,6 +212,8 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
     }
 
     try {
+      setLoading(true);
+
       const nextFirstName =
         updates.firstName !== undefined
           ? updates.firstName.trim()
@@ -206,26 +224,27 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
           ? updates.lastName.trim()
           : (user.lastName ?? "");
 
+      const nextUsername =
+        updates.username !== undefined
+          ? updates.username.trim().toLowerCase()
+          : (user.username ?? "");
+
+      const nextEmail = user.email ?? authUser.email ?? "";
+
       const nextFullName =
         updates.name?.trim() ||
         `${nextFirstName} ${nextLastName}`.trim() ||
         user.name ||
+        authUser.email ||
         "Misafir";
 
       const payload = {
+        id: authUser.id,
+        email: nextEmail || authUser.email || null,
         full_name: nextFullName,
-        first_name:
-          updates.firstName !== undefined
-            ? nextFirstName
-            : (user.firstName ?? null),
-        last_name:
-          updates.lastName !== undefined
-            ? nextLastName
-            : (user.lastName ?? null),
-        username:
-          updates.username !== undefined
-            ? updates.username.trim() || null
-            : user.username || null,
+        first_name: nextFirstName || null,
+        last_name: nextLastName || null,
+        username: nextUsername || null,
         avatar_url:
           updates.avatar !== undefined
             ? updates.avatar || null
@@ -269,20 +288,87 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
             : (user.onboardingCompleted ?? false),
       };
 
-      const { error } = await supabase
-        .from("profiles")
-        .update(payload)
-        .eq("id", authUser.id);
+      console.log("AUTH USER ID:", authUser?.id);
+      console.log("AUTH USER EMAIL:", authUser?.email);
+      console.log("USER SAVE PAYLOAD:", payload);
 
-      if (error) {
-        console.log("USER PROFILE UPDATE ERROR:", error);
-        return { error: error.message };
+      const { data: existingProfile, error: existingError } = await supabase
+        .from("profiles")
+        .select("id")
+        .eq("id", authUser.id)
+        .maybeSingle();
+
+      console.log("EXISTING PROFILE:", existingProfile);
+      console.log("CHECK PROFILE ERROR:", existingError);
+
+      if (existingError) {
+        setLoading(false);
+        return { error: existingError.message };
       }
 
-      await refreshUser();
+      let writeError: any = null;
+
+      if (existingProfile?.id) {
+        const { error } = await supabase
+          .from("profiles")
+          .update(payload)
+          .eq("id", authUser.id);
+
+        writeError = error;
+        console.log("PROFILE UPDATE ERROR:", error);
+      } else {
+        const { error } = await supabase.from("profiles").insert(payload);
+
+        writeError = error;
+        console.log("PROFILE INSERT ERROR:", error);
+      }
+
+      if (writeError) {
+        setLoading(false);
+        return { error: writeError.message };
+      }
+
+      const { data: freshProfile, error: freshError } = await supabase
+        .from("profiles")
+        .select(
+          `
+          id,
+          email,
+          full_name,
+          first_name,
+          last_name,
+          username,
+          avatar_url,
+          bio,
+          birth_date,
+          favorite_genres,
+          favorite_authors,
+          favorite_book,
+          reading_mood,
+          book_value,
+          reader_type,
+          yearly_goal,
+          onboarding_completed
+        `,
+        )
+        .eq("id", authUser.id)
+        .single();
+
+      console.log("FRESH PROFILE DATA:", freshProfile);
+      console.log("FRESH PROFILE ERROR:", freshError);
+
+      if (freshError) {
+        setLoading(false);
+        return { error: freshError.message };
+      }
+
+      setUserState(mapProfileToUser(freshProfile as ProfileRow));
+      setLoading(false);
+
       return { error: null };
     } catch (err: any) {
-      console.log("USER PROFILE UPDATE CATCH ERROR:", err);
+      console.log("SET USER CATCH ERROR:", err);
+      setLoading(false);
       return {
         error: err?.message ?? "Kullanıcı bilgileri güncellenemedi.",
       };

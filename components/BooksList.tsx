@@ -8,9 +8,6 @@ import { useBooks } from "../context/BooksContext";
 import type { Book, BookStatus } from "../types/book";
 import { ProgressBar } from "./ProgressBar";
 
-/**
- * ReadSphere ortak renk paleti
- */
 const COLORS = {
   bg: "#fbf9f5",
   card: "#fffdf9",
@@ -29,9 +26,6 @@ const COLORS = {
   dangerText: "#a22b2b",
 };
 
-/**
- * Kitap durumlarının kullanıcıya gösterilecek Türkçe karşılığı
- */
 const statusLabel: Record<BookStatus, string> = {
   reading: "Okuyorum",
   read: "Okudum",
@@ -40,9 +34,6 @@ const statusLabel: Record<BookStatus, string> = {
 
 type SortKey = "newest" | "oldest" | "ratingDesc" | "az";
 
-/**
- * Ortak sıralama chip'i
- */
 function SortChip({
   label,
   active,
@@ -81,28 +72,16 @@ function SortChip({
 }
 
 export function BooksList({ books }: { books: Book[] }) {
-  /**
-   * Kitap işlemleri
-   */
   const { removeBook, updateBook } = useBooks();
 
-  /**
-   * Yerel arama ve sıralama state'leri
-   */
   const [query, setQuery] = useState("");
   const [sortKey, setSortKey] = useState<SortKey>("newest");
 
-  /**
-   * Arama + sıralama uygulanmış liste
-   */
   const filteredSorted = useMemo(() => {
     const q = query.trim().toLowerCase();
 
     let arr = books;
 
-    /**
-     * Arama varsa başlık ve yazarda filtreleme yap
-     */
     if (q.length > 0) {
       arr = arr.filter((b) => {
         const title = (b.title ?? "").toLowerCase();
@@ -111,14 +90,8 @@ export function BooksList({ books }: { books: Book[] }) {
       });
     }
 
-    /**
-     * Orijinal diziyi bozmamak için kopya al
-     */
     const copy = [...arr];
 
-    /**
-     * Seçilen sıralama tipine göre sırala
-     */
     copy.sort((a, b) => {
       const aCreated =
         typeof a.createdAt === "number"
@@ -146,10 +119,6 @@ export function BooksList({ books }: { books: Book[] }) {
     return copy;
   }, [books, query, sortKey]);
 
-  /**
-   * Durum değiştirirken bazı alanları temizle
-   * Böylece eski durumdan kalan gereksiz veri kalmaz
-   */
   const setStatusClean = (b: Book, next: BookStatus) => {
     if (next === "reading") {
       updateBook(b.id, {
@@ -176,9 +145,6 @@ export function BooksList({ books }: { books: Book[] }) {
     });
   };
 
-  /**
-   * Silme onayı
-   */
   const confirmDelete = (b: Book) => {
     Alert.alert(
       "Kitabı sil",
@@ -194,26 +160,15 @@ export function BooksList({ books }: { books: Book[] }) {
     );
   };
 
-  /**
-   * Uzun basınca aksiyon menüsü
-   */
   const openActions = (b: Book) => {
     Alert.alert(b.title, "Ne yapmak istiyorsun?", [
       {
         text: "Detay",
-        onPress: () =>
-          router.push({
-            pathname: "/book/[id]" as const,
-            params: { id: b.id },
-          }),
+        onPress: () => router.push(`/book/${b.id}` as const),
       },
       {
         text: "Düzenle",
-        onPress: () =>
-          router.push({
-            pathname: "/edit-book/[id]" as const,
-            params: { id: b.id },
-          }),
+        onPress: () => router.push(`/edit-book/${b.id}` as const),
       },
       {
         text: "Durum → Okuyorum",
@@ -239,16 +194,12 @@ export function BooksList({ books }: { books: Book[] }) {
     ]);
   };
 
-  /**
-   * Yardımcı durumlar
-   */
   const isSearching = query.trim().length > 0;
   const isEmptyLibrary = books.length === 0;
   const isNoSearchResult = books.length > 0 && filteredSorted.length === 0;
 
   return (
     <View style={{ gap: 12, marginTop: 12 }}>
-      {/* Arama inputu */}
       <View
         style={{
           borderWidth: 1,
@@ -279,7 +230,6 @@ export function BooksList({ books }: { books: Book[] }) {
         />
       </View>
 
-      {/* Sıralama chip'leri */}
       <View style={{ flexDirection: "row", gap: 8, flexWrap: "wrap" }}>
         <SortChip
           label="Yeni"
@@ -303,7 +253,6 @@ export function BooksList({ books }: { books: Book[] }) {
         />
       </View>
 
-      {/* Kütüphane tamamen boşsa */}
       {isEmptyLibrary && !isSearching ? (
         <View
           style={{
@@ -354,7 +303,6 @@ export function BooksList({ books }: { books: Book[] }) {
         </View>
       ) : null}
 
-      {/* Aramada sonuç yoksa */}
       {isNoSearchResult ? (
         <View
           style={{
@@ -405,17 +353,11 @@ export function BooksList({ books }: { books: Book[] }) {
         </View>
       ) : null}
 
-      {/* Kitap kartları */}
       {!isEmptyLibrary && !isNoSearchResult
         ? filteredSorted.map((b) => (
             <Pressable
               key={b.id}
-              onPress={() =>
-                router.push({
-                  pathname: "/book/[id]" as const,
-                  params: { id: b.id },
-                })
-              }
+              onPress={() => router.push(`/book/${b.id}` as const)}
               onLongPress={() => openActions(b)}
               delayLongPress={250}
               style={({ pressed }) => ({
@@ -428,7 +370,6 @@ export function BooksList({ books }: { books: Book[] }) {
               })}
             >
               <View style={{ flexDirection: "row", gap: 12 }}>
-                {/* Kapak alanı */}
                 <View
                   style={{
                     width: 60,
@@ -474,7 +415,6 @@ export function BooksList({ books }: { books: Book[] }) {
                   )}
                 </View>
 
-                {/* Sağ bilgi alanı */}
                 <View style={{ flex: 1, gap: 6 }}>
                   <View
                     style={{ flexDirection: "row", alignItems: "flex-start" }}
@@ -529,7 +469,6 @@ export function BooksList({ books }: { books: Book[] }) {
                 </View>
               </View>
 
-              {/* Reading için progress */}
               {b.status === "reading" && (
                 <ProgressBar
                   pagesRead={b.pagesRead}
@@ -537,7 +476,6 @@ export function BooksList({ books }: { books: Book[] }) {
                 />
               )}
 
-              {/* Read için puan ve not */}
               {b.status === "read" && (
                 <View style={{ flexDirection: "row", alignItems: "center" }}>
                   <Text style={{ color: COLORS.muted, fontSize: 13 }}>
@@ -557,14 +495,12 @@ export function BooksList({ books }: { books: Book[] }) {
                 </View>
               )}
 
-              {/* Want için kısa açıklama */}
               {b.status === "want" && (
                 <Text style={{ color: COLORS.muted, fontSize: 12 }}>
                   Okuma listene eklediğin kitap
                 </Text>
               )}
 
-              {/* Alt yardımcı metin */}
               <Text style={{ color: "#a49d93", fontSize: 12 }}>
                 Uzun bas: düzenle / sil / durum değiştir
               </Text>

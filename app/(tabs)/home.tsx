@@ -1,3 +1,5 @@
+// app/(tabs)/home.tsx
+
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
 import React, { useEffect, useMemo, useState } from "react";
@@ -126,12 +128,14 @@ function RecentBookCard({
   author,
   thumbnail,
   statusLabel,
+  matchCount = 0,
   onPress,
 }: {
   title: string;
   author: string;
   thumbnail?: string;
   statusLabel: string;
+  matchCount?: number;
   onPress: () => void;
 }) {
   return (
@@ -206,25 +210,57 @@ function RecentBookCard({
 
         <View
           style={{
-            alignSelf: "flex-start",
+            flexDirection: "row",
+            flexWrap: "wrap",
+            gap: 8,
             marginTop: 4,
-            paddingHorizontal: 10,
-            paddingVertical: 6,
-            borderRadius: 999,
-            backgroundColor: COLORS.graySoft,
-            borderWidth: 1,
-            borderColor: COLORS.border,
           }}
         >
-          <Text
+          <View
             style={{
-              color: COLORS.primary,
-              fontWeight: "800",
-              fontSize: 12,
+              alignSelf: "flex-start",
+              paddingHorizontal: 10,
+              paddingVertical: 6,
+              borderRadius: 999,
+              backgroundColor: COLORS.graySoft,
+              borderWidth: 1,
+              borderColor: COLORS.border,
             }}
           >
-            {statusLabel}
-          </Text>
+            <Text
+              style={{
+                color: COLORS.primary,
+                fontWeight: "800",
+                fontSize: 12,
+              }}
+            >
+              {statusLabel}
+            </Text>
+          </View>
+
+          {matchCount > 0 ? (
+            <View
+              style={{
+                alignSelf: "flex-start",
+                paddingHorizontal: 10,
+                paddingVertical: 6,
+                borderRadius: 999,
+                backgroundColor: COLORS.greenSoft,
+                borderWidth: 1,
+                borderColor: COLORS.border,
+              }}
+            >
+              <Text
+                style={{
+                  color: COLORS.text,
+                  fontWeight: "800",
+                  fontSize: 12,
+                }}
+              >
+                {matchCount} kişi daha okuyor
+              </Text>
+            </View>
+          ) : null}
         </View>
       </View>
     </Pressable>
@@ -310,6 +346,7 @@ export default function Home() {
 
   const [profile, setProfile] = useState<ProfileRow | null>(null);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+  const [matchCounts, setMatchCounts] = useState<Record<string, number>>({});
 
   useEffect(() => {
     const fetchProfile = async () => {
@@ -349,6 +386,61 @@ export default function Home() {
   const communityPosts = useMemo(() => {
     return sortedPosts;
   }, [sortedPosts]);
+
+  const booksToCheckForMatches = useMemo(() => {
+    const items = new Map<string, string>();
+
+    last3.forEach((book) => {
+      if (book.status === "reading" && book.googleId) {
+        items.set(book.id, book.googleId);
+      }
+    });
+
+    communityPosts.forEach((post) => {
+      const localBook = books.find((b) => b.id === post.bookId);
+
+      if (localBook?.status === "reading" && localBook.googleId) {
+        items.set(localBook.id, localBook.googleId);
+      }
+    });
+
+    return Array.from(items.entries()).map(([localId, googleId]) => ({
+      localId,
+      googleId,
+    }));
+  }, [last3, communityPosts, books]);
+
+  useEffect(() => {
+    async function fetchMatchCounts() {
+      if (!authUser?.id || booksToCheckForMatches.length === 0) {
+        setMatchCounts({});
+        return;
+      }
+
+      const results = await Promise.all(
+        booksToCheckForMatches.map(async ({ localId, googleId }) => {
+          const { data, error } = await supabase.rpc(
+            "get_same_book_readers_count_by_google_id",
+            {
+              p_google_book_id: googleId,
+              p_current_user_id: authUser.id,
+            },
+          );
+
+          if (error) {
+            console.log("MATCH COUNT ERROR:", googleId, error);
+            return [localId, 0] as const;
+          }
+
+          return [localId, Number(data ?? 0)] as const;
+        }),
+      );
+
+      setMatchCounts(Object.fromEntries(results));
+    }
+
+    fetchMatchCounts();
+  }, [booksToCheckForMatches, authUser?.id]);
 
   function getLocalBook(bookId: string) {
     return books.find((b) => b.id === bookId);
@@ -471,9 +563,23 @@ export default function Home() {
 
         <BookSearchPicker
           onSelect={(book) => {
+            const author = Array.isArray(book.authors)
+              ? book.authors.join(", ")
+              : "";
+
             router.push({
-              pathname: "/book/[id]",
-              params: { id: book.id },
+              pathname: "/add-book",
+              params: {
+                title: book.title ?? "",
+                author,
+                pagesTotal:
+                  typeof book.pageCount === "number"
+                    ? String(book.pageCount)
+                    : "",
+                thumbnail: book.thumbnail ?? "",
+                googleId: book.id ?? "",
+                status: "want",
+              },
             });
           }}
         />
@@ -545,6 +651,11 @@ export default function Home() {
                     author={book.author}
                     thumbnail={book.thumbnail}
                     statusLabel={statusLabel}
+                    matchCount={
+                      book.status === "reading"
+                        ? (matchCounts[book.id] ?? 0)
+                        : 0
+                    }
                     onPress={() =>
                       router.push({
                         pathname: "/book/[id]",
@@ -624,6 +735,11 @@ export default function Home() {
                 const displayThumbnail =
                   post.bookThumbnail || localBook?.thumbnail;
                 const isMine = post.userId === currentUserId;
+
+                const postMatchCount =
+                  localBook?.status === "reading"
+                    ? (matchCounts[localBook.id] ?? 0)
+                    : 0;
 
                 return (
                   <View
@@ -787,6 +903,31 @@ export default function Home() {
                         >
                           {displayAuthor}
                         </Text>
+
+                        {postMatchCount > 0 ? (
+                          <View
+                            style={{
+                              alignSelf: "flex-start",
+                              marginTop: 4,
+                              paddingHorizontal: 10,
+                              paddingVertical: 6,
+                              borderRadius: 999,
+                              backgroundColor: COLORS.greenSoft,
+                              borderWidth: 1,
+                              borderColor: COLORS.border,
+                            }}
+                          >
+                            <Text
+                              style={{
+                                color: COLORS.text,
+                                fontWeight: "800",
+                                fontSize: 12,
+                              }}
+                            >
+                              {postMatchCount} kişi daha okuyor
+                            </Text>
+                          </View>
+                        ) : null}
                       </View>
                     </Pressable>
 
@@ -969,6 +1110,11 @@ export default function Home() {
                   const displayAuthor =
                     post.bookAuthor || localBook?.author || "Bilinmeyen Yazar";
 
+                  const myPostMatchCount =
+                    localBook?.status === "reading"
+                      ? (matchCounts[localBook.id] ?? 0)
+                      : 0;
+
                   return (
                     <Pressable
                       key={post.id}
@@ -1005,6 +1151,31 @@ export default function Home() {
                       <Text style={{ color: COLORS.muted }}>
                         {displayAuthor}
                       </Text>
+
+                      {myPostMatchCount > 0 ? (
+                        <View
+                          style={{
+                            alignSelf: "flex-start",
+                            marginTop: 2,
+                            paddingHorizontal: 10,
+                            paddingVertical: 6,
+                            borderRadius: 999,
+                            backgroundColor: COLORS.greenSoft,
+                            borderWidth: 1,
+                            borderColor: COLORS.border,
+                          }}
+                        >
+                          <Text
+                            style={{
+                              color: COLORS.text,
+                              fontWeight: "800",
+                              fontSize: 12,
+                            }}
+                          >
+                            {myPostMatchCount} kişi daha okuyor
+                          </Text>
+                        </View>
+                      ) : null}
 
                       {!!post.shareText && (
                         <Text

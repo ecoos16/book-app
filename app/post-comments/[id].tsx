@@ -13,9 +13,10 @@ import {
   View,
 } from "react-native";
 
+import { useAuth } from "../../context/AuthContext";
 import { useChat } from "../../context/ChatContext";
 import { usePosts } from "../../context/PostsContext";
-import { CURRENT_USER } from "../../data/mockUsers";
+import { useUser } from "../../context/UserContext";
 
 /**
  * ReadSphere ortak renk paleti
@@ -141,19 +142,19 @@ export default function PostCommentsScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
 
   /**
+   * Auth ve kullanıcı bilgisi
+   */
+  const { user: authUser } = useAuth();
+  const { user: appUser } = useUser();
+
+  /**
    * Post işlemleri
-   *
-   * Not:
-   * Eski çalışan koduna göre:
-   * - addComment tek bir nesne parametresi alıyor
-   * - removeComment ise (postId, commentId) alıyor
    */
   const { getById, addComment, removeComment, removePost, toggleLike } =
     usePosts();
 
   /**
    * Chat işlemleri
-   * Post sahibine mesaj göndermek için kullanıyoruz
    */
   const { getOrCreateConversationByParticipant } = useChat();
 
@@ -161,6 +162,14 @@ export default function PostCommentsScreen() {
    * İlgili paylaşımı bul
    */
   const post = id ? getById(id) : undefined;
+
+  /**
+   * Mevcut kullanıcı bilgisi
+   */
+  const currentUserId = authUser?.id ?? "";
+  const currentUserName =
+    appUser?.name?.trim() || authUser?.email || "Kullanıcı";
+  const currentUserAvatar = appUser?.avatar;
 
   /**
    * Yeni yorum input state
@@ -244,27 +253,15 @@ export default function PostCommentsScreen() {
     );
   }
 
-  /**
-   * Bu noktadan sonra post kesin var
-   * TypeScript'in "possibly undefined" uyarısını temizlemek için
-   * ayrı bir safePost sabiti kullanıyoruz
-   */
   const safePost = post;
 
   /**
    * Post bana mı ait?
    */
-  const isMine = safePost.userId === CURRENT_USER.id;
+  const isMine = safePost.userId === currentUserId;
 
   /**
    * Yorumları tarihe göre sırala
-   *
-   * DİKKAT:
-   * Yanlış kullanım:
-   *   [.safePost.comments]
-   *
-   * Doğrusu:
-   *   [...(safePost.comments ?? [])]
    */
   const sortedComments = useMemo(() => {
     return [...(safePost.comments ?? [])].sort(
@@ -274,12 +271,6 @@ export default function PostCommentsScreen() {
 
   /**
    * Yeni yorum ekle
-   *
-   * DİKKAT:
-   * addComment burada TEK NESNE alıyor
-   * Bu yüzden:
-   *   addComment({ postId, text, ... })
-   * şeklinde çağrılmalı
    */
   function handleAddComment() {
     const trimmed = text.trim();
@@ -289,12 +280,17 @@ export default function PostCommentsScreen() {
       return;
     }
 
+    if (!currentUserId) {
+      Alert.alert("Hata", "Yorum yapmak için giriş yapmalısın.");
+      return;
+    }
+
     addComment({
       postId: safePost.id,
       text: trimmed,
-      userId: CURRENT_USER.id,
-      userName: CURRENT_USER.name,
-      userAvatar: CURRENT_USER.avatar,
+      userId: currentUserId,
+      userName: currentUserName,
+      userAvatar: currentUserAvatar,
     });
 
     setText("");
@@ -302,10 +298,6 @@ export default function PostCommentsScreen() {
 
   /**
    * Yorumu sil
-   *
-   * DİKKAT:
-   * removeComment burada iki argüman alıyor:
-   *   removeComment(postId, commentId)
    */
   function handleDeleteComment(commentId: string) {
     Alert.alert("Yorum silinsin mi?", "Bu yorum kaldırılacak.", [
@@ -329,26 +321,36 @@ export default function PostCommentsScreen() {
   /**
    * Paylaşım sahibine mesaj gönder
    */
-  function handleMessagePostOwner() {
-    if (safePost.userId === CURRENT_USER.id) return;
+  async function handleMessagePostOwner() {
+    if (!currentUserId) {
+      Alert.alert("Hata", "Mesaj göndermek için giriş yapmalısın.");
+      return;
+    }
 
-    const conversationId = getOrCreateConversationByParticipant({
-      id: safePost.userId,
-      name: safePost.userName,
-      avatar: safePost.userAvatar,
-    });
+    if (safePost.userId === currentUserId) return;
 
-    const prefillText = `${
-      safePost.bookTitle || "Paylaşımın"
-    } hakkında yazdığını gördüm, yorumun ilgimi çekti.`;
+    try {
+      const conversationId = await getOrCreateConversationByParticipant({
+        id: safePost.userId,
+        name: safePost.userName,
+        avatar: safePost.userAvatar,
+      });
 
-    router.push({
-      pathname: "/chat/[id]",
-      params: {
-        id: conversationId,
-        prefill: prefillText,
-      },
-    });
+      const prefillText = `${
+        safePost.bookTitle || "Paylaşımın"
+      } hakkında yazdığını gördüm, yorumun ilgimi çekti.`;
+
+      router.push({
+        pathname: "/chat/[id]",
+        params: {
+          id: String(conversationId),
+          prefill: prefillText,
+        },
+      });
+    } catch (error) {
+      console.log("POST COMMENT MESSAGE OWNER ERROR:", error);
+      Alert.alert("Hata", "Sohbet açılırken bir sorun oluştu.");
+    }
   }
 
   return (
@@ -357,7 +359,6 @@ export default function PostCommentsScreen() {
       contentContainerStyle={{ padding: 16, gap: 14, paddingBottom: 120 }}
       keyboardShouldPersistTaps="handled"
     >
-      {/* ================= SAYFA BAŞLIĞI ================= */}
       <View style={{ gap: 4 }}>
         <Text
           style={{
@@ -374,7 +375,6 @@ export default function PostCommentsScreen() {
         </Text>
       </View>
 
-      {/* ================= PAYLAŞIM KARTI ================= */}
       <View
         style={{
           padding: 16,
@@ -385,7 +385,6 @@ export default function PostCommentsScreen() {
           gap: 12,
         }}
       >
-        {/* Kullanıcı üst satırı */}
         <View
           style={{
             flexDirection: "row",
@@ -442,7 +441,6 @@ export default function PostCommentsScreen() {
           </View>
         </View>
 
-        {/* Kitap alanı */}
         <View
           style={{
             flexDirection: "row",
@@ -492,12 +490,10 @@ export default function PostCommentsScreen() {
           </View>
         </View>
 
-        {/* Paylaşım metni */}
         <Text style={{ color: COLORS.text, lineHeight: 22 }}>
           {safePost.shareText || "Paylaşım metni yok"}
         </Text>
 
-        {/* Post aksiyonları */}
         <View
           style={{
             flexDirection: "row",
@@ -550,7 +546,6 @@ export default function PostCommentsScreen() {
           )}
         </View>
 
-        {/* Paylaşım silme onayı */}
         {isMine && confirmDeletePost && (
           <View
             style={{
@@ -591,7 +586,6 @@ export default function PostCommentsScreen() {
         )}
       </View>
 
-      {/* ================= YORUM YAZMA KARTI ================= */}
       <View
         style={{
           borderWidth: 1,
@@ -638,7 +632,6 @@ export default function PostCommentsScreen() {
         />
       </View>
 
-      {/* ================= YORUMLAR ================= */}
       {sortedComments.length === 0 ? (
         <View
           style={{
@@ -691,7 +684,7 @@ export default function PostCommentsScreen() {
         </View>
       ) : (
         sortedComments.map((comment) => {
-          const commentIsMine = comment.userId === CURRENT_USER.id;
+          const commentIsMine = comment.userId === currentUserId;
 
           return (
             <Pressable
@@ -709,7 +702,6 @@ export default function PostCommentsScreen() {
                 gap: 8,
               }}
             >
-              {/* Yorum üst satırı */}
               <View
                 style={{
                   flexDirection: "row",
@@ -781,7 +773,6 @@ export default function PostCommentsScreen() {
                 )}
               </View>
 
-              {/* Yorum metni */}
               <Text style={{ color: COLORS.text, lineHeight: 21 }}>
                 {comment.text}
               </Text>
@@ -796,7 +787,6 @@ export default function PostCommentsScreen() {
         })
       )}
 
-      {/* ================= GERİ ================= */}
       <SoftButton
         label="Geri"
         icon="arrow-back-outline"

@@ -1,7 +1,6 @@
-//app/edit-profile.tsx
+// app/edit-profile.tsx
+
 import { Ionicons } from "@expo/vector-icons";
-import { decode } from "base64-arraybuffer";
-import * as FileSystem from "expo-file-system";
 import * as ImagePicker from "expo-image-picker";
 import { router } from "expo-router";
 import React, { useMemo, useRef, useState } from "react";
@@ -128,7 +127,7 @@ function getInitials(name?: string) {
 
 export default function EditProfileScreen() {
   const { user: authUser } = useAuth();
-  const { user, setUser } = useUser();
+  const { user, setUser, refreshUser } = useUser();
 
   const [saving, setSaving] = useState(false);
   const [uploadingAvatar, setUploadingAvatar] = useState(false);
@@ -154,6 +153,7 @@ export default function EditProfileScreen() {
   const [avatarUri, setAvatarUri] = useState<string | null>(
     user.avatar ?? null,
   );
+
   const lastNameRef = useRef<TextInput>(null);
   const usernameRef = useRef<TextInput>(null);
   const bioRef = useRef<TextInput>(null);
@@ -220,13 +220,12 @@ export default function EditProfileScreen() {
     }
 
     const fileExt = avatarUri.split(".").pop()?.toLowerCase() || "jpg";
-    const filePath = `${userId}/avatar.${fileExt}`;
+    const fileName = `avatar-${Date.now()}.${fileExt}`;
+    const filePath = `${userId}/${fileName}`;
 
-    const base64 = await FileSystem.readAsStringAsync(avatarUri, {
-      encoding: "base64",
-    });
-
-    const arrayBuffer = decode(base64);
+    const response = await fetch(avatarUri);
+    const blob = await response.blob();
+    const arrayBuffer = await blob.arrayBuffer();
 
     const contentType =
       fileExt === "png"
@@ -243,13 +242,19 @@ export default function EditProfileScreen() {
       });
 
     if (uploadError) {
+      console.log("AVATAR UPLOAD ERROR:", uploadError);
       throw new Error(uploadError.message);
     }
 
     const { data } = supabase.storage.from("avatars").getPublicUrl(filePath);
-    return data.publicUrl;
-  };
 
+    const publicUrl = `${data.publicUrl}?t=${Date.now()}`;
+
+    console.log("AVATAR FILE PATH:", filePath);
+    console.log("AVATAR PUBLIC URL:", publicUrl);
+
+    return publicUrl;
+  };
   const onSave = async () => {
     if (!authUser?.id) {
       Alert.alert("Hata", "Oturum açık değil.");
@@ -266,11 +271,13 @@ export default function EditProfileScreen() {
     try {
       let finalAvatarUrl = user.avatar ?? null;
 
-      if (avatarUri !== user.avatar) {
+      if (avatarUri && avatarUri !== user.avatar) {
         setUploadingAvatar(true);
         finalAvatarUrl = await uploadAvatar(authUser.id);
         setUploadingAvatar(false);
       }
+
+      console.log("FINAL AVATAR URL:", finalAvatarUrl);
 
       const result = await setUser({
         firstName: firstName.trim(),
@@ -288,16 +295,25 @@ export default function EditProfileScreen() {
         favoriteAuthors,
       });
 
-      setSaving(false);
-
       if (result.error) {
+        console.log("PROFILE SAVE RESULT ERROR:", result.error);
+        setSaving(false);
         Alert.alert("Kaydedilemedi", result.error);
         return;
       }
 
-      Alert.alert("Kaydedildi", "Profilin güncellendi.");
-      router.back();
+      await refreshUser();
+
+      setSaving(false);
+
+      Alert.alert("Kaydedildi", "Profilin güncellendi.", [
+        {
+          text: "Tamam",
+          onPress: () => router.back(),
+        },
+      ]);
     } catch (err: any) {
+      console.log("PROFILE SAVE ERROR:", err);
       setSaving(false);
       setUploadingAvatar(false);
       Alert.alert("Hata", err?.message ?? "Profil güncellenemedi.");
@@ -372,7 +388,7 @@ export default function EditProfileScreen() {
             opacity: pressed ? 0.92 : 1,
           })}
         >
-          {avatarUri ? (
+          {avatarUri?.trim() ? (
             <Image
               source={{ uri: avatarUri }}
               style={{ width: 104, height: 104 }}

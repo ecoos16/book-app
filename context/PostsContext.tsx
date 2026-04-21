@@ -6,14 +6,12 @@ import React, {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type ReactNode,
 } from "react";
 import type { Post, PostComment } from "../types/post";
 
-/**
- * Yeni post oluştururken gereken alanlar
- */
 type CreatePostInput = {
   bookId: string;
   bookTitle: string;
@@ -27,9 +25,6 @@ type CreatePostInput = {
   shareText: string;
 };
 
-/**
- * Yeni yorum eklerken gereken alanlar
- */
 type AddCommentInput = {
   postId: string;
   text: string;
@@ -38,9 +33,6 @@ type AddCommentInput = {
   userAvatar?: string;
 };
 
-/**
- * Context dışına açılan yapı
- */
 type PostsContextValue = {
   posts: Post[];
   isHydrated: boolean;
@@ -61,23 +53,13 @@ type PostsContextValue = {
   clearAll: () => Promise<void>;
 };
 
-/**
- * Storage key
- */
 const STORAGE_KEY = "POSTS_V3";
-
 const PostsContext = createContext<PostsContextValue | null>(null);
 
-/**
- * Basit id üretici
- */
 function makeId() {
   return `${Date.now()}_${Math.random().toString(16).slice(2)}`;
 }
 
-/**
- * Yorum verisini güvenli hale getir
- */
 function normalizeComment(c: any): PostComment {
   return {
     id: typeof c?.id === "string" ? c.id : makeId(),
@@ -97,9 +79,6 @@ function normalizeComment(c: any): PostComment {
   };
 }
 
-/**
- * Post verisini güvenli hale getir
- */
 function normalizePost(p: any): Post {
   return {
     id: typeof p?.id === "string" ? p.id : makeId(),
@@ -138,14 +117,20 @@ function normalizePost(p: any): Post {
   };
 }
 
+function sortPosts(items: Post[]) {
+  return [...items].sort((a, b) => b.createdAt - a.createdAt);
+}
+
 export function PostsProvider({ children }: { children: ReactNode }) {
   const [posts, setPosts] = useState<Post[]>([]);
   const [isHydrated, setIsHydrated] = useState(false);
 
-  /**
-   * İlk açılışta storage'dan postları yükle
-   * Veri yoksa boş başlat
-   */
+  const postsRef = useRef<Post[]>([]);
+
+  useEffect(() => {
+    postsRef.current = posts;
+  }, [posts]);
+
   useEffect(() => {
     let mounted = true;
 
@@ -158,10 +143,9 @@ export function PostsProvider({ children }: { children: ReactNode }) {
         if (raw) {
           const parsed = JSON.parse(raw) as unknown;
           const safePosts = Array.isArray(parsed)
-            ? parsed.map(normalizePost)
+            ? sortPosts(parsed.map(normalizePost))
             : [];
 
-          safePosts.sort((a, b) => b.createdAt - a.createdAt);
           setPosts(safePosts);
         } else {
           setPosts([]);
@@ -178,18 +162,11 @@ export function PostsProvider({ children }: { children: ReactNode }) {
     };
   }, []);
 
-  /**
-   * Postlar değiştikçe storage'a yaz
-   */
   useEffect(() => {
     if (!isHydrated) return;
-
     AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(posts)).catch(() => {});
   }, [posts, isHydrated]);
 
-  /**
-   * Yeni post ekle
-   */
   const addPost: PostsContextValue["addPost"] = (input) => {
     const newPost = normalizePost({
       id: makeId(),
@@ -200,37 +177,36 @@ export function PostsProvider({ children }: { children: ReactNode }) {
       comments: [],
     });
 
-    setPosts((prev) =>
-      [newPost, ...prev]
-        .map(normalizePost)
-        .sort((a, b) => b.createdAt - a.createdAt),
-    );
+    setPosts((prev) => {
+      const next = sortPosts([newPost, ...prev].map(normalizePost));
+      postsRef.current = next;
+      return next;
+    });
 
     return newPost.id;
   };
 
-  /**
-   * Post güncelle
-   */
   const updatePost: PostsContextValue["updatePost"] = (id, patch) => {
-    setPosts((prev) =>
-      prev.map((p) => (p.id === id ? normalizePost({ ...p, ...patch }) : p)),
-    );
+    setPosts((prev) => {
+      const next = prev.map((p) =>
+        p.id === id ? normalizePost({ ...p, ...patch }) : p,
+      );
+      postsRef.current = next;
+      return next;
+    });
   };
 
-  /**
-   * Post sil
-   */
   const removePost: PostsContextValue["removePost"] = (id) => {
-    setPosts((prev) => prev.filter((p) => p.id !== id).map(normalizePost));
+    setPosts((prev) => {
+      const next = prev.filter((p) => p.id !== id).map(normalizePost);
+      postsRef.current = next;
+      return next;
+    });
   };
 
-  /**
-   * Like toggle
-   */
   const toggleLike: PostsContextValue["toggleLike"] = (id) => {
-    setPosts((prev) =>
-      prev.map((p) => {
+    setPosts((prev) => {
+      const next = prev.map((p) => {
         if (p.id !== id) return p;
 
         const nextLiked = !p.isLiked;
@@ -241,76 +217,71 @@ export function PostsProvider({ children }: { children: ReactNode }) {
           isLiked: nextLiked,
           likes: nextLikes,
         });
-      }),
-    );
+      });
+
+      postsRef.current = next;
+      return next;
+    });
   };
 
-  /**
-   * Yorum ekle
-   */
   const addComment: PostsContextValue["addComment"] = (input) => {
+    const trimmed = input.text.trim();
+    if (!trimmed) return;
+
     const newComment = normalizeComment({
       id: makeId(),
-      text: input.text,
+      text: trimmed,
       userId: input.userId,
       userName: input.userName,
       userAvatar: input.userAvatar,
       createdAt: Date.now(),
     });
 
-    setPosts((prev) =>
-      prev.map((p) => {
+    setPosts((prev) => {
+      const next = prev.map((p) => {
         if (p.id !== input.postId) return p;
 
         return normalizePost({
           ...p,
           comments: [...(p.comments ?? []), newComment],
         });
-      }),
-    );
+      });
+
+      postsRef.current = next;
+      return next;
+    });
   };
 
-  /**
-   * Yorum sil
-   */
   const removeComment: PostsContextValue["removeComment"] = (
     postId,
     commentId,
   ) => {
-    setPosts((prev) =>
-      prev.map((p) => {
+    setPosts((prev) => {
+      const next = prev.map((p) => {
         if (p.id !== postId) return p;
 
         return normalizePost({
           ...p,
           comments: (p.comments ?? []).filter((c) => c.id !== commentId),
         });
-      }),
-    );
+      });
+
+      postsRef.current = next;
+      return next;
+    });
   };
 
-  /**
-   * Tek post getir
-   */
   const getById: PostsContextValue["getById"] = (id) =>
     posts.find((p) => p.id === id);
 
-  /**
-   * Aynı kitaba ait postları getir
-   */
   const getByBookId: PostsContextValue["getByBookId"] = (bookId) =>
     posts.filter((p) => p.bookId === bookId);
 
-  /**
-   * Kullanıcının postlarını getir
-   */
   const getByUserId: PostsContextValue["getByUserId"] = (userId) =>
     posts.filter((p) => p.userId === userId);
 
-  /**
-   * Tüm postları temizle
-   */
   const clearAll: PostsContextValue["clearAll"] = async () => {
+    postsRef.current = [];
     setPosts([]);
 
     try {

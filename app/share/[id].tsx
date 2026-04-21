@@ -1,3 +1,5 @@
+// share/[id].tsx
+
 import { Ionicons } from "@expo/vector-icons";
 import { router, useLocalSearchParams } from "expo-router";
 import React, { useEffect, useMemo, useState } from "react";
@@ -40,11 +42,13 @@ function SoftButton({
   icon,
   onPress,
   variant = "secondary",
+  disabled = false,
 }: {
   label: string;
   icon?: keyof typeof Ionicons.glyphMap;
   onPress: () => void;
   variant?: "secondary" | "primary";
+  disabled?: boolean;
 }) {
   const backgroundColor = variant === "primary" ? COLORS.primary : COLORS.card;
   const borderColor = variant === "primary" ? COLORS.primary : COLORS.border;
@@ -52,8 +56,10 @@ function SoftButton({
 
   return (
     <Pressable
+      disabled={disabled}
       onPress={onPress}
       style={({ pressed }) => ({
+        opacity: disabled ? 0.6 : 1,
         paddingVertical: 14,
         paddingHorizontal: 16,
         borderRadius: 16,
@@ -109,6 +115,7 @@ export default function ShareBookScreen() {
    * Paylaşım metni
    */
   const [text, setText] = useState("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   /**
    * Düzenleme modunda mevcut paylaşımı input'a doldur
@@ -199,12 +206,20 @@ export default function ShareBookScreen() {
   /**
    * Yeni paylaşım veya güncelleme işlemi
    */
-  function handleSubmit() {
+  async function handleSubmit() {
     Keyboard.dismiss();
+
+    if (isSubmitting) return;
+
     const trimmed = text.trim();
 
     if (!trimmed) {
       Alert.alert("Eksik bilgi", "Lütfen paylaşım metni yaz.");
+      return;
+    }
+
+    if (trimmed.length > 700) {
+      Alert.alert("Çok uzun", "Paylaşım metni en fazla 700 karakter olabilir.");
       return;
     }
 
@@ -216,51 +231,64 @@ export default function ShareBookScreen() {
       return;
     }
 
-    /**
-     * Düzenleme modu
-     */
-    if (editingPost) {
-      updatePost(editingPost.id, {
+    try {
+      setIsSubmitting(true);
+
+      /**
+       * Düzenleme modu
+       */
+      if (editingPost) {
+        await updatePost(editingPost.id, {
+          shareText: trimmed,
+        });
+
+        Alert.alert("Güncellendi", "Paylaşımın güncellendi.", [
+          {
+            text: "Tamam",
+            onPress: () => router.back(),
+          },
+        ]);
+        return;
+      }
+
+      /**
+       * Yeni paylaşım modu
+       */
+      await addPost({
+        bookId: safeBook.id,
+        bookTitle: safeBook.title,
+        bookAuthor: safeBook.author,
+        bookThumbnail: safeBook.thumbnail,
+        userId: authUser.id,
+        userName: appUser.name || authUser.email || "ReadSphere Kullanıcısı",
+        userAvatar: appUser.avatar,
         shareText: trimmed,
       });
 
-      Alert.alert("Güncellendi", "Paylaşımın güncellendi.", [
+      setText("");
+
+      Alert.alert("Paylaşıldı", "Paylaşımın topluluk akışına eklendi.", [
         {
           text: "Tamam",
           onPress: () => router.back(),
         },
       ]);
-      return;
+    } catch (error: any) {
+      console.log("SHARE SUBMIT ERROR:", error);
+      Alert.alert(
+        "Hata",
+        error?.message || "Paylaşım sırasında bir sorun oluştu.",
+      );
+    } finally {
+      setIsSubmitting(false);
     }
-
-    /**
-     * Yeni paylaşım modu
-     */
-    addPost({
-      bookId: safeBook.id,
-      bookTitle: safeBook.title,
-      bookAuthor: safeBook.author,
-      bookThumbnail: safeBook.thumbnail,
-      userId: authUser.id,
-      userName: appUser.name || authUser.email || "ReadSphere Kullanıcısı",
-      userAvatar: appUser.avatar,
-      shareText: trimmed,
-    });
-
-    setText("");
-
-    Alert.alert("Paylaşıldı", "Paylaşımın topluluk akışına eklendi.", [
-      {
-        text: "Tamam",
-        onPress: () => router.back(),
-      },
-    ]);
   }
 
   return (
     <ScrollView
       style={{ flex: 1, backgroundColor: COLORS.bg }}
       contentContainerStyle={{ padding: 16, gap: 14, paddingBottom: 120 }}
+      keyboardShouldPersistTaps="handled"
     >
       {/* Başlık */}
       <View style={{ gap: 4 }}>
@@ -347,13 +375,21 @@ export default function ShareBookScreen() {
 
         <TextInput
           value={text}
-          onChangeText={setText}
+          onChangeText={(value) => {
+            if (value.length <= 700) {
+              setText(value);
+            }
+          }}
           placeholder="Bu kitap hakkında ne düşünüyorsun?"
           placeholderTextColor="#9a9389"
           multiline
           returnKeyType="done"
           blurOnSubmit
-          onSubmitEditing={handleSubmit}
+          onSubmitEditing={() => {
+            // multiline olduğu için burada otomatik submit yapmak yerine
+            // sadece klavyeyi kapatıyoruz
+            Keyboard.dismiss();
+          }}
           style={{
             minHeight: 160,
             borderWidth: 1,
@@ -374,10 +410,19 @@ export default function ShareBookScreen() {
 
       {/* Ana aksiyon */}
       <SoftButton
-        label={editingPost ? "Güncelle" : "Paylaş"}
+        label={
+          isSubmitting
+            ? editingPost
+              ? "Güncelleniyor..."
+              : "Paylaşılıyor..."
+            : editingPost
+              ? "Güncelle"
+              : "Paylaş"
+        }
         icon={editingPost ? "create-outline" : "share-social-outline"}
         onPress={handleSubmit}
         variant="primary"
+        disabled={isSubmitting}
       />
 
       {/* Önceki paylaşımlar */}
@@ -427,6 +472,7 @@ export default function ShareBookScreen() {
         label="Geri"
         icon="arrow-back-outline"
         onPress={() => router.back()}
+        disabled={isSubmitting}
       />
     </ScrollView>
   );

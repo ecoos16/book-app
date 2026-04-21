@@ -1,4 +1,5 @@
-//app/(tabs)/profile.tsx
+// app/(tabs)/profile.tsx
+
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
 import React, { useMemo, useState } from "react";
@@ -12,6 +13,8 @@ import {
   View,
 } from "react-native";
 
+import { useFocusEffect } from "expo-router";
+import { useCallback } from "react";
 import { useAuth } from "../../context/AuthContext";
 import { useBooks } from "../../context/BooksContext";
 import { usePosts } from "../../context/PostsContext";
@@ -153,11 +156,13 @@ function SoftButton({
   onPress,
   icon,
   variant = "secondary",
+  disabled = false,
 }: {
   label: string;
   onPress: () => void;
   icon?: keyof typeof Ionicons.glyphMap;
   variant?: "secondary" | "primary" | "danger";
+  disabled?: boolean;
 }) {
   const backgroundColor =
     variant === "primary"
@@ -182,8 +187,10 @@ function SoftButton({
 
   return (
     <Pressable
+      disabled={disabled}
       onPress={onPress}
       style={({ pressed, hovered }) => ({
+        opacity: disabled ? 0.6 : 1,
         flexDirection: "row",
         alignItems: "center",
         justifyContent: "center",
@@ -285,7 +292,14 @@ function Chip({ label, bg = "#fff" }: { label: string; bg?: string }) {
 }
 
 export default function Profile() {
-  const { user: authUser } = useAuth();
+  const { refreshUser } = useUser();
+
+  useFocusEffect(
+    useCallback(() => {
+      refreshUser();
+    }, []),
+  );
+  const { user: authUser, signOut } = useAuth();
   const { books, isHydrated, clearAll } = useBooks();
   const { posts, removePost } = usePosts();
   const { goal, setGoal } = useReadingGoal();
@@ -298,6 +312,7 @@ export default function Profile() {
   const [logPages, setLogPages] = useState<string>("");
   const [step, setStep] = useState<number>(10);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+  const [isSigningOut, setIsSigningOut] = useState(false);
 
   const steps = [10, 20, 30, 40, 50];
   const currentUserId = authUser?.id ?? "";
@@ -366,6 +381,23 @@ export default function Profile() {
     setLogPages("");
 
     Alert.alert("✅ Eklendi", `${dateKey} için ${pages} sayfa eklendi.`);
+  };
+
+  const onLogoutPress = async () => {
+    try {
+      console.log("LOGOUT BUTTON PRESSED");
+      setIsSigningOut(true);
+
+      await signOut();
+
+      console.log("SIGN OUT TAMAMLANDI");
+      router.replace("/(auth)/login");
+    } catch (error) {
+      console.log("PROFILE SIGN OUT ERROR:", error);
+      Alert.alert("Hata", "Çıkış yapılırken bir sorun oluştu.");
+    } finally {
+      setIsSigningOut(false);
+    }
   };
 
   const weekly = useMemo(() => {
@@ -510,10 +542,11 @@ export default function Profile() {
               overflow: "hidden",
             }}
           >
-            {user?.avatar ? (
+            {user?.avatar?.trim() ? (
               <Image
                 source={{ uri: user.avatar }}
                 style={{ width: 86, height: 86 }}
+                resizeMode="cover"
               />
             ) : (
               <Text
@@ -621,6 +654,14 @@ export default function Profile() {
               />
             </View>
           </View>
+
+          <SoftButton
+            label={isSigningOut ? "Çıkış yapılıyor..." : "Çıkış Yap"}
+            icon="log-out-outline"
+            variant="danger"
+            disabled={isSigningOut}
+            onPress={onLogoutPress}
+          />
         </View>
       </View>
 

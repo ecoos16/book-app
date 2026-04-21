@@ -79,6 +79,19 @@ export type Conversation = {
   lastSenderId?: string;
 
   /**
+   * Konuşma tipi bilgileri
+   *
+   * isGroup:
+   * true  -> grup sohbeti
+   * false -> birebir sohbet
+   *
+   * title:
+   * Grup konuşmalarında özel başlık göstermek için kullanılır.
+   */
+  isGroup?: boolean;
+  title?: string;
+
+  /**
    * Sohbetin hangi bağlamdan doğduğunu belirtmek için
    * opsiyonel alan bırakıyoruz.
    *

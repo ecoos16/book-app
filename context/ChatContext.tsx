@@ -246,6 +246,8 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
             ? new Date(lastMsg.created_at).getTime()
             : undefined,
           lastSenderId: lastMsg?.sender_id,
+          title: conv.title ?? undefined,
+          isGroup: conv.is_group,
         };
       },
     );
@@ -402,23 +404,97 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
     [me.id, unsubscribeFromConversation],
   );
 
+  const findExistingConversationIdWithParticipant = useCallback(
+    async (participantId: string) => {
+      if (!authUser?.id) return null;
+
+      const { data: directConversations, error: conversationsError } =
+        await supabase
+          .from("conversations")
+          .select("id, is_group")
+          .eq("is_group", false);
+
+      if (conversationsError) {
+        console.log("FIND DIRECT CONVERSATIONS ERROR:", conversationsError);
+        return null;
+      }
+
+      const directIds = (directConversations ?? []).map((c) => c.id);
+
+      if (directIds.length === 0) return null;
+
+      const { data, error } = await supabase
+        .from("conversation_participants")
+        .select("conversation_id, user_id")
+        .in("conversation_id", directIds)
+        .in("user_id", [authUser.id, participantId]);
+
+      if (error) {
+        console.log("FIND EXISTING CONVERSATION ERROR:", error);
+        return null;
+      }
+
+      const rows = (data ?? []) as Array<{
+        conversation_id: string;
+        user_id: string;
+      }>;
+
+      const grouped = new Map<string, Set<string>>();
+
+      for (const row of rows) {
+        if (!grouped.has(row.conversation_id)) {
+          grouped.set(row.conversation_id, new Set());
+        }
+        grouped.get(row.conversation_id)?.add(row.user_id);
+      }
+
+      for (const [conversationId, ids] of grouped.entries()) {
+        if (ids.has(authUser.id) && ids.has(participantId) && ids.size === 2) {
+          return conversationId;
+        }
+      }
+
+      return null;
+    },
+    [authUser?.id],
+  );
+
   const createConversation = useCallback(
     async (participant: ChatParticipant) => {
       if (!authUser?.id) {
         throw new Error("Oturum açık değil.");
       }
 
-      const existing = conversations.find((conversation) => {
-        const ids = conversation.participants.map((p) => p.id).sort();
-        const expected = [me.id, participant.id].sort();
+      if (!participant?.id || participant.id === authUser.id) {
+        throw new Error("Geçersiz katılımcı.");
+      }
+
+      const existingFromState = conversations.find((conversation) => {
+        const ids = [
+          ...new Set(conversation.participants.map((p) => p.id)),
+        ].sort();
+        const expected = [...new Set([me.id, participant.id])].sort();
 
         return (
-          ids.length === 2 && ids[0] === expected[0] && ids[1] === expected[1]
+          !conversation.isGroup &&
+          ids.length === 2 &&
+          expected.length === 2 &&
+          ids[0] === expected[0] &&
+          ids[1] === expected[1]
         );
       });
 
-      if (existing) {
-        return existing.id;
+      if (existingFromState) {
+        return existingFromState.id;
+      }
+
+      const existingFromDb = await findExistingConversationIdWithParticipant(
+        participant.id,
+      );
+
+      if (existingFromDb) {
+        await fetchConversations();
+        return existingFromDb;
       }
 
       const { data: newConversation, error: conversationError } = await supabase
@@ -426,6 +502,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
         .insert({
           is_group: false,
           created_by: authUser.id,
+          title: null,
         })
         .select("id")
         .single();
@@ -439,51 +516,90 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
 
       const conversationId = newConversation.id;
 
+      const participantRows = [...new Set([authUser.id, participant.id])].map(
+        (userId) => ({
+          conversation_id: conversationId,
+          user_id: userId,
+        }),
+      );
+
       const { error: participantsError } = await supabase
         .from("conversation_participants")
-        .insert([
-          {
-            conversation_id: conversationId,
-            user_id: authUser.id,
-          },
-          {
-            conversation_id: conversationId,
-            user_id: participant.id,
-          },
-        ]);
+        .upsert(participantRows, {
+          onConflict: "conversation_id,user_id",
+          ignoreDuplicates: true,
+        });
 
       if (participantsError) {
         console.log("CREATE PARTICIPANTS ERROR:", participantsError);
 
-        await supabase.from("conversations").delete().eq("id", conversationId);
+        const fallbackExisting =
+          await findExistingConversationIdWithParticipant(participant.id);
 
+        if (fallbackExisting) {
+          await fetchConversations();
+          return fallbackExisting;
+        }
+
+        await supabase.from("conversations").delete().eq("id", conversationId);
         throw new Error(participantsError.message);
       }
 
       await fetchConversations();
       return conversationId;
     },
-    [authUser?.id, conversations, fetchConversations, me.id],
+    [
+      authUser?.id,
+      conversations,
+      fetchConversations,
+      findExistingConversationIdWithParticipant,
+      me.id,
+    ],
   );
 
   const getOrCreateConversationByParticipant = useCallback(
     async (participant: ChatParticipant) => {
-      const existing = conversations.find((conversation) => {
-        const ids = conversation.participants.map((p) => p.id).sort();
-        const expected = [me.id, participant.id].sort();
+      if (!participant?.id || participant.id === me.id) {
+        throw new Error("Kendinle sohbet başlatılamaz.");
+      }
+
+      const existingFromState = conversations.find((conversation) => {
+        const ids = [
+          ...new Set(conversation.participants.map((p) => p.id)),
+        ].sort();
+        const expected = [...new Set([me.id, participant.id])].sort();
 
         return (
-          ids.length === 2 && ids[0] === expected[0] && ids[1] === expected[1]
+          !conversation.isGroup &&
+          ids.length === 2 &&
+          expected.length === 2 &&
+          ids[0] === expected[0] &&
+          ids[1] === expected[1]
         );
       });
 
-      if (existing) {
-        return existing.id;
+      if (existingFromState) {
+        return existingFromState.id;
+      }
+
+      const existingFromDb = await findExistingConversationIdWithParticipant(
+        participant.id,
+      );
+
+      if (existingFromDb) {
+        await fetchConversations();
+        return existingFromDb;
       }
 
       return createConversation(participant);
     },
-    [conversations, createConversation, me.id],
+    [
+      conversations,
+      createConversation,
+      fetchConversations,
+      findExistingConversationIdWithParticipant,
+      me.id,
+    ],
   );
 
   const sendMessage = useCallback(
@@ -513,22 +629,61 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
     [authUser?.id],
   );
 
-  const deleteConversation = useCallback(async (conversationId: string) => {
-    const { error } = await supabase
-      .from("conversations")
-      .delete()
-      .eq("id", conversationId);
+  const deleteConversation = useCallback(
+    async (conversationId: string) => {
+      if (!authUser?.id) return;
 
-    if (error) {
-      console.log("DELETE CONVERSATION ERROR:", error);
-      return;
-    }
+      const conversation = conversations.find((c) => c.id === conversationId);
+      const isGroup = Boolean(conversation?.isGroup);
 
-    setConversations((prev) => prev.filter((c) => c.id !== conversationId));
-    setMessages((prev) =>
-      prev.filter((m) => m.conversationId !== conversationId),
-    );
-  }, []);
+      if (isGroup) {
+        const { error } = await supabase
+          .from("conversation_participants")
+          .delete()
+          .eq("conversation_id", conversationId)
+          .eq("user_id", authUser.id);
+
+        if (error) {
+          console.log("DELETE GROUP MEMBERSHIP ERROR:", error);
+          throw new Error(error.message);
+        }
+      } else {
+        const { error: messagesError } = await supabase
+          .from("messages")
+          .delete()
+          .eq("conversation_id", conversationId);
+
+        if (messagesError) {
+          console.log("DELETE MESSAGES ERROR:", messagesError);
+        }
+
+        const { error: participantsError } = await supabase
+          .from("conversation_participants")
+          .delete()
+          .eq("conversation_id", conversationId);
+
+        if (participantsError) {
+          console.log("DELETE PARTICIPANTS ERROR:", participantsError);
+        }
+
+        const { error: conversationError } = await supabase
+          .from("conversations")
+          .delete()
+          .eq("id", conversationId);
+
+        if (conversationError) {
+          console.log("DELETE CONVERSATION ERROR:", conversationError);
+          throw new Error(conversationError.message);
+        }
+      }
+
+      setConversations((prev) => prev.filter((c) => c.id !== conversationId));
+      setMessages((prev) =>
+        prev.filter((m) => m.conversationId !== conversationId),
+      );
+    },
+    [authUser?.id, conversations],
+  );
 
   const getConversationById = useCallback(
     (conversationId: string) =>

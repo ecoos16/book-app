@@ -34,6 +34,7 @@ const COLORS = {
   dangerSoft: "#fff4f4",
   dangerBorder: "#ffd8d8",
   dangerText: "#a22b2b",
+  blueSoft: "#edf4ff",
 };
 
 function formatChatDate(timestamp?: number) {
@@ -49,10 +50,48 @@ function formatChatDate(timestamp?: number) {
 function getInitials(name: string) {
   return name
     .split(" ")
+    .filter(Boolean)
     .map((part) => part[0])
     .join("")
     .slice(0, 2)
     .toUpperCase();
+}
+
+function getConversationDisplayName(
+  item: Conversation,
+  currentUserId: string,
+): string {
+  if (item.isGroup) {
+    return item.title?.trim() || "Grup Sohbeti";
+  }
+
+  const otherUser = item.participants.find(
+    (participant: ChatParticipant) => participant.id !== currentUserId,
+  );
+
+  return otherUser?.name || "Sohbet";
+}
+
+function getConversationAvatar(
+  item: Conversation,
+  currentUserId: string,
+): string | undefined {
+  if (item.isGroup) return undefined;
+
+  const otherUser = item.participants.find(
+    (participant: ChatParticipant) => participant.id !== currentUserId,
+  );
+
+  return otherUser?.avatar;
+}
+
+function getOtherUser(
+  item: Conversation,
+  currentUserId: string,
+): ChatParticipant | undefined {
+  return item.participants.find(
+    (participant: ChatParticipant) => participant.id !== currentUserId,
+  );
 }
 
 export default function ChatListScreen() {
@@ -87,15 +126,38 @@ export default function ChatListScreen() {
     router.push(`/(tabs)/chat/${conversationId}`);
   };
 
-  const handleDeleteChat = (conversationId: string) => {
-    Alert.alert("Sohbeti Sil", "Bu konuşmayı silmek istediğine emin misin?", [
-      { text: "Vazgeç", style: "cancel" },
-      {
-        text: "Sil",
-        style: "destructive",
-        onPress: () => deleteConversation(conversationId),
-      },
-    ]);
+  const handleDeleteChat = (item: Conversation) => {
+    Alert.alert(
+      item.isGroup ? "Gruptan Ayrıl" : "Sohbeti Sil",
+      item.isGroup
+        ? "Bu gruptan ayrılmak istediğine emin misin?"
+        : "Bu konuşmayı silmek istediğine emin misin?",
+      [
+        { text: "Vazgeç", style: "cancel" },
+        {
+          text: item.isGroup ? "Ayrıl" : "Sil",
+          style: "destructive",
+          onPress: async () => {
+            try {
+              await deleteConversation(item.id);
+            } catch (error) {
+              console.log("CHAT LIST DELETE ERROR:", error);
+              Alert.alert(
+                "Hata",
+                item.isGroup
+                  ? "Gruptan ayrılırken bir sorun oluştu."
+                  : "Sohbet silinirken bir sorun oluştu.",
+              );
+            }
+          },
+        },
+      ],
+    );
+  };
+
+  const stopPress = (e: any, callback: () => void) => {
+    e?.stopPropagation?.();
+    callback();
   };
 
   return (
@@ -153,26 +215,32 @@ export default function ChatListScreen() {
           contentContainerStyle={styles.listContent}
           showsVerticalScrollIndicator={false}
           renderItem={({ item }) => {
-            const otherUser = item.participants.find(
-              (participant: ChatParticipant) =>
-                participant.id !== currentUserId,
-            );
-
+            const otherUser = getOtherUser(item, currentUserId);
             const unreadCount = getUnreadCount(item.id);
             const lastMessage = getLastMessage(item.id);
             const isTyping = Boolean(typingByConversation[item.id]);
 
-            if (!otherUser) return null;
+            const displayName = getConversationDisplayName(item, currentUserId);
+            const displayAvatar = getConversationAvatar(item, currentUserId);
+            const isGroup = Boolean(item.isGroup);
 
-            let previewText = "Henüz mesaj yok";
+            if (!isGroup && !otherUser) return null;
+
+            let previewText = isGroup
+              ? "Henüz grup mesajı yok"
+              : "Henüz mesaj yok";
 
             if (isTyping) {
-              previewText = `${otherUser.name} yazıyor...`;
+              previewText = isGroup
+                ? "Grupta biri yazıyor..."
+                : `${otherUser?.name || "Kullanıcı"} yazıyor...`;
             } else if (lastMessage) {
               previewText =
                 lastMessage.senderId === currentUserId
                   ? `Sen: ${lastMessage.text}`
-                  : lastMessage.text;
+                  : isGroup
+                    ? `${lastMessage.senderName}: ${lastMessage.text}`
+                    : lastMessage.text;
             }
 
             return (
@@ -183,24 +251,42 @@ export default function ChatListScreen() {
                   pressed && styles.cardPressed,
                 ]}
               >
-                {otherUser.avatar ? (
+                {isGroup ? (
+                  <View style={styles.groupAvatarWrap}>
+                    <Ionicons
+                      name="people-outline"
+                      size={24}
+                      color={COLORS.primary}
+                    />
+                  </View>
+                ) : displayAvatar ? (
                   <Image
-                    source={{ uri: otherUser.avatar }}
+                    source={{ uri: displayAvatar }}
                     style={styles.avatar}
                   />
                 ) : (
                   <View style={styles.avatarFallback}>
                     <Text style={styles.avatarFallbackText}>
-                      {getInitials(otherUser.name)}
+                      {getInitials(displayName)}
                     </Text>
                   </View>
                 )}
 
                 <View style={styles.chatInfo}>
                   <View style={styles.chatTopRow}>
-                    <Text style={styles.chatName} numberOfLines={1}>
-                      {otherUser.name}
-                    </Text>
+                    <View style={styles.nameWrap}>
+                      <Text style={styles.chatName} numberOfLines={1}>
+                        {displayName}
+                      </Text>
+
+                      {isGroup && (
+                        <View style={styles.groupBadge}>
+                          <Text style={styles.groupBadgeText}>
+                            Grup sohbeti
+                          </Text>
+                        </View>
+                      )}
+                    </View>
 
                     <Text style={styles.chatDate}>
                       {formatChatDate(item.lastMessageAt || item.updatedAt)}
@@ -220,7 +306,9 @@ export default function ChatListScreen() {
                   <View style={styles.bottomRow}>
                     <View style={styles.actionRow}>
                       <Pressable
-                        onPress={() => handleOpenChat(item.id)}
+                        onPress={(e) =>
+                          stopPress(e, () => handleOpenChat(item.id))
+                        }
                         style={({ pressed }) => [
                           styles.smallButton,
                           styles.openButton,
@@ -231,14 +319,18 @@ export default function ChatListScreen() {
                       </Pressable>
 
                       <Pressable
-                        onPress={() => handleDeleteChat(item.id)}
+                        onPress={(e) =>
+                          stopPress(e, () => handleDeleteChat(item))
+                        }
                         style={({ pressed }) => [
                           styles.smallButton,
                           styles.deleteButton,
                           pressed && styles.buttonPressed,
                         ]}
                       >
-                        <Text style={styles.deleteButtonText}>Sil</Text>
+                        <Text style={styles.deleteButtonText}>
+                          {isGroup ? "Ayrıl" : "Sil"}
+                        </Text>
                       </Pressable>
                     </View>
 
@@ -341,6 +433,16 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
+  groupAvatarWrap: {
+    width: 58,
+    height: 58,
+    borderRadius: 29,
+    backgroundColor: COLORS.blueSoft,
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 1,
+    borderColor: COLORS.border,
+  },
   avatarFallbackText: {
     fontSize: 16,
     fontWeight: "900",
@@ -353,8 +455,12 @@ const styles = StyleSheet.create({
   chatTopRow: {
     flexDirection: "row",
     justifyContent: "space-between",
-    alignItems: "center",
+    alignItems: "flex-start",
     gap: 12,
+  },
+  nameWrap: {
+    flex: 1,
+    gap: 4,
   },
   chatName: {
     flex: 1,
@@ -365,6 +471,20 @@ const styles = StyleSheet.create({
   chatDate: {
     fontSize: 12,
     color: COLORS.muted,
+  },
+  groupBadge: {
+    alignSelf: "flex-start",
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 999,
+    backgroundColor: COLORS.greenSoft,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+  },
+  groupBadgeText: {
+    color: COLORS.text,
+    fontSize: 11,
+    fontWeight: "800",
   },
   chatPreview: {
     marginTop: 6,
