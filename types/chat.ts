@@ -3,12 +3,23 @@
 /**
  * Sohbet katılımcısı
  *
- * Chat listesinde ve konuşma ekranında
- * kullanıcıyı hafif özetle temsil eder.
+ * Chat listesinde, mesaj ekranında ve paylaşım üzerinden
+ * sohbet başlatma akışında kullanıcıyı hafif özetle temsil eder.
  */
 export type ChatParticipant = {
+  /**
+   * Kullanıcının benzersiz kimliği
+   */
   id: string;
+
+  /**
+   * Ekranda gösterilecek adı
+   */
   name: string;
+
+  /**
+   * Profil fotoğrafı
+   */
   avatar?: string;
 };
 
@@ -27,7 +38,7 @@ export type Message = {
   conversationId: string;
 
   /**
-   * Mesajı gönderen kullanıcı bilgisi
+   * Gönderen kullanıcı bilgisi
    */
   senderId: string;
   senderName: string;
@@ -39,16 +50,12 @@ export type Message = {
   text: string;
 
   /**
-   * Oluşturulma zamanı
-   * Unix timestamp
+   * Oluşturulma zamanı (Unix timestamp - ms)
    */
   createdAt: number;
 
   /**
    * Okunma bilgisi
-   *
-   * Şimdilik özellikle karşı taraftan gelen mesajlarda kullanılıyor.
-   * Eski kayıtlarla uyumluluk için opsiyonel bırakıldı.
    */
   isRead?: boolean;
 };
@@ -57,7 +64,7 @@ export type Message = {
  * Konuşma / sohbet kaydı
  *
  * Chat liste ekranında hızlı göstermek için
- * son mesaj özeti ve bağlam alanları da tutuluyor.
+ * son mesaj özeti ve bağlam alanları da tutulur.
  */
 export type Conversation = {
   /**
@@ -71,39 +78,30 @@ export type Conversation = {
   participants: ChatParticipant[];
 
   /**
-   * Son mesaj özeti
-   * Liste ekranında hızlı gösterim için kullanılabilir
+   * Son mesaj bilgileri
    */
   lastMessageText?: string;
   lastMessageAt?: number;
   lastSenderId?: string;
 
   /**
-   * Konuşma tipi bilgileri
-   *
-   * isGroup:
-   * true  -> grup sohbeti
-   * false -> birebir sohbet
-   *
-   * title:
-   * Grup konuşmalarında özel başlık göstermek için kullanılır.
+   * Grup mu birebir mi?
    */
-  isGroup?: boolean;
+  isGroup: boolean;
+
+  /**
+   * Grup ise başlık
+   */
   title?: string;
 
   /**
-   * Sohbetin hangi bağlamdan doğduğunu belirtmek için
-   * opsiyonel alan bırakıyoruz.
-   *
-   * direct -> direkt kullanıcılar arası
-   * post   -> bir paylaşım üzerinden başlatılmış
-   * book   -> bir kitap üzerinden başlatılmış
+   * Sohbetin başlatıldığı bağlam
    */
   sourceType?: "direct" | "post" | "book";
   sourceId?: string;
 
   /**
-   * Oluşturulma ve son güncellenme zamanı
+   * Zaman bilgileri
    */
   createdAt: number;
   updatedAt: number;

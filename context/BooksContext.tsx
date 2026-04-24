@@ -28,7 +28,7 @@ type BooksContextValue = {
   isHydrated: boolean;
   addBook: (payload: AddBookPayload) => AddBookResult;
   updateBook: (id: string, patch: Partial<Omit<Book, "id">>) => void;
-  removeBook: (id: string) => void;
+  removeBook: (id: string) => Promise<void>;
   getById: (id: string) => Book | undefined;
   getByStatus: (status: BookStatus) => Book[];
   clearAll: () => Promise<void>;
@@ -307,29 +307,19 @@ export function BooksProvider({ children }: { children: ReactNode }) {
   async function deleteBookFromSupabase(book: Book, safeUserId: string | null) {
     if (!safeUserId) return;
 
-    if (book.googleId) {
-      const { error } = await supabase
-        .from("books")
-        .delete()
-        .eq("user_id", safeUserId)
-        .eq("google_book_id", book.googleId);
-
-      if (error) {
-        console.log("SUPABASE DELETE BOOK ERROR:", error);
-      }
-      return;
-    }
-
-    const { error } = await supabase
-      .from("books")
-      .delete()
-      .eq("user_id", safeUserId)
-      .eq("title", book.title)
-      .eq("author", book.author);
+    const { error } = await supabase.rpc("delete_book_everywhere", {
+      p_book_id: book.id ?? "",
+      p_google_book_id: book.googleId ?? "",
+      p_title: book.title ?? "",
+      p_author: book.author ?? "",
+    });
 
     if (error) {
-      console.log("SUPABASE DELETE FALLBACK ERROR:", error);
+      console.log("RPC DELETE BOOK ERROR:", error);
+      throw error;
     }
+
+    console.log("BOOK DELETE RPC OK");
   }
 
   async function fetchBooksFromSupabase(safeUserId: string) {
@@ -472,9 +462,7 @@ export function BooksProvider({ children }: { children: ReactNode }) {
 
       if (hydratedRef.current) {
         AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(nextBooks)).catch(
-          () => {
-            // sessiz geç
-          },
+          () => {},
         );
       }
 
@@ -502,9 +490,9 @@ export function BooksProvider({ children }: { children: ReactNode }) {
     setBooks(nextBooks);
 
     if (hydratedRef.current) {
-      AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(nextBooks)).catch(() => {
-        // sessiz geç
-      });
+      AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(nextBooks)).catch(
+        () => {},
+      );
     }
 
     void upsertBookToSupabase(newBook, userId);
@@ -537,19 +525,42 @@ export function BooksProvider({ children }: { children: ReactNode }) {
     });
   };
 
-  const removeBook: BooksContextValue["removeBook"] = (id) => {
-    setBooks((prev) => {
-      const target = prev.find((book) => book.id === id);
-      const nextBooks = prev.filter((book) => book.id !== id);
+  const removeBook: BooksContextValue["removeBook"] = async (id) => {
+    const currentBooks = booksRef.current;
+    const target = currentBooks.find((book) => book.id === id);
 
-      booksRef.current = nextBooks;
+    if (!target) return;
 
-      if (target) {
-        void deleteBookFromSupabase(target, userId);
+    const previousBooks = currentBooks;
+    const nextBooks = currentBooks.filter((book) => book.id !== id);
+
+    booksRef.current = nextBooks;
+    setBooks(nextBooks);
+
+    if (hydratedRef.current) {
+      await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(nextBooks)).catch(
+        () => {},
+      );
+    }
+
+    try {
+      await deleteBookFromSupabase(target, userId);
+    } catch (error) {
+      console.log("REMOVE BOOK ERROR:", error);
+
+      // silme başarısızsa UI geri al
+      booksRef.current = previousBooks;
+      setBooks(previousBooks);
+
+      if (hydratedRef.current) {
+        await AsyncStorage.setItem(
+          STORAGE_KEY,
+          JSON.stringify(previousBooks),
+        ).catch(() => {});
       }
 
-      return nextBooks;
-    });
+      throw error;
+    }
   };
 
   const clearAll: BooksContextValue["clearAll"] = async () => {

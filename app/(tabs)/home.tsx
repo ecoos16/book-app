@@ -337,16 +337,30 @@ function ActionPill({
   );
 }
 
+function getPostBookMeta(post: {
+  bookTitle?: string;
+  bookAuthor?: string;
+  bookThumbnail?: string;
+}) {
+  return {
+    title: post.bookTitle?.trim() || "Kitap",
+    author: post.bookAuthor?.trim() || "Yazar bilinmiyor",
+    thumbnail: post.bookThumbnail,
+  };
+}
+
 export default function Home() {
   const { user: authUser } = useAuth();
   const { user: appUser } = useUser();
   const { books } = useBooks();
   const { posts, isHydrated, toggleLike, removePost } = usePosts();
-  const { getOrCreateConversationByParticipant } = useChat();
+  const { getOrCreateConversationByParticipant, fetchConversationById } =
+    useChat();
 
   const [profile, setProfile] = useState<ProfileRow | null>(null);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [matchCounts, setMatchCounts] = useState<Record<string, number>>({});
+  const [busyLikeIds, setBusyLikeIds] = useState<Record<string, boolean>>({});
 
   useEffect(() => {
     const fetchProfile = async () => {
@@ -397,7 +411,9 @@ export default function Home() {
     });
 
     communityPosts.forEach((post) => {
-      const localBook = books.find((b) => b.id === post.bookId);
+      const localBook = post.bookId
+        ? books.find((b) => b.id === post.bookId)
+        : undefined;
 
       if (localBook?.status === "reading" && localBook.googleId) {
         items.set(localBook.id, localBook.googleId);
@@ -442,13 +458,34 @@ export default function Home() {
     fetchMatchCounts();
   }, [booksToCheckForMatches, authUser?.id]);
 
-  function getLocalBook(bookId: string) {
+  function getLocalBook(bookId?: string) {
+    if (!bookId) return undefined;
     return books.find((b) => b.id === bookId);
   }
 
-  function handleDeletePost(postId: string) {
-    removePost(postId);
-    setConfirmDeleteId(null);
+  async function handleDeletePost(postId: string) {
+    try {
+      await removePost(postId);
+      setConfirmDeleteId(null);
+    } catch (error) {
+      console.log("HOME DELETE POST ERROR:", error);
+    }
+  }
+  async function handleToggleLike(postId: string) {
+    if (busyLikeIds[postId]) return;
+
+    try {
+      setBusyLikeIds((prev) => ({ ...prev, [postId]: true }));
+      await toggleLike(postId);
+    } catch (error) {
+      console.log("HOME TOGGLE LIKE ERROR:", error);
+    } finally {
+      setBusyLikeIds((prev) => {
+        const next = { ...prev };
+        delete next[postId];
+        return next;
+      });
+    }
   }
 
   async function handleMessagePostOwner(post: {
@@ -466,12 +503,14 @@ export default function Home() {
         avatar: post.userAvatar,
       });
 
+      await fetchConversationById(conversationId);
+
       const prefillText = `${
         post.bookTitle || "Paylaşımın"
       } hakkında yazdığını gördüm, yorumun ilgimi çekti.`;
 
       router.push({
-        pathname: "/(tabs)/chat/[id]",
+        pathname: "/chat/[id]",
         params: {
           id: conversationId,
           prefill: prefillText,
@@ -727,13 +766,15 @@ export default function Home() {
             <View style={{ gap: 14 }}>
               {communityPosts.map((post) => {
                 const localBook = getLocalBook(post.bookId);
+                const bookMeta = {
+                  title: post.bookTitle?.trim() || localBook?.title || "Kitap",
+                  author:
+                    post.bookAuthor?.trim() ||
+                    localBook?.author ||
+                    "Yazar bilinmiyor",
+                  thumbnail: post.bookThumbnail || localBook?.thumbnail,
+                };
 
-                const displayTitle =
-                  post.bookTitle || localBook?.title || "Kitap";
-                const displayAuthor =
-                  post.bookAuthor || localBook?.author || "Bilinmeyen Yazar";
-                const displayThumbnail =
-                  post.bookThumbnail || localBook?.thumbnail;
                 const isMine = post.userId === currentUserId;
 
                 const postMatchCount =
@@ -837,12 +878,13 @@ export default function Home() {
                     </View>
 
                     <Pressable
-                      onPress={() =>
+                      onPress={() => {
+                        if (!post.bookId) return;
                         router.push({
                           pathname: "/book/[id]",
                           params: { id: post.bookId },
-                        })
-                      }
+                        });
+                      }}
                       style={({ pressed }) => ({
                         flexDirection: "row",
                         gap: 14,
@@ -862,9 +904,9 @@ export default function Home() {
                           justifyContent: "center",
                         }}
                       >
-                        {displayThumbnail ? (
+                        {bookMeta.thumbnail ? (
                           <Image
-                            source={{ uri: displayThumbnail }}
+                            source={{ uri: bookMeta.thumbnail }}
                             style={{
                               width: "100%",
                               height: "100%",
@@ -891,7 +933,7 @@ export default function Home() {
                             color: COLORS.text,
                           }}
                         >
-                          {displayTitle}
+                          {bookMeta.title}
                         </Text>
 
                         <Text
@@ -901,7 +943,7 @@ export default function Home() {
                             fontSize: 14,
                           }}
                         >
-                          {displayAuthor}
+                          {bookMeta.author}
                         </Text>
 
                         {postMatchCount > 0 ? (
@@ -950,11 +992,40 @@ export default function Home() {
                         gap: 10,
                       }}
                     >
-                      <ActionPill
-                        icon={post.isLiked ? "heart" : "heart-outline"}
-                        label={String(post.likes ?? 0)}
-                        onPress={() => toggleLike(post.id)}
-                      />
+                      <Pressable
+                        onPress={() => handleToggleLike(post.id)}
+                        disabled={busyLikeIds[post.id]}
+                        style={({ pressed }) => ({
+                          flexDirection: "row",
+                          alignItems: "center",
+                          gap: 6,
+                          paddingHorizontal: 12,
+                          paddingVertical: 9,
+                          borderRadius: 999,
+                          borderWidth: 1,
+                          borderColor: COLORS.border,
+                          backgroundColor: pressed
+                            ? "#ede7de"
+                            : COLORS.graySoft,
+                          opacity: busyLikeIds[post.id] ? 0.6 : 1,
+                        })}
+                      >
+                        <Ionicons
+                          name={post.isLiked ? "heart" : "heart-outline"}
+                          size={16}
+                          color={post.isLiked ? "red" : COLORS.text}
+                        />
+
+                        <Text
+                          style={{
+                            color: COLORS.text,
+                            fontWeight: "800",
+                            fontSize: 13,
+                          }}
+                        >
+                          {post.likes ?? 0}
+                        </Text>
+                      </Pressable>
 
                       <ActionPill
                         icon="chatbubble-ellipses-outline"
@@ -976,7 +1047,7 @@ export default function Home() {
                               userId: post.userId,
                               userName: post.userName,
                               userAvatar: post.userAvatar,
-                              bookTitle: displayTitle,
+                              bookTitle: bookMeta.title,
                             })
                           }
                         />
@@ -987,15 +1058,17 @@ export default function Home() {
                           <ActionPill
                             icon="create-outline"
                             label="Düzenle"
-                            onPress={() =>
+                            onPress={() => {
+                              if (!post.bookId) return;
+
                               router.push({
                                 pathname: "/share/[id]",
                                 params: {
                                   id: post.bookId,
                                   postId: post.id,
                                 },
-                              })
-                            }
+                              });
+                            }}
                           />
 
                           <ActionPill
@@ -1106,9 +1179,11 @@ export default function Home() {
                 {myPosts.map((post) => {
                   const localBook = getLocalBook(post.bookId);
                   const displayTitle =
-                    post.bookTitle || localBook?.title || "Kitap";
+                    post.bookTitle?.trim() || localBook?.title || "Kitap";
                   const displayAuthor =
-                    post.bookAuthor || localBook?.author || "Bilinmeyen Yazar";
+                    post.bookAuthor?.trim() ||
+                    localBook?.author ||
+                    "Yazar bilinmiyor";
 
                   const myPostMatchCount =
                     localBook?.status === "reading"

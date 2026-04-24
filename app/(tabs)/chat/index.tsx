@@ -1,6 +1,8 @@
+// app/(tabs)/chat/index.tsx
+
 import { Ionicons } from "@expo/vector-icons";
-import { router } from "expo-router";
-import React, { useMemo } from "react";
+import { router, useFocusEffect } from "expo-router";
+import React, { useCallback, useMemo, useState } from "react";
 import {
   Alert,
   FlatList,
@@ -13,11 +15,7 @@ import {
 } from "react-native";
 import { useAuth } from "../../../context/AuthContext";
 import { useChat } from "../../../context/ChatContext";
-import type {
-  ChatParticipant,
-  Conversation,
-  Message,
-} from "../../../types/chat";
+import type { ChatParticipant, Conversation } from "../../../types/chat";
 
 const COLORS = {
   bg: "#fbf9f5",
@@ -26,26 +24,12 @@ const COLORS = {
   text: "#2f2a24",
   muted: "#7a7268",
   primary: "#7d5739",
-  primaryDark: "#6b4a2f",
   primarySoft: "#f3e2d2",
-  greenSoft: "#dfe7cf",
+  danger: "#b64646",
+  dangerSoft: "#f8e1e1",
   graySoft: "#f3efe8",
   whiteSoft: "#fff7f4",
-  dangerSoft: "#fff4f4",
-  dangerBorder: "#ffd8d8",
-  dangerText: "#a22b2b",
-  blueSoft: "#edf4ff",
 };
-
-function formatChatDate(timestamp?: number) {
-  if (!timestamp) return "";
-
-  const date = new Date(timestamp);
-  return date.toLocaleDateString("tr-TR", {
-    day: "2-digit",
-    month: "2-digit",
-  });
-}
 
 function getInitials(name: string) {
   return name
@@ -57,299 +41,276 @@ function getInitials(name: string) {
     .toUpperCase();
 }
 
-function getConversationDisplayName(
-  item: Conversation,
-  currentUserId: string,
-): string {
-  if (item.isGroup) {
-    return item.title?.trim() || "Grup Sohbeti";
+function formatConversationTime(timestamp?: number) {
+  if (!timestamp) return "";
+
+  const date = new Date(timestamp);
+  const now = new Date();
+
+  const sameDay =
+    date.getDate() === now.getDate() &&
+    date.getMonth() === now.getMonth() &&
+    date.getFullYear() === now.getFullYear();
+
+  if (sameDay) {
+    return date.toLocaleTimeString("tr-TR", {
+      hour: "2-digit",
+      minute: "2-digit",
+    });
   }
 
-  const otherUser = item.participants.find(
-    (participant: ChatParticipant) => participant.id !== currentUserId,
-  );
-
-  return otherUser?.name || "Sohbet";
-}
-
-function getConversationAvatar(
-  item: Conversation,
-  currentUserId: string,
-): string | undefined {
-  if (item.isGroup) return undefined;
-
-  const otherUser = item.participants.find(
-    (participant: ChatParticipant) => participant.id !== currentUserId,
-  );
-
-  return otherUser?.avatar;
-}
-
-function getOtherUser(
-  item: Conversation,
-  currentUserId: string,
-): ChatParticipant | undefined {
-  return item.participants.find(
-    (participant: ChatParticipant) => participant.id !== currentUserId,
-  );
+  return date.toLocaleDateString("tr-TR", {
+    day: "2-digit",
+    month: "2-digit",
+  });
 }
 
 export default function ChatListScreen() {
   const { user: authUser } = useAuth();
-  const { conversations, messages, deleteConversation, typingByConversation } =
-    useChat();
+  const {
+    conversations,
+    loading,
+    deleteConversation,
+    leaveGroupConversation,
+    refreshConversations,
+    fetchConversationById,
+  } = useChat();
+
+  const [processingId, setProcessingId] = useState<string | null>(null);
 
   const currentUserId = authUser?.id ?? "";
 
+  useFocusEffect(
+    useCallback(() => {
+      refreshConversations().catch((error) => {
+        console.log("REFRESH CONVERSATIONS ERROR:", error);
+      });
+    }, [refreshConversations]),
+  );
+
   const sortedConversations = useMemo(() => {
-    return [...conversations].sort((a, b) => b.updatedAt - a.updatedAt);
+    return [...conversations].sort((a, b) => {
+      const aTime = a.lastMessageAt ?? a.updatedAt ?? a.createdAt;
+      const bTime = b.lastMessageAt ?? b.updatedAt ?? b.createdAt;
+      return bTime - aTime;
+    });
   }, [conversations]);
 
-  function getUnreadCount(conversationId: string) {
-    return messages.filter(
-      (message: Message) =>
-        message.conversationId === conversationId &&
-        message.senderId !== currentUserId &&
-        !message.isRead,
-    ).length;
-  }
+  const getConversationTitle = (conversation: Conversation) => {
+    if (conversation.isGroup) {
+      return conversation.title?.trim() || "Grup Sohbeti";
+    }
 
-  function getLastMessage(conversationId: string) {
-    const conversationMessages = messages
-      .filter((message) => message.conversationId === conversationId)
-      .sort((a, b) => b.createdAt - a.createdAt);
-
-    return conversationMessages[0];
-  }
-
-  const handleOpenChat = (conversationId: string) => {
-    router.push(`/(tabs)/chat/${conversationId}`);
-  };
-
-  const handleDeleteChat = (item: Conversation) => {
-    Alert.alert(
-      item.isGroup ? "Gruptan Ayrıl" : "Sohbeti Sil",
-      item.isGroup
-        ? "Bu gruptan ayrılmak istediğine emin misin?"
-        : "Bu konuşmayı silmek istediğine emin misin?",
-      [
-        { text: "Vazgeç", style: "cancel" },
-        {
-          text: item.isGroup ? "Ayrıl" : "Sil",
-          style: "destructive",
-          onPress: async () => {
-            try {
-              await deleteConversation(item.id);
-            } catch (error) {
-              console.log("CHAT LIST DELETE ERROR:", error);
-              Alert.alert(
-                "Hata",
-                item.isGroup
-                  ? "Gruptan ayrılırken bir sorun oluştu."
-                  : "Sohbet silinirken bir sorun oluştu.",
-              );
-            }
-          },
-        },
-      ],
+    const otherUser = conversation.participants.find(
+      (participant: ChatParticipant) => participant.id !== currentUserId,
     );
+
+    return otherUser?.name || "Sohbet";
   };
 
-  const stopPress = (e: any, callback: () => void) => {
-    e?.stopPropagation?.();
-    callback();
+  const getConversationAvatar = (conversation: Conversation) => {
+    if (conversation.isGroup) {
+      return null;
+    }
+
+    const otherUser = conversation.participants.find(
+      (participant: ChatParticipant) => participant.id !== currentUserId,
+    );
+
+    return otherUser?.avatar;
+  };
+
+  const getConversationFallback = (conversation: Conversation) => {
+    if (conversation.isGroup) {
+      return "GR";
+    }
+
+    const otherUser = conversation.participants.find(
+      (participant: ChatParticipant) => participant.id !== currentUserId,
+    );
+
+    return getInitials(otherUser?.name || "S");
+  };
+
+  const getConversationSubtitle = (conversation: Conversation) => {
+    if (conversation.lastMessageText?.trim()) {
+      return conversation.lastMessageText;
+    }
+
+    return conversation.isGroup
+      ? "Bu grupta henüz mesaj yok."
+      : "Henüz mesaj yok.";
+  };
+
+  const handleOpenConversation = async (conversationId: string) => {
+    try {
+      await fetchConversationById(conversationId);
+
+      router.push({
+        pathname: "/chat/[id]",
+        params: { id: conversationId },
+      });
+    } catch (error) {
+      console.log("OPEN CONVERSATION ERROR:", error);
+      Alert.alert("Hata", "Sohbet açılırken bir sorun oluştu.");
+    }
+  };
+
+  const handleDeleteOrLeave = async (conversation: Conversation) => {
+    try {
+      setProcessingId(conversation.id);
+
+      console.log(
+        conversation.isGroup ? "LEAVE GROUP PRESSED:" : "DELETE CHAT PRESSED:",
+        conversation.id,
+      );
+
+      if (conversation.isGroup) {
+        await leaveGroupConversation(conversation.id);
+      } else {
+        await deleteConversation(conversation.id);
+      }
+
+      await refreshConversations();
+    } catch (error) {
+      console.log("DELETE OR LEAVE CONVERSATION ERROR:", error);
+    } finally {
+      setProcessingId(null);
+    }
   };
 
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.header}>
         <View style={styles.headerTextArea}>
-          <Text style={styles.title}>Sohbet</Text>
+          <Text style={styles.title}>Sohbetler</Text>
           <Text style={styles.subtitle}>
-            Okurlar arasındaki konuşmaların burada görünür.
+            Mesajların ve grup konuşmaların burada görünür.
           </Text>
         </View>
 
         <Pressable
-          onPress={() => router.push("/(tabs)/chat/new")}
+          onPress={() => router.push("/chat/new")}
           style={({ pressed }) => [
             styles.newButton,
             pressed && styles.buttonPressed,
           ]}
         >
-          <Ionicons name="add" size={16} color={COLORS.whiteSoft} />
+          <Ionicons name="add" size={18} color={COLORS.whiteSoft} />
           <Text style={styles.newButtonText}>Yeni</Text>
         </Pressable>
       </View>
 
-      {sortedConversations.length === 0 ? (
-        <View style={styles.emptyCard}>
-          <View style={styles.emptyIconWrap}>
-            <Ionicons
-              name="chatbubble-ellipses-outline"
-              size={28}
-              color={COLORS.primary}
-            />
+      <FlatList<Conversation>
+        data={sortedConversations}
+        keyExtractor={(item) => item.id}
+        contentContainerStyle={styles.listContent}
+        showsVerticalScrollIndicator={false}
+        ListEmptyComponent={
+          <View style={styles.emptyCard}>
+            <View style={styles.emptyIconWrap}>
+              <Ionicons
+                name="chatbox-ellipses-outline"
+                size={28}
+                color={COLORS.primary}
+              />
+            </View>
+
+            <Text style={styles.emptyTitle}>
+              {loading ? "Sohbetler yükleniyor" : "Henüz sohbet yok"}
+            </Text>
+
+            <Text style={styles.emptyText}>
+              {loading
+                ? "Lütfen kısa bir süre bekle."
+                : "Yeni bir sohbet başlatmak için sağ üstteki butonu kullanabilirsin."}
+            </Text>
           </View>
+        }
+        renderItem={({ item }) => {
+          const avatar = getConversationAvatar(item);
+          const title = getConversationTitle(item);
+          const subtitle = getConversationSubtitle(item);
+          const time = formatConversationTime(
+            item.lastMessageAt ?? item.updatedAt ?? item.createdAt,
+          );
+          const isProcessing = processingId === item.id;
 
-          <Text style={styles.emptyTitle}>Henüz sohbet yok</Text>
-          <Text style={styles.emptyText}>
-            Yeni sohbet başlat ekranından bir kullanıcı seçip mesajlaşmaya
-            başlayabilirsin.
-          </Text>
-
-          <Pressable
-            onPress={() => router.push("/(tabs)/chat/new")}
-            style={({ pressed }) => [
-              styles.emptyActionButton,
-              pressed && styles.buttonPressed,
-            ]}
-          >
-            <Text style={styles.emptyActionButtonText}>Yeni Sohbet Başlat</Text>
-          </Pressable>
-        </View>
-      ) : (
-        <FlatList<Conversation>
-          data={sortedConversations}
-          keyExtractor={(item) => item.id}
-          contentContainerStyle={styles.listContent}
-          showsVerticalScrollIndicator={false}
-          renderItem={({ item }) => {
-            const otherUser = getOtherUser(item, currentUserId);
-            const unreadCount = getUnreadCount(item.id);
-            const lastMessage = getLastMessage(item.id);
-            const isTyping = Boolean(typingByConversation[item.id]);
-
-            const displayName = getConversationDisplayName(item, currentUserId);
-            const displayAvatar = getConversationAvatar(item, currentUserId);
-            const isGroup = Boolean(item.isGroup);
-
-            if (!isGroup && !otherUser) return null;
-
-            let previewText = isGroup
-              ? "Henüz grup mesajı yok"
-              : "Henüz mesaj yok";
-
-            if (isTyping) {
-              previewText = isGroup
-                ? "Grupta biri yazıyor..."
-                : `${otherUser?.name || "Kullanıcı"} yazıyor...`;
-            } else if (lastMessage) {
-              previewText =
-                lastMessage.senderId === currentUserId
-                  ? `Sen: ${lastMessage.text}`
-                  : isGroup
-                    ? `${lastMessage.senderName}: ${lastMessage.text}`
-                    : lastMessage.text;
-            }
-
-            return (
-              <Pressable
-                onPress={() => handleOpenChat(item.id)}
-                style={({ pressed }) => [
-                  styles.chatCard,
-                  pressed && styles.cardPressed,
-                ]}
-              >
-                {isGroup ? (
-                  <View style={styles.groupAvatarWrap}>
+          return (
+            <Pressable
+              onPress={() => handleOpenConversation(item.id)}
+              style={({ pressed }) => [
+                styles.chatCard,
+                pressed && styles.buttonPressed,
+              ]}
+            >
+              <View style={styles.chatMain}>
+                {item.isGroup ? (
+                  <View style={styles.groupAvatar}>
                     <Ionicons
                       name="people-outline"
-                      size={24}
+                      size={22}
                       color={COLORS.primary}
                     />
                   </View>
-                ) : displayAvatar ? (
-                  <Image
-                    source={{ uri: displayAvatar }}
-                    style={styles.avatar}
-                  />
+                ) : avatar ? (
+                  <Image source={{ uri: avatar }} style={styles.avatar} />
                 ) : (
                   <View style={styles.avatarFallback}>
                     <Text style={styles.avatarFallbackText}>
-                      {getInitials(displayName)}
+                      {getConversationFallback(item)}
                     </Text>
                   </View>
                 )}
 
                 <View style={styles.chatInfo}>
-                  <View style={styles.chatTopRow}>
-                    <View style={styles.nameWrap}>
-                      <Text style={styles.chatName} numberOfLines={1}>
-                        {displayName}
-                      </Text>
-
-                      {isGroup && (
-                        <View style={styles.groupBadge}>
-                          <Text style={styles.groupBadgeText}>
-                            Grup sohbeti
-                          </Text>
-                        </View>
-                      )}
-                    </View>
-
-                    <Text style={styles.chatDate}>
-                      {formatChatDate(item.lastMessageAt || item.updatedAt)}
+                  <View style={styles.topRow}>
+                    <Text numberOfLines={1} style={styles.chatTitle}>
+                      {title}
                     </Text>
+                    <Text style={styles.chatTime}>{time}</Text>
                   </View>
 
-                  <Text
-                    style={[
-                      styles.chatPreview,
-                      isTyping && styles.chatPreviewTyping,
-                    ]}
-                    numberOfLines={1}
-                  >
-                    {previewText}
+                  <Text numberOfLines={2} style={styles.chatSubtitle}>
+                    {subtitle}
                   </Text>
 
-                  <View style={styles.bottomRow}>
-                    <View style={styles.actionRow}>
-                      <Pressable
-                        onPress={(e) =>
-                          stopPress(e, () => handleOpenChat(item.id))
-                        }
-                        style={({ pressed }) => [
-                          styles.smallButton,
-                          styles.openButton,
-                          pressed && styles.buttonPressed,
-                        ]}
-                      >
-                        <Text style={styles.openButtonText}>Aç</Text>
-                      </Pressable>
-
-                      <Pressable
-                        onPress={(e) =>
-                          stopPress(e, () => handleDeleteChat(item))
-                        }
-                        style={({ pressed }) => [
-                          styles.smallButton,
-                          styles.deleteButton,
-                          pressed && styles.buttonPressed,
-                        ]}
-                      >
-                        <Text style={styles.deleteButtonText}>
-                          {isGroup ? "Ayrıl" : "Sil"}
-                        </Text>
-                      </Pressable>
-                    </View>
-
-                    {unreadCount > 0 ? (
-                      <View style={styles.unreadBadge}>
-                        <Text style={styles.unreadBadgeText}>
-                          {unreadCount}
-                        </Text>
-                      </View>
-                    ) : (
-                      <View style={styles.readDot} />
-                    )}
-                  </View>
+                  {item.isGroup ? (
+                    <Text style={styles.groupBadge}>Grup sohbeti</Text>
+                  ) : null}
                 </View>
+              </View>
+
+              <Pressable
+                onPress={(event) => {
+                  event.stopPropagation?.();
+                  Alert.alert(
+                    "TEST",
+                    item.isGroup ? "Ayrıl basıldı" : "Sil basıldı",
+                  );
+                  handleDeleteOrLeave(item);
+                }}
+                style={({ pressed }) => [
+                  styles.actionButton,
+                  item.isGroup ? styles.leaveButton : styles.deleteButton,
+                  pressed && styles.buttonPressed,
+                ]}
+              >
+                <Text
+                  style={[
+                    styles.actionButtonText,
+                    item.isGroup
+                      ? styles.leaveButtonText
+                      : styles.deleteButtonText,
+                  ]}
+                >
+                  {item.isGroup ? "Ayrıl" : "Sil"}
+                </Text>
               </Pressable>
-            );
-          }}
-        />
-      )}
+            </Pressable>
+          );
+        }}
+      />
     </SafeAreaView>
   );
 }
@@ -360,11 +321,10 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.bg,
   },
   header: {
-    paddingHorizontal: 18,
-    paddingTop: 12,
+    paddingHorizontal: 16,
+    paddingTop: 10,
     paddingBottom: 14,
     flexDirection: "row",
-    justifyContent: "space-between",
     alignItems: "center",
     gap: 12,
   },
@@ -372,7 +332,7 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   title: {
-    fontSize: 30,
+    fontSize: 28,
     fontWeight: "900",
     color: COLORS.text,
   },
@@ -383,41 +343,77 @@ const styles = StyleSheet.create({
     lineHeight: 20,
   },
   newButton: {
-    backgroundColor: COLORS.primary,
-    paddingHorizontal: 16,
-    paddingVertical: 11,
-    borderRadius: 999,
     flexDirection: "row",
     alignItems: "center",
     gap: 6,
+    backgroundColor: COLORS.primary,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: 999,
   },
   newButtonText: {
     color: COLORS.whiteSoft,
-    fontWeight: "800",
-    fontSize: 14,
+    fontSize: 13,
+    fontWeight: "900",
   },
   listContent: {
-    paddingHorizontal: 18,
-    paddingBottom: 28,
+    paddingHorizontal: 16,
+    paddingBottom: 24,
     gap: 12,
   },
   chatCard: {
-    flexDirection: "row",
-    gap: 12,
-    padding: 15,
     borderWidth: 1,
     borderColor: COLORS.border,
-    borderRadius: 22,
     backgroundColor: COLORS.card,
+    borderRadius: 22,
+    padding: 14,
+    gap: 12,
     shadowColor: "#2f2a24",
-    shadowOpacity: 0.05,
-    shadowRadius: 12,
-    shadowOffset: { width: 0, height: 6 },
-    elevation: 2,
+    shadowOpacity: 0.04,
+    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 5 },
+    elevation: 1,
   },
-  cardPressed: {
-    opacity: 0.94,
-    transform: [{ scale: 0.995 }],
+  chatMain: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+  },
+  chatInfo: {
+    flex: 1,
+  },
+  topRow: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: 8,
+  },
+  chatTitle: {
+    flex: 1,
+    fontSize: 16,
+    fontWeight: "900",
+    color: COLORS.text,
+  },
+  chatTime: {
+    fontSize: 12,
+    color: COLORS.muted,
+    marginTop: 2,
+  },
+  chatSubtitle: {
+    marginTop: 6,
+    fontSize: 13,
+    color: COLORS.muted,
+    lineHeight: 19,
+  },
+  groupBadge: {
+    marginTop: 8,
+    alignSelf: "flex-start",
+    backgroundColor: COLORS.primarySoft,
+    color: COLORS.primary,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 999,
+    fontSize: 11,
+    fontWeight: "900",
   },
   avatar: {
     width: 58,
@@ -433,133 +429,51 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
-  groupAvatarWrap: {
+  avatarFallbackText: {
+    fontSize: 15,
+    fontWeight: "900",
+    color: COLORS.primary,
+  },
+  groupAvatar: {
     width: 58,
     height: 58,
     borderRadius: 29,
-    backgroundColor: COLORS.blueSoft,
+    backgroundColor: COLORS.primarySoft,
     alignItems: "center",
     justifyContent: "center",
-    borderWidth: 1,
-    borderColor: COLORS.border,
   },
-  avatarFallbackText: {
-    fontSize: 16,
-    fontWeight: "900",
-    color: COLORS.primary,
-  },
-  chatInfo: {
-    flex: 1,
-    justifyContent: "center",
-  },
-  chatTopRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "flex-start",
-    gap: 12,
-  },
-  nameWrap: {
-    flex: 1,
-    gap: 4,
-  },
-  chatName: {
-    flex: 1,
-    fontSize: 17,
-    fontWeight: "900",
-    color: COLORS.text,
-  },
-  chatDate: {
-    fontSize: 12,
-    color: COLORS.muted,
-  },
-  groupBadge: {
-    alignSelf: "flex-start",
-    paddingHorizontal: 8,
-    paddingVertical: 4,
+  actionButton: {
+    alignSelf: "flex-end",
+    paddingHorizontal: 14,
+    paddingVertical: 9,
     borderRadius: 999,
-    backgroundColor: COLORS.greenSoft,
-    borderWidth: 1,
-    borderColor: COLORS.border,
-  },
-  groupBadgeText: {
-    color: COLORS.text,
-    fontSize: 11,
-    fontWeight: "800",
-  },
-  chatPreview: {
-    marginTop: 6,
-    fontSize: 14,
-    color: COLORS.muted,
-  },
-  chatPreviewTyping: {
-    color: COLORS.primary,
-    fontStyle: "italic",
-  },
-  bottomRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    gap: 10,
-    marginTop: 12,
-  },
-  actionRow: {
-    flexDirection: "row",
-    gap: 8,
-    flexWrap: "wrap",
-  },
-  smallButton: {
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 999,
-    borderWidth: 1,
-  },
-  openButton: {
-    backgroundColor: COLORS.graySoft,
-    borderColor: COLORS.border,
-  },
-  openButtonText: {
-    color: COLORS.text,
-    fontSize: 13,
-    fontWeight: "800",
   },
   deleteButton: {
     backgroundColor: COLORS.dangerSoft,
-    borderColor: COLORS.dangerBorder,
+  },
+  leaveButton: {
+    backgroundColor: COLORS.graySoft,
   },
   deleteButtonText: {
-    color: COLORS.dangerText,
-    fontSize: 13,
-    fontWeight: "800",
+    color: COLORS.danger,
   },
-  unreadBadge: {
-    minWidth: 30,
-    height: 30,
-    paddingHorizontal: 8,
-    borderRadius: 999,
-    backgroundColor: COLORS.primary,
-    alignItems: "center",
-    justifyContent: "center",
+  leaveButtonText: {
+    color: COLORS.text,
   },
-  unreadBadgeText: {
-    color: COLORS.whiteSoft,
+  actionButtonText: {
     fontSize: 12,
     fontWeight: "900",
   },
-  readDot: {
-    width: 10,
-    height: 10,
-    borderRadius: 5,
-    backgroundColor: "#d8d2c7",
+  actionButtonDisabled: {
+    opacity: 0.7,
   },
   emptyCard: {
-    marginHorizontal: 18,
     marginTop: 24,
-    padding: 22,
+    padding: 20,
     borderRadius: 22,
     borderWidth: 1,
     borderColor: COLORS.border,
     backgroundColor: COLORS.card,
-    alignItems: "flex-start",
   },
   emptyIconWrap: {
     width: 52,
@@ -571,7 +485,7 @@ const styles = StyleSheet.create({
     marginBottom: 14,
   },
   emptyTitle: {
-    fontSize: 20,
+    fontSize: 19,
     fontWeight: "900",
     color: COLORS.text,
   },
@@ -580,18 +494,6 @@ const styles = StyleSheet.create({
     fontSize: 14,
     lineHeight: 21,
     color: COLORS.muted,
-  },
-  emptyActionButton: {
-    marginTop: 18,
-    alignSelf: "flex-start",
-    backgroundColor: COLORS.primary,
-    paddingHorizontal: 16,
-    paddingVertical: 11,
-    borderRadius: 999,
-  },
-  emptyActionButtonText: {
-    color: COLORS.whiteSoft,
-    fontWeight: "900",
   },
   buttonPressed: {
     opacity: 0.9,

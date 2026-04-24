@@ -1,3 +1,5 @@
+// context/ChatContext.tsx
+
 import React, {
   createContext,
   useCallback,
@@ -25,6 +27,7 @@ type ChatContextType = {
 
   sendMessage: (conversationId: string, text: string) => Promise<void>;
   deleteConversation: (conversationId: string) => Promise<void>;
+  leaveGroupConversation: (conversationId: string) => Promise<void>;
 
   getConversationById: (conversationId: string) => Conversation | undefined;
   getMessagesByConversationId: (conversationId: string) => Message[];
@@ -33,15 +36,15 @@ type ChatContextType = {
   clearAllChats: () => void;
 
   fetchMessagesForConversation: (conversationId: string) => Promise<void>;
+  refreshConversations: () => Promise<void>;
+  fetchConversationById: (
+    conversationId: string,
+  ) => Promise<Conversation | null>;
   subscribeToConversation: (conversationId: string) => void;
   unsubscribeFromConversation: () => void;
 };
 
 const ChatContext = createContext<ChatContextType | undefined>(undefined);
-
-function sortConversations(items: Conversation[]) {
-  return [...items].sort((a, b) => b.updatedAt - a.updatedAt);
-}
 
 type DbProfile = {
   id: string;
@@ -82,6 +85,14 @@ function pickSingleProfile(
   return profile;
 }
 
+function sortConversations(items: Conversation[]) {
+  return [...items].sort((a, b) => {
+    const aTime = a.lastMessageAt ?? a.updatedAt ?? a.createdAt;
+    const bTime = b.lastMessageAt ?? b.updatedAt ?? b.createdAt;
+    return bTime - aTime;
+  });
+}
+
 export function ChatProvider({ children }: { children: React.ReactNode }) {
   const { user: authUser } = useAuth();
   const { user: appUser } = useUser();
@@ -100,10 +111,10 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
   const me: ChatParticipant = useMemo(
     () => ({
       id: authUser?.id || "guest",
-      name: appUser.name || authUser?.email || "Kullanıcı",
-      avatar: appUser.avatar,
+      name: appUser?.name || authUser?.email || "Kullanıcı",
+      avatar: appUser?.avatar,
     }),
-    [authUser?.id, authUser?.email, appUser.name, appUser.avatar],
+    [authUser?.email, authUser?.id, appUser?.avatar, appUser?.name],
   );
 
   const mapParticipant = useCallback(
@@ -143,14 +154,129 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
     [mapParticipant, me.id],
   );
 
+  const fetchConversationById = useCallback(
+    async (conversationId: string): Promise<Conversation | null> => {
+      if (!conversationId) return null;
+
+      const { data: conversationRow, error: conversationError } = await supabase
+        .from("conversations")
+        .select("id, created_at, updated_at, title, is_group")
+        .eq("id", conversationId)
+        .maybeSingle();
+
+      if (conversationError || !conversationRow) {
+        console.log("FETCH CONVERSATION BY ID ERROR:", conversationError);
+        return null;
+      }
+
+      const { data: participantRows, error: participantsError } = await supabase
+        .from("conversation_participants")
+        .select(
+          `
+          conversation_id,
+          user_id,
+          last_read_at,
+          profiles:user_id (
+            id,
+            full_name,
+            username,
+            avatar_url
+          )
+        `,
+        )
+        .eq("conversation_id", conversationId);
+
+      if (participantsError) {
+        console.log(
+          "FETCH CONVERSATION PARTICIPANTS ERROR:",
+          participantsError,
+        );
+        return null;
+      }
+
+      const { data: latestMessageRows } = await supabase
+        .from("messages")
+        .select(
+          `
+          id,
+          conversation_id,
+          sender_id,
+          content,
+          created_at,
+          profiles:sender_id (
+            id,
+            full_name,
+            username,
+            avatar_url
+          )
+        `,
+        )
+        .eq("conversation_id", conversationId)
+        .order("created_at", { ascending: false })
+        .limit(1);
+
+      const conv = conversationRow as DbConversationRow;
+      const typedParticipants = (participantRows ?? []) as DbParticipantRow[];
+      const lastMsg = ((latestMessageRows ?? []) as DbMessageRow[])[0];
+
+      const builtConversation: Conversation = {
+        id: conv.id,
+        participants: typedParticipants.map((row) =>
+          mapParticipant(row.profiles, row.user_id),
+        ),
+        createdAt: new Date(conv.created_at).getTime(),
+        updatedAt: new Date(conv.updated_at).getTime(),
+        lastMessageText: lastMsg?.content,
+        lastMessageAt: lastMsg
+          ? new Date(lastMsg.created_at).getTime()
+          : undefined,
+        lastSenderId: lastMsg?.sender_id,
+        title: conv.title ?? undefined,
+        isGroup: conv.is_group,
+      };
+
+      setConversations((prev) => {
+        const filtered = prev.filter(
+          (item) => item.id !== builtConversation.id,
+        );
+        return sortConversations([builtConversation, ...filtered]);
+      });
+
+      return builtConversation;
+    },
+    [mapParticipant],
+  );
+
   const fetchConversations = useCallback(async () => {
     if (!authUser?.id) {
       setConversations([]);
       return;
     }
 
-    const { data: participantRows, error: participantsError } =
-      await supabase.from("conversation_participants").select(`
+    const { data: myParticipantRows, error: myParticipantsError } =
+      await supabase
+        .from("conversation_participants")
+        .select("conversation_id")
+        .eq("user_id", authUser.id);
+
+    if (myParticipantsError) {
+      console.log("FETCH MY PARTICIPANTS ERROR:", myParticipantsError);
+      return;
+    }
+
+    const myConversationIds = (myParticipantRows ?? []).map(
+      (row: { conversation_id: string }) => row.conversation_id,
+    );
+
+    if (myConversationIds.length === 0) {
+      setConversations([]);
+      return;
+    }
+
+    const { data: allParticipantRows } = await supabase
+      .from("conversation_participants")
+      .select(
+        `
         conversation_id,
         user_id,
         last_read_at,
@@ -160,36 +286,16 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
           username,
           avatar_url
         )
-      `);
+      `,
+      )
+      .in("conversation_id", myConversationIds);
 
-    if (participantsError) {
-      console.log("FETCH PARTICIPANTS ERROR:", participantsError);
-      return;
-    }
-
-    const typedParticipantRows = (participantRows ?? []) as DbParticipantRow[];
-
-    const myConversationIds = typedParticipantRows
-      .filter((row) => row.user_id === authUser.id)
-      .map((row) => row.conversation_id);
-
-    if (myConversationIds.length === 0) {
-      setConversations([]);
-      return;
-    }
-
-    const { data: conversationRows, error: conversationsError } = await supabase
+    const { data: conversationRows } = await supabase
       .from("conversations")
       .select("id, created_at, updated_at, title, is_group")
-      .in("id", myConversationIds)
-      .order("updated_at", { ascending: false });
+      .in("id", myConversationIds);
 
-    if (conversationsError) {
-      console.log("FETCH CONVERSATIONS ERROR:", conversationsError);
-      return;
-    }
-
-    const { data: latestMessages, error: latestMessagesError } = await supabase
+    const { data: latestMessages } = await supabase
       .from("messages")
       .select(
         `
@@ -209,10 +315,10 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
       .in("conversation_id", myConversationIds)
       .order("created_at", { ascending: false });
 
-    if (latestMessagesError) {
-      console.log("FETCH LATEST MESSAGES ERROR:", latestMessagesError);
-    }
-
+    const typedParticipantRows = (allParticipantRows ??
+      []) as DbParticipantRow[];
+    const typedConversationRows = (conversationRows ??
+      []) as DbConversationRow[];
     const typedLatestMessages = (latestMessages ?? []) as DbMessageRow[];
 
     const latestByConversation = new Map<string, DbMessageRow>();
@@ -228,9 +334,6 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
       current.push(mapParticipant(row.profiles, row.user_id));
       participantsByConversation.set(row.conversation_id, current);
     }
-
-    const typedConversationRows = (conversationRows ??
-      []) as DbConversationRow[];
 
     const nextConversations: Conversation[] = typedConversationRows.map(
       (conv) => {
@@ -255,8 +358,14 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
     setConversations(sortConversations(nextConversations));
   }, [authUser?.id, mapParticipant]);
 
+  const refreshConversations = useCallback(async () => {
+    await fetchConversations();
+  }, [fetchConversations]);
+
   const fetchMessagesForConversation = useCallback(
     async (conversationId: string) => {
+      if (!conversationId) return;
+
       const { data, error } = await supabase
         .from("messages")
         .select(
@@ -279,17 +388,15 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
 
       if (error) {
         console.log("FETCH MESSAGES ERROR:", error);
-        return;
+        throw new Error(error.message);
       }
 
       const typedRows = (data ?? []) as DbMessageRow[];
       const mapped = typedRows.map((row) => mapMessage(row));
 
       setMessages((prev) => {
-        const otherConversations = prev.filter(
-          (m) => m.conversationId !== conversationId,
-        );
-        return [...otherConversations, ...mapped];
+        const others = prev.filter((m) => m.conversationId !== conversationId);
+        return [...others, ...mapped];
       });
     },
     [mapMessage],
@@ -306,11 +413,13 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
         return;
       }
 
-      setLoading(true);
-      await fetchConversations();
-
-      if (active) {
-        setLoading(false);
+      try {
+        setLoading(true);
+        await fetchConversations();
+      } finally {
+        if (active) {
+          setLoading(false);
+        }
       }
     };
 
@@ -330,6 +439,8 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
 
   const subscribeToConversation = useCallback(
     (conversationId: string) => {
+      if (!conversationId) return;
+
       unsubscribeFromConversation();
 
       const channel = supabase
@@ -355,7 +466,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
               .from("profiles")
               .select("id, full_name, username, avatar_url")
               .eq("id", inserted.sender_id)
-              .single();
+              .maybeSingle();
 
             const senderProfile = senderProfileRaw as DbProfile | null;
 
@@ -404,209 +515,43 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
     [me.id, unsubscribeFromConversation],
   );
 
-  const findExistingConversationIdWithParticipant = useCallback(
-    async (participantId: string) => {
-      if (!authUser?.id) return null;
-
-      const { data: directConversations, error: conversationsError } =
-        await supabase
-          .from("conversations")
-          .select("id, is_group")
-          .eq("is_group", false);
-
-      if (conversationsError) {
-        console.log("FIND DIRECT CONVERSATIONS ERROR:", conversationsError);
-        return null;
-      }
-
-      const directIds = (directConversations ?? []).map((c) => c.id);
-
-      if (directIds.length === 0) return null;
-
-      const { data, error } = await supabase
-        .from("conversation_participants")
-        .select("conversation_id, user_id")
-        .in("conversation_id", directIds)
-        .in("user_id", [authUser.id, participantId]);
-
-      if (error) {
-        console.log("FIND EXISTING CONVERSATION ERROR:", error);
-        return null;
-      }
-
-      const rows = (data ?? []) as Array<{
-        conversation_id: string;
-        user_id: string;
-      }>;
-
-      const grouped = new Map<string, Set<string>>();
-
-      for (const row of rows) {
-        if (!grouped.has(row.conversation_id)) {
-          grouped.set(row.conversation_id, new Set());
-        }
-        grouped.get(row.conversation_id)?.add(row.user_id);
-      }
-
-      for (const [conversationId, ids] of grouped.entries()) {
-        if (ids.has(authUser.id) && ids.has(participantId) && ids.size === 2) {
-          return conversationId;
-        }
-      }
-
-      return null;
-    },
-    [authUser?.id],
-  );
-
-  const createConversation = useCallback(
-    async (participant: ChatParticipant) => {
-      if (!authUser?.id) {
-        throw new Error("Oturum açık değil.");
-      }
-
-      if (!participant?.id || participant.id === authUser.id) {
-        throw new Error("Geçersiz katılımcı.");
-      }
-
-      const existingFromState = conversations.find((conversation) => {
-        const ids = [
-          ...new Set(conversation.participants.map((p) => p.id)),
-        ].sort();
-        const expected = [...new Set([me.id, participant.id])].sort();
-
-        return (
-          !conversation.isGroup &&
-          ids.length === 2 &&
-          expected.length === 2 &&
-          ids[0] === expected[0] &&
-          ids[1] === expected[1]
-        );
-      });
-
-      if (existingFromState) {
-        return existingFromState.id;
-      }
-
-      const existingFromDb = await findExistingConversationIdWithParticipant(
-        participant.id,
-      );
-
-      if (existingFromDb) {
-        await fetchConversations();
-        return existingFromDb;
-      }
-
-      const { data: newConversation, error: conversationError } = await supabase
-        .from("conversations")
-        .insert({
-          is_group: false,
-          created_by: authUser.id,
-          title: null,
-        })
-        .select("id")
-        .single();
-
-      if (conversationError || !newConversation) {
-        console.log("CREATE CONVERSATION ERROR:", conversationError);
-        throw new Error(
-          conversationError?.message || "Konuşma oluşturulamadı.",
-        );
-      }
-
-      const conversationId = newConversation.id;
-
-      const participantRows = [...new Set([authUser.id, participant.id])].map(
-        (userId) => ({
-          conversation_id: conversationId,
-          user_id: userId,
-        }),
-      );
-
-      const { error: participantsError } = await supabase
-        .from("conversation_participants")
-        .upsert(participantRows, {
-          onConflict: "conversation_id,user_id",
-          ignoreDuplicates: true,
-        });
-
-      if (participantsError) {
-        console.log("CREATE PARTICIPANTS ERROR:", participantsError);
-
-        const fallbackExisting =
-          await findExistingConversationIdWithParticipant(participant.id);
-
-        if (fallbackExisting) {
-          await fetchConversations();
-          return fallbackExisting;
-        }
-
-        await supabase.from("conversations").delete().eq("id", conversationId);
-        throw new Error(participantsError.message);
-      }
-
-      await fetchConversations();
-      return conversationId;
-    },
-    [
-      authUser?.id,
-      conversations,
-      fetchConversations,
-      findExistingConversationIdWithParticipant,
-      me.id,
-    ],
-  );
-
   const getOrCreateConversationByParticipant = useCallback(
     async (participant: ChatParticipant) => {
       if (!participant?.id || participant.id === me.id) {
         throw new Error("Kendinle sohbet başlatılamaz.");
       }
 
-      const existingFromState = conversations.find((conversation) => {
-        const ids = [
-          ...new Set(conversation.participants.map((p) => p.id)),
-        ].sort();
-        const expected = [...new Set([me.id, participant.id])].sort();
-
-        return (
-          !conversation.isGroup &&
-          ids.length === 2 &&
-          expected.length === 2 &&
-          ids[0] === expected[0] &&
-          ids[1] === expected[1]
-        );
-      });
-
-      if (existingFromState) {
-        return existingFromState.id;
-      }
-
-      const existingFromDb = await findExistingConversationIdWithParticipant(
-        participant.id,
+      const { data, error } = await supabase.rpc(
+        "find_or_create_direct_conversation",
+        {
+          other_user_id: participant.id,
+        },
       );
 
-      if (existingFromDb) {
-        await fetchConversations();
-        return existingFromDb;
+      if (error || !data) {
+        console.log("RPC FIND OR CREATE CONVERSATION ERROR:", error);
+        throw new Error(error?.message || "Sohbet oluşturulamadı.");
       }
 
-      return createConversation(participant);
+      const conversationId = String(data);
+      await fetchConversationById(conversationId);
+
+      return conversationId;
     },
-    [
-      conversations,
-      createConversation,
-      fetchConversations,
-      findExistingConversationIdWithParticipant,
-      me.id,
-    ],
+    [fetchConversationById, me.id],
+  );
+
+  const createConversation = useCallback(
+    async (participant: ChatParticipant) => {
+      return getOrCreateConversationByParticipant(participant);
+    },
+    [getOrCreateConversationByParticipant],
   );
 
   const sendMessage = useCallback(
     async (conversationId: string, text: string) => {
       const trimmed = text.trim();
-      if (!trimmed) return;
-      if (!authUser?.id) return;
+      if (!trimmed || !authUser?.id) return;
 
       const { error } = await supabase.from("messages").insert({
         conversation_id: conversationId,
@@ -615,74 +560,139 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
       });
 
       if (error) {
-        console.log("SEND MESSAGE ERROR:", error);
         throw new Error(error.message);
       }
 
+      const nowIso = new Date().toISOString();
+      const nowTs = new Date(nowIso).getTime();
+
       await supabase
         .from("conversations")
-        .update({
-          updated_at: new Date().toISOString(),
-        })
+        .update({ updated_at: nowIso })
         .eq("id", conversationId);
+
+      setConversations((prev) =>
+        sortConversations(
+          prev.map((conversation) =>
+            conversation.id === conversationId
+              ? {
+                  ...conversation,
+                  updatedAt: nowTs,
+                  lastMessageText: trimmed,
+                  lastMessageAt: nowTs,
+                  lastSenderId: authUser.id,
+                }
+              : conversation,
+          ),
+        ),
+      );
     },
     [authUser?.id],
   );
 
-  const deleteConversation = useCallback(
+  const removeConversationLocally = useCallback((conversationId: string) => {
+    setConversations((prev) => prev.filter((c) => c.id !== conversationId));
+    setMessages((prev) =>
+      prev.filter((m) => m.conversationId !== conversationId),
+    );
+  }, []);
+
+  const removeSelfFromParticipants = useCallback(
     async (conversationId: string) => {
-      if (!authUser?.id) return;
+      if (!authUser?.id) {
+        throw new Error("Oturum açık değil.");
+      }
 
-      const conversation = conversations.find((c) => c.id === conversationId);
-      const isGroup = Boolean(conversation?.isGroup);
+      const { error } = await supabase
+        .from("conversation_participants")
+        .delete()
+        .eq("conversation_id", conversationId)
+        .eq("user_id", authUser.id);
 
-      if (isGroup) {
-        const { error } = await supabase
-          .from("conversation_participants")
-          .delete()
-          .eq("conversation_id", conversationId)
-          .eq("user_id", authUser.id);
+      if (error) {
+        console.log("REMOVE SELF FROM PARTICIPANTS ERROR:", error);
+        throw new Error(error.message);
+      }
+    },
+    [authUser?.id],
+  );
 
-        if (error) {
-          console.log("DELETE GROUP MEMBERSHIP ERROR:", error);
-          throw new Error(error.message);
-        }
-      } else {
-        const { error: messagesError } = await supabase
+  const cleanupConversationIfEmpty = useCallback(
+    async (conversationId: string) => {
+      const { data: remainingRows, error: remainingError } = await supabase
+        .from("conversation_participants")
+        .select("id")
+        .eq("conversation_id", conversationId)
+        .limit(1);
+
+      if (remainingError) {
+        console.log("CHECK REMAINING PARTICIPANTS ERROR:", remainingError);
+        return;
+      }
+
+      if (!remainingRows || remainingRows.length === 0) {
+        const { error: deleteMessagesError } = await supabase
           .from("messages")
           .delete()
           .eq("conversation_id", conversationId);
 
-        if (messagesError) {
-          console.log("DELETE MESSAGES ERROR:", messagesError);
+        if (deleteMessagesError) {
+          console.log(
+            "DELETE EMPTY CONVERSATION MESSAGES ERROR:",
+            deleteMessagesError,
+          );
         }
 
-        const { error: participantsError } = await supabase
-          .from("conversation_participants")
-          .delete()
-          .eq("conversation_id", conversationId);
-
-        if (participantsError) {
-          console.log("DELETE PARTICIPANTS ERROR:", participantsError);
-        }
-
-        const { error: conversationError } = await supabase
+        const { error: deleteConversationError } = await supabase
           .from("conversations")
           .delete()
           .eq("id", conversationId);
 
-        if (conversationError) {
-          console.log("DELETE CONVERSATION ERROR:", conversationError);
-          throw new Error(conversationError.message);
+        if (deleteConversationError) {
+          console.log(
+            "DELETE EMPTY CONVERSATION ERROR:",
+            deleteConversationError,
+          );
         }
       }
-
-      setConversations((prev) => prev.filter((c) => c.id !== conversationId));
-      setMessages((prev) =>
-        prev.filter((m) => m.conversationId !== conversationId),
-      );
     },
-    [authUser?.id, conversations],
+    [],
+  );
+
+  const leaveGroupConversation = useCallback(
+    async (conversationId: string) => {
+      removeConversationLocally(conversationId);
+
+      const { error } = await supabase.rpc("leave_conversation", {
+        p_conversation_id: conversationId,
+      });
+
+      if (error) {
+        console.log("RPC LEAVE CONVERSATION ERROR:", error);
+        throw error;
+      }
+
+      await refreshConversations();
+    },
+    [refreshConversations, removeConversationLocally],
+  );
+
+  const deleteConversation = useCallback(
+    async (conversationId: string) => {
+      removeConversationLocally(conversationId);
+
+      const { error } = await supabase.rpc("leave_conversation", {
+        p_conversation_id: conversationId,
+      });
+
+      if (error) {
+        console.log("RPC DELETE CONVERSATION ERROR:", error);
+        throw error;
+      }
+
+      await refreshConversations();
+    },
+    [refreshConversations, removeConversationLocally],
   );
 
   const getConversationById = useCallback(
@@ -728,7 +738,8 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
     setConversations([]);
     setMessages([]);
     setTypingByConversation({});
-  }, []);
+    unsubscribeFromConversation();
+  }, [unsubscribeFromConversation]);
 
   const value = useMemo<ChatContextType>(
     () => ({
@@ -740,11 +751,14 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
       getOrCreateConversationByParticipant,
       sendMessage,
       deleteConversation,
+      leaveGroupConversation,
       getConversationById,
       getMessagesByConversationId,
       markConversationAsRead,
       clearAllChats,
       fetchMessagesForConversation,
+      refreshConversations,
+      fetchConversationById,
       subscribeToConversation,
       unsubscribeFromConversation,
     }),
@@ -757,11 +771,14 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
       getOrCreateConversationByParticipant,
       sendMessage,
       deleteConversation,
+      leaveGroupConversation,
       getConversationById,
       getMessagesByConversationId,
       markConversationAsRead,
       clearAllChats,
       fetchMessagesForConversation,
+      refreshConversations,
+      fetchConversationById,
       subscribeToConversation,
       unsubscribeFromConversation,
     ],

@@ -318,6 +318,7 @@ export default function BookDetail() {
 
   const [storageBook, setStorageBook] = useState<Book | undefined>(undefined);
   const [loadingFallback, setLoadingFallback] = useState(true);
+  const [deletingBook, setDeletingBook] = useState(false);
 
   const [sameReaders, setSameReaders] = useState<SameReader[]>([]);
   const [loadingReaders, setLoadingReaders] = useState(true);
@@ -525,29 +526,21 @@ export default function BookDetail() {
     [relatedPeople, currentUserId],
   );
 
-  const confirmDelete = () => {
+  const confirmDelete = async () => {
     if (!book) return;
 
-    Alert.alert(
-      "Kitabı sil",
-      `"${book.title}" kitaplığından kaldırılacak.\n\nBu işlem geri alınamaz.`,
-      [
-        { text: "Vazgeç", style: "cancel" },
-        {
-          text: "Sil",
-          style: "destructive",
-          onPress: async () => {
-            try {
-              await Promise.resolve(removeBook(book.id));
-              router.back();
-            } catch (error) {
-              console.log("BOOK DELETE ERROR:", error);
-              Alert.alert("Hata", "Kitap silinirken bir sorun oluştu.");
-            }
-          },
-        },
-      ],
-    );
+    try {
+      setDeletingBook(true);
+      console.log("BOOK DELETE BUTTON PRESSED:", book.id);
+
+      await removeBook(book.id);
+
+      router.replace("/library");
+    } catch (error) {
+      console.log("BOOK DELETE ERROR:", error);
+    } finally {
+      setDeletingBook(false);
+    }
   };
 
   const cycleStatus = () => {
@@ -636,7 +629,7 @@ export default function BookDetail() {
 Bu kitap hakkında ne düşünüyorsun?`;
 
       router.push({
-        pathname: "/(tabs)/chat/[id]",
+        pathname: "/chat/[id]",
         params: {
           id: String(conversationId),
           prefill: prefillText,
@@ -713,7 +706,7 @@ Bu kitap hakkında ne düşünüyorsun?`;
       }
 
       router.push({
-        pathname: "/(tabs)/chat/[id]",
+        pathname: "/chat/[id]",
         params: {
           id: String(conversationData.id),
         },
@@ -1363,14 +1356,16 @@ Bu kitap hakkında ne düşünüyorsun?`;
         onPress={() => router.push(`/share/${book.id}` as const)}
         variant="primary"
       />
-
       <SoftPillButton
-        label="Kitabı Sil"
+        label={deletingBook ? "Siliniyor..." : "Kitabı Sil"}
         icon="trash-outline"
-        onPress={confirmDelete}
         variant="danger"
+        disabled={deletingBook}
+        onPress={() => {
+          Alert.alert("TEST", "Kitabı Sil butonuna basıldı");
+          confirmDelete();
+        }}
       />
-
       <SoftPillButton
         label="Geri"
         icon="arrow-back-outline"

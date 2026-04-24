@@ -1,312 +1,550 @@
 // context/PostsContext.tsx
 
-import AsyncStorage from "@react-native-async-storage/async-storage";
 import React, {
   createContext,
+  useCallback,
   useContext,
   useEffect,
   useMemo,
   useRef,
   useState,
-  type ReactNode,
 } from "react";
+import { supabase } from "../lib/supabase";
 import type { Post, PostComment } from "../types/post";
 
-type CreatePostInput = {
-  bookId: string;
-  bookTitle: string;
-  bookAuthor: string;
+type AddPostInput = {
+  bookId?: string;
+  bookTitle?: string;
+  bookAuthor?: string;
   bookThumbnail?: string;
-
   userId: string;
   userName: string;
   userAvatar?: string;
-
   shareText: string;
+  sourceType?: "manual" | "book-share";
 };
 
-type AddCommentInput = {
-  postId: string;
-  text: string;
-  userId: string;
-  userName: string;
-  userAvatar?: string;
+type UpdatePostInput = {
+  shareText?: string;
 };
 
-type PostsContextValue = {
+type PostsContextType = {
   posts: Post[];
+  loading: boolean;
   isHydrated: boolean;
-
-  addPost: (input: CreatePostInput) => string;
-  updatePost: (id: string, patch: Partial<Omit<Post, "id">>) => void;
-  removePost: (id: string) => void;
-
-  toggleLike: (id: string) => void;
-
-  addComment: (input: AddCommentInput) => void;
-  removeComment: (postId: string, commentId: string) => void;
-
-  getById: (id: string) => Post | undefined;
+  addPost: (input: AddPostInput) => Promise<string | null>;
+  updatePost: (postId: string, input: UpdatePostInput) => Promise<void>;
+  deletePost: (postId: string) => Promise<void>;
+  removePost: (postId: string) => Promise<void>;
+  toggleLike: (postId: string) => Promise<void>;
+  addComment: (postId: string, text: string) => Promise<void>;
+  removeComment: (postId: string, commentId: string) => Promise<void>;
+  getById: (postId: string) => Post | undefined;
   getByBookId: (bookId: string) => Post[];
-  getByUserId: (userId: string) => Post[];
-
-  clearAll: () => Promise<void>;
+  refreshPosts: () => Promise<void>;
 };
 
-const STORAGE_KEY = "POSTS_V3";
-const PostsContext = createContext<PostsContextValue | null>(null);
+const PostsContext = createContext<PostsContextType | undefined>(undefined);
 
-function makeId() {
-  return `${Date.now()}_${Math.random().toString(16).slice(2)}`;
+type DbProfile = {
+  id: string;
+  full_name: string | null;
+  username: string | null;
+  avatar_url: string | null;
+};
+
+type DbBook = {
+  id: string;
+  title: string | null;
+  author: string | null;
+  thumbnail: string | null;
+};
+
+type DbPostRow = {
+  id: string;
+  user_id: string;
+  book_id: string | null;
+  book_title: string | null;
+  book_author: string | null;
+  book_thumbnail: string | null;
+  content: string | null;
+  created_at: string;
+  updated_at: string | null;
+  profiles: DbProfile | DbProfile[] | null;
+  books: DbBook | DbBook[] | null;
+};
+
+type DbLikeRow = {
+  post_id: string;
+  user_id: string;
+};
+
+type DbCommentRow = {
+  id: string;
+  post_id: string;
+  user_id: string;
+  content: string;
+  created_at: string;
+  profiles: DbProfile | DbProfile[] | null;
+};
+
+function pickOne<T>(value: T | T[] | null | undefined): T | null {
+  if (!value) return null;
+  if (Array.isArray(value)) return value[0] ?? null;
+  return value;
 }
 
-function normalizeComment(c: any): PostComment {
-  return {
-    id: typeof c?.id === "string" ? c.id : makeId(),
-    text: typeof c?.text === "string" ? c.text : "",
-    createdAt:
-      typeof c?.createdAt === "number"
-        ? c.createdAt
-        : typeof c?.createdAt === "string"
-          ? new Date(c.createdAt).getTime() || Date.now()
-          : Date.now(),
-    userId: typeof c?.userId === "string" ? c.userId : "unknown",
-    userName: typeof c?.userName === "string" ? c.userName : "Kullanıcı",
-    userAvatar:
-      typeof c?.userAvatar === "string" && c.userAvatar.length > 0
-        ? c.userAvatar
-        : undefined,
-  };
+function normalizeName(profile: DbProfile | null) {
+  return profile?.full_name?.trim() || profile?.username?.trim() || "Kullanıcı";
 }
 
-function normalizePost(p: any): Post {
-  return {
-    id: typeof p?.id === "string" ? p.id : makeId(),
-
-    bookId: typeof p?.bookId === "string" ? p.bookId : "",
-    bookTitle: typeof p?.bookTitle === "string" ? p.bookTitle : "Kitap",
-    bookAuthor:
-      typeof p?.bookAuthor === "string" ? p.bookAuthor : "Yazar bilinmiyor",
-    bookThumbnail:
-      typeof p?.bookThumbnail === "string" && p.bookThumbnail.length > 0
-        ? p.bookThumbnail
-        : undefined,
-
-    userId: typeof p?.userId === "string" ? p.userId : "unknown",
-    userName: typeof p?.userName === "string" ? p.userName : "Kullanıcı",
-    userAvatar:
-      typeof p?.userAvatar === "string" && p.userAvatar.length > 0
-        ? p.userAvatar
-        : undefined,
-
-    shareText: typeof p?.shareText === "string" ? p.shareText : "",
-
-    createdAt:
-      typeof p?.createdAt === "number"
-        ? p.createdAt
-        : typeof p?.createdAt === "string"
-          ? new Date(p.createdAt).getTime() || Date.now()
-          : Date.now(),
-
-    likes: typeof p?.likes === "number" ? p.likes : 0,
-    isLiked: typeof p?.isLiked === "boolean" ? p.isLiked : false,
-
-    comments: Array.isArray(p?.comments)
-      ? p.comments.map(normalizeComment)
-      : [],
-  };
-}
-
-function sortPosts(items: Post[]) {
-  return [...items].sort((a, b) => b.createdAt - a.createdAt);
-}
-
-export function PostsProvider({ children }: { children: ReactNode }) {
+export function PostsProvider({ children }: { children: React.ReactNode }) {
   const [posts, setPosts] = useState<Post[]>([]);
-  const [isHydrated, setIsHydrated] = useState(false);
+  const [loading, setLoading] = useState(true);
 
-  const postsRef = useRef<Post[]>([]);
+  const likeLocksRef = useRef<Set<string>>(new Set());
+  const commentLocksRef = useRef<Set<string>>(new Set());
 
-  useEffect(() => {
-    postsRef.current = posts;
-  }, [posts]);
+  const mapRowsToPosts = useCallback(
+    (
+      postRows: DbPostRow[],
+      likeRows: DbLikeRow[],
+      commentRows: DbCommentRow[],
+      currentUserId?: string,
+    ): Post[] => {
+      return postRows.map((row) => {
+        const profile = pickOne(row.profiles);
+        const book = pickOne(row.books);
 
-  useEffect(() => {
-    let mounted = true;
+        const postLikes = likeRows.filter((like) => like.post_id === row.id);
+        const postCommentsRaw = commentRows.filter(
+          (comment) => comment.post_id === row.id,
+        );
 
-    (async () => {
-      try {
-        const raw = await AsyncStorage.getItem(STORAGE_KEY);
+        const mappedComments: PostComment[] = postCommentsRaw.map((comment) => {
+          const commentProfile = pickOne(comment.profiles);
 
-        if (!mounted) return;
+          return {
+            id: comment.id,
+            postId: comment.post_id,
+            userId: comment.user_id,
+            userName: normalizeName(commentProfile),
+            userAvatar: commentProfile?.avatar_url ?? undefined,
+            text: comment.content,
+            createdAt: new Date(comment.created_at).getTime(),
+          };
+        });
 
-        if (raw) {
-          const parsed = JSON.parse(raw) as unknown;
-          const safePosts = Array.isArray(parsed)
-            ? sortPosts(parsed.map(normalizePost))
-            : [];
+        return {
+          id: row.id,
+          userId: row.user_id,
+          userName: normalizeName(profile),
+          userAvatar: profile?.avatar_url ?? undefined,
+          bookId: row.book_id ?? undefined,
+          bookTitle: row.book_title?.trim() || book?.title?.trim() || "Kitap",
+          bookAuthor:
+            row.book_author?.trim() ||
+            book?.author?.trim() ||
+            "Yazar bilinmiyor",
+          bookThumbnail: row.book_thumbnail || book?.thumbnail || undefined,
+          shareText: row.content?.trim() || "",
+          likes: postLikes.length,
+          isLiked: !!currentUserId
+            ? postLikes.some((like) => like.user_id === currentUserId)
+            : false,
+          comments: mappedComments.sort((a, b) => a.createdAt - b.createdAt),
+          createdAt: new Date(row.created_at).getTime(),
+          updatedAt: row.updated_at
+            ? new Date(row.updated_at).getTime()
+            : undefined,
+          sourceType: "book-share",
+        };
+      });
+    },
+    [],
+  );
 
-          setPosts(safePosts);
-        } else {
-          setPosts([]);
-        }
-      } catch {
-        setPosts([]);
-      } finally {
-        if (mounted) setIsHydrated(true);
+  const refreshPosts = useCallback(async () => {
+    try {
+      setLoading(true);
+
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+
+      const currentUserId = user?.id;
+
+      const { data: postRowsRaw, error: postError } = await supabase
+        .from("posts")
+        .select(
+          `
+          id,
+          user_id,
+          book_id,
+          book_title,
+          book_author,
+          book_thumbnail,
+          content,
+          created_at,
+          updated_at,
+          profiles:user_id (
+            id,
+            full_name,
+            username,
+            avatar_url
+          ),
+          books:book_id (
+            id,
+            title,
+            author,
+            thumbnail
+          )
+        `,
+        )
+        .order("created_at", { ascending: false });
+
+      if (postError) {
+        console.log("REFRESH POSTS ERROR:", postError);
+        throw new Error(postError.message);
       }
-    })();
 
-    return () => {
-      mounted = false;
-    };
-  }, []);
+      const { data: likeRowsRaw, error: likeError } = await supabase
+        .from("post_likes")
+        .select("post_id, user_id");
+
+      if (likeError) {
+        console.log("REFRESH LIKES ERROR:", likeError);
+        throw new Error(likeError.message);
+      }
+
+      const { data: commentRowsRaw, error: commentError } = await supabase
+        .from("post_comments")
+        .select(
+          `
+          id,
+          post_id,
+          user_id,
+          content,
+          created_at,
+          profiles:user_id (
+            id,
+            full_name,
+            username,
+            avatar_url
+          )
+        `,
+        )
+        .order("created_at", { ascending: true });
+
+      if (commentError) {
+        console.log("REFRESH COMMENTS ERROR:", commentError);
+        throw new Error(commentError.message);
+      }
+
+      const nextPosts = mapRowsToPosts(
+        (postRowsRaw ?? []) as DbPostRow[],
+        (likeRowsRaw ?? []) as DbLikeRow[],
+        (commentRowsRaw ?? []) as DbCommentRow[],
+        currentUserId,
+      );
+
+      setPosts(nextPosts);
+    } catch (error) {
+      console.log("REFRESH POSTS CATCH ERROR:", error);
+    } finally {
+      setLoading(false);
+    }
+  }, [mapRowsToPosts]);
 
   useEffect(() => {
-    if (!isHydrated) return;
-    AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(posts)).catch(() => {});
-  }, [posts, isHydrated]);
+    refreshPosts();
+  }, [refreshPosts]);
 
-  const addPost: PostsContextValue["addPost"] = (input) => {
-    const newPost = normalizePost({
-      id: makeId(),
-      ...input,
-      createdAt: Date.now(),
-      likes: 0,
-      isLiked: false,
-      comments: [],
-    });
+  const addPost = useCallback(
+    async (input: AddPostInput) => {
+      const { data, error } = await supabase
+        .from("posts")
+        .insert({
+          user_id: input.userId,
+          book_id: input.bookId ?? null,
+          book_title: input.bookTitle ?? null,
+          book_author: input.bookAuthor ?? null,
+          book_thumbnail: input.bookThumbnail ?? null,
+          content: input.shareText,
+        })
+        .select("id")
+        .single();
 
-    setPosts((prev) => {
-      const next = sortPosts([newPost, ...prev].map(normalizePost));
-      postsRef.current = next;
-      return next;
-    });
+      if (error) {
+        console.log("ADD POST ERROR:", error);
+        throw new Error(error.message);
+      }
 
-    return newPost.id;
-  };
+      await refreshPosts();
+      return data?.id ?? null;
+    },
+    [refreshPosts],
+  );
 
-  const updatePost: PostsContextValue["updatePost"] = (id, patch) => {
-    setPosts((prev) => {
-      const next = prev.map((p) =>
-        p.id === id ? normalizePost({ ...p, ...patch }) : p,
-      );
-      postsRef.current = next;
-      return next;
-    });
-  };
+  const updatePost = useCallback(
+    async (postId: string, input: UpdatePostInput) => {
+      const { error } = await supabase
+        .from("posts")
+        .update({
+          content: input.shareText,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", postId);
 
-  const removePost: PostsContextValue["removePost"] = (id) => {
-    setPosts((prev) => {
-      const next = prev.filter((p) => p.id !== id).map(normalizePost);
-      postsRef.current = next;
-      return next;
-    });
-  };
+      if (error) {
+        console.log("UPDATE POST ERROR:", error);
+        throw new Error(error.message);
+      }
 
-  const toggleLike: PostsContextValue["toggleLike"] = (id) => {
-    setPosts((prev) => {
-      const next = prev.map((p) => {
-        if (p.id !== id) return p;
+      await refreshPosts();
+    },
+    [refreshPosts],
+  );
 
-        const nextLiked = !p.isLiked;
-        const nextLikes = Math.max(0, (p.likes ?? 0) + (nextLiked ? 1 : -1));
+  const deletePost = useCallback(async (postId: string) => {
+    const { error: likesError } = await supabase
+      .from("post_likes")
+      .delete()
+      .eq("post_id", postId);
 
-        return normalizePost({
-          ...p,
-          isLiked: nextLiked,
-          likes: nextLikes,
-        });
-      });
+    if (likesError) {
+      console.log("DELETE POST LIKES ERROR:", likesError);
+      throw new Error(likesError.message);
+    }
 
-      postsRef.current = next;
-      return next;
-    });
-  };
+    const { error: commentsError } = await supabase
+      .from("post_comments")
+      .delete()
+      .eq("post_id", postId);
 
-  const addComment: PostsContextValue["addComment"] = (input) => {
-    const trimmed = input.text.trim();
+    if (commentsError) {
+      console.log("DELETE POST COMMENTS ERROR:", commentsError);
+      throw new Error(commentsError.message);
+    }
+
+    const { error } = await supabase.from("posts").delete().eq("id", postId);
+
+    if (error) {
+      console.log("DELETE POST ERROR:", error);
+      throw new Error(error.message);
+    }
+
+    setPosts((prev) => prev.filter((post) => post.id !== postId));
+  }, []);
+  const removePost = useCallback(
+    async (postId: string) => {
+      await deletePost(postId);
+    },
+    [deletePost],
+  );
+
+  const toggleLike = useCallback(
+    async (postId: string) => {
+      if (likeLocksRef.current.has(postId)) return;
+      likeLocksRef.current.add(postId);
+
+      try {
+        const {
+          data: { user },
+        } = await supabase.auth.getUser();
+
+        if (!user?.id) {
+          throw new Error("Oturum açık değil.");
+        }
+
+        const { data: existingLike, error: checkError } = await supabase
+          .from("post_likes")
+          .select("id")
+          .eq("post_id", postId)
+          .eq("user_id", user.id)
+          .maybeSingle();
+
+        if (checkError) {
+          console.log("CHECK LIKE ERROR:", checkError);
+          throw new Error(checkError.message);
+        }
+
+        if (existingLike?.id) {
+          const { error: deleteError } = await supabase
+            .from("post_likes")
+            .delete()
+            .eq("id", existingLike.id);
+
+          if (deleteError) {
+            console.log("DELETE LIKE ERROR:", deleteError);
+            throw new Error(deleteError.message);
+          }
+        } else {
+          const { error: insertError } = await supabase
+            .from("post_likes")
+            .insert({
+              post_id: postId,
+              user_id: user.id,
+            });
+
+          if (insertError && (insertError as any).code !== "23505") {
+            console.log("INSERT LIKE ERROR:", insertError);
+            throw new Error(insertError.message);
+          }
+        }
+
+        await refreshPosts();
+      } finally {
+        likeLocksRef.current.delete(postId);
+      }
+    },
+    [refreshPosts],
+  );
+
+  const addComment = useCallback(async (postId: string, text: string) => {
+    const trimmed = text.trim();
     if (!trimmed) return;
+    if (commentLocksRef.current.has(postId)) return;
 
-    const newComment = normalizeComment({
-      id: makeId(),
-      text: trimmed,
-      userId: input.userId,
-      userName: input.userName,
-      userAvatar: input.userAvatar,
-      createdAt: Date.now(),
-    });
-
-    setPosts((prev) => {
-      const next = prev.map((p) => {
-        if (p.id !== input.postId) return p;
-
-        return normalizePost({
-          ...p,
-          comments: [...(p.comments ?? []), newComment],
-        });
-      });
-
-      postsRef.current = next;
-      return next;
-    });
-  };
-
-  const removeComment: PostsContextValue["removeComment"] = (
-    postId,
-    commentId,
-  ) => {
-    setPosts((prev) => {
-      const next = prev.map((p) => {
-        if (p.id !== postId) return p;
-
-        return normalizePost({
-          ...p,
-          comments: (p.comments ?? []).filter((c) => c.id !== commentId),
-        });
-      });
-
-      postsRef.current = next;
-      return next;
-    });
-  };
-
-  const getById: PostsContextValue["getById"] = (id) =>
-    posts.find((p) => p.id === id);
-
-  const getByBookId: PostsContextValue["getByBookId"] = (bookId) =>
-    posts.filter((p) => p.bookId === bookId);
-
-  const getByUserId: PostsContextValue["getByUserId"] = (userId) =>
-    posts.filter((p) => p.userId === userId);
-
-  const clearAll: PostsContextValue["clearAll"] = async () => {
-    postsRef.current = [];
-    setPosts([]);
+    commentLocksRef.current.add(postId);
 
     try {
-      await AsyncStorage.removeItem(STORAGE_KEY);
-    } catch {
-      // sessiz geç
-    }
-  };
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
 
-  const value = useMemo<PostsContextValue>(
+      if (!user?.id) {
+        throw new Error("Oturum açık değil.");
+      }
+
+      const { data: insertedComment, error } = await supabase
+        .from("post_comments")
+        .insert({
+          post_id: postId,
+          user_id: user.id,
+          content: trimmed,
+        })
+        .select(
+          `
+          id,
+          post_id,
+          user_id,
+          content,
+          created_at,
+          profiles:user_id (
+            id,
+            full_name,
+            username,
+            avatar_url
+          )
+        `,
+        )
+        .single();
+
+      if (error) {
+        console.log("ADD COMMENT ERROR:", error);
+        throw new Error(error.message);
+      }
+
+      const profile = pickOne(
+        (insertedComment as DbCommentRow | null)?.profiles ?? null,
+      );
+
+      const newComment: PostComment = {
+        id: insertedComment.id,
+        postId: insertedComment.post_id,
+        userId: insertedComment.user_id,
+        userName: normalizeName(profile),
+        userAvatar: profile?.avatar_url ?? undefined,
+        text: insertedComment.content,
+        createdAt: new Date(insertedComment.created_at).getTime(),
+      };
+
+      setPosts((prev) =>
+        prev.map((post) =>
+          post.id === postId
+            ? {
+                ...post,
+                comments: [...(post.comments ?? []), newComment].sort(
+                  (a, b) => a.createdAt - b.createdAt,
+                ),
+              }
+            : post,
+        ),
+      );
+    } finally {
+      commentLocksRef.current.delete(postId);
+    }
+  }, []);
+
+  const removeComment = useCallback(
+    async (postId: string, commentId: string) => {
+      const { error } = await supabase.rpc("delete_post_comment", {
+        p_post_id: postId,
+        p_comment_id: commentId,
+      });
+
+      if (error) {
+        console.log("RPC REMOVE COMMENT ERROR:", error);
+        throw error;
+      }
+
+      setPosts((prev) =>
+        prev.map((post) =>
+          post.id === postId
+            ? {
+                ...post,
+                comments: (post.comments ?? []).filter(
+                  (comment) => comment.id !== commentId,
+                ),
+              }
+            : post,
+        ),
+      );
+    },
+    [],
+  );
+
+  const getById = useCallback(
+    (postId: string) => posts.find((post) => post.id === postId),
+    [posts],
+  );
+
+  const getByBookId = useCallback(
+    (bookId: string) => posts.filter((post) => post.bookId === bookId),
+    [posts],
+  );
+
+  const value = useMemo<PostsContextType>(
     () => ({
       posts,
-      isHydrated,
+      loading,
+      isHydrated: !loading,
       addPost,
       updatePost,
+      deletePost,
       removePost,
       toggleLike,
       addComment,
       removeComment,
       getById,
       getByBookId,
-      getByUserId,
-      clearAll,
+      refreshPosts,
     }),
-    [posts, isHydrated],
+    [
+      posts,
+      loading,
+      addPost,
+      updatePost,
+      deletePost,
+      removePost,
+      toggleLike,
+      addComment,
+      removeComment,
+      getById,
+      getByBookId,
+      refreshPosts,
+    ],
   );
 
   return (
@@ -315,11 +553,11 @@ export function PostsProvider({ children }: { children: ReactNode }) {
 }
 
 export function usePosts() {
-  const ctx = useContext(PostsContext);
+  const context = useContext(PostsContext);
 
-  if (!ctx) {
+  if (!context) {
     throw new Error("usePosts must be used within PostsProvider");
   }
 
-  return ctx;
+  return context;
 }

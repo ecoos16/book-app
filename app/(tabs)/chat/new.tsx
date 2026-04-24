@@ -1,7 +1,10 @@
+// app/(tabs)/chat/new.tsx
+
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
 import React, { useEffect, useMemo, useState } from "react";
 import {
+  Alert,
   FlatList,
   Image,
   Pressable,
@@ -22,20 +25,10 @@ const COLORS = {
   text: "#2f2a24",
   muted: "#7a7268",
   primary: "#7d5739",
-  primaryDark: "#6b4a2f",
   primarySoft: "#f3e2d2",
   graySoft: "#f3efe8",
   whiteSoft: "#fff7f4",
 };
-
-function getInitials(name: string) {
-  return name
-    .split(" ")
-    .map((part) => part[0])
-    .join("")
-    .slice(0, 2)
-    .toUpperCase();
-}
 
 type ProfileRow = {
   id: string;
@@ -44,12 +37,26 @@ type ProfileRow = {
   avatar_url: string | null;
 };
 
+function getInitials(name: string) {
+  return name
+    .split(" ")
+    .filter(Boolean)
+    .map((part) => part[0])
+    .join("")
+    .slice(0, 2)
+    .toUpperCase();
+}
+
 export default function NewChatScreen() {
   const { user: authUser } = useAuth();
-  const { getOrCreateConversationByParticipant } = useChat();
+  const { getOrCreateConversationByParticipant, fetchConversationById } =
+    useChat();
 
   const [users, setUsers] = useState<ChatParticipant[]>([]);
   const [loading, setLoading] = useState(true);
+  const [startingUserId, setStartingUserId] = useState<string | null>(null);
+
+  const currentUserId = authUser?.id ?? "";
 
   useEffect(() => {
     let active = true;
@@ -61,36 +68,45 @@ export default function NewChatScreen() {
         return;
       }
 
-      setLoading(true);
+      try {
+        setLoading(true);
 
-      const { data, error } = await supabase
-        .from("profiles")
-        .select("id, full_name, username, avatar_url")
-        .neq("id", authUser.id)
-        .order("full_name", { ascending: true });
+        const { data, error } = await supabase
+          .from("profiles")
+          .select("id, full_name, username, avatar_url")
+          .neq("id", authUser.id)
+          .order("full_name", { ascending: true });
 
-      if (!active) return;
+        if (!active) return;
 
-      if (error) {
-        console.log("FETCH CHAT USERS ERROR:", error);
-        setUsers([]);
-        setLoading(false);
-        return;
+        if (error) {
+          console.log("FETCH CHAT USERS ERROR:", error);
+          setUsers([]);
+          return;
+        }
+
+        const mapped: ChatParticipant[] = ((data ?? []) as ProfileRow[]).map(
+          (profile) => ({
+            id: profile.id,
+            name:
+              profile.full_name?.trim() ||
+              profile.username?.trim() ||
+              "Kullanıcı",
+            avatar: profile.avatar_url ?? undefined,
+          }),
+        );
+
+        setUsers(mapped);
+      } catch (error) {
+        console.log("FETCH CHAT USERS CATCH ERROR:", error);
+        if (active) {
+          setUsers([]);
+        }
+      } finally {
+        if (active) {
+          setLoading(false);
+        }
       }
-
-      const mapped: ChatParticipant[] = ((data ?? []) as ProfileRow[]).map(
-        (profile) => ({
-          id: profile.id,
-          name:
-            profile.full_name?.trim() ||
-            profile.username?.trim() ||
-            "Kullanıcı",
-          avatar: profile.avatar_url ?? undefined,
-        }),
-      );
-
-      setUsers(mapped);
-      setLoading(false);
     };
 
     fetchUsers();
@@ -100,21 +116,58 @@ export default function NewChatScreen() {
     };
   }, [authUser?.id]);
 
-  const handleStartChat = async (participant: ChatParticipant) => {
-    try {
-      const conversationId =
-        await getOrCreateConversationByParticipant(participant);
+  const availableUsers = useMemo(() => {
+    return users.filter((user) => user.id !== currentUserId);
+  }, [users, currentUserId]);
 
-      router.replace({
-        pathname: "/(tabs)/chat/[id]",
-        params: { id: conversationId },
+  const handleStartChat = async (participant: ChatParticipant) => {
+    if (!participant?.id) {
+      Alert.alert("Hata", "Geçersiz kullanıcı.");
+      return;
+    }
+
+    if (!currentUserId) {
+      Alert.alert("Hata", "Önce giriş yapmalısın.");
+      return;
+    }
+
+    if (participant.id === currentUserId) {
+      Alert.alert("Uyarı", "Kendinle sohbet başlatamazsın.");
+      return;
+    }
+
+    if (startingUserId) return;
+
+    try {
+      setStartingUserId(participant.id);
+
+      const conversationId = await getOrCreateConversationByParticipant({
+        id: participant.id,
+        name: participant.name,
+        avatar: participant.avatar,
       });
-    } catch (error) {
+
+      if (!conversationId) {
+        Alert.alert("Hata", "Sohbet oluşturulamadı.");
+        return;
+      }
+
+      await fetchConversationById(conversationId);
+
+      router.push({
+        pathname: "/chat/[id]",
+        params: { id: String(conversationId) },
+      });
+    } catch (error: any) {
       console.log("START CHAT ERROR:", error);
+      Alert.alert(
+        "Hata",
+        error?.message || "Sohbet başlatılırken bir sorun oluştu.",
+      );
+    } finally {
+      setStartingUserId(null);
     }
   };
-
-  const availableUsers = useMemo(() => users, [users]);
 
   return (
     <SafeAreaView style={styles.container}>
@@ -141,6 +194,7 @@ export default function NewChatScreen() {
         data={availableUsers}
         keyExtractor={(item) => item.id}
         contentContainerStyle={styles.listContent}
+        showsVerticalScrollIndicator={false}
         ListEmptyComponent={
           <View style={styles.emptyCard}>
             <View style={styles.emptyIconWrap}>
@@ -162,36 +216,44 @@ export default function NewChatScreen() {
             </Text>
           </View>
         }
-        renderItem={({ item }) => (
-          <View style={styles.userCard}>
-            <View style={styles.leftSide}>
-              {item.avatar ? (
-                <Image source={{ uri: item.avatar }} style={styles.avatar} />
-              ) : (
-                <View style={styles.avatarFallback}>
-                  <Text style={styles.avatarFallbackText}>
-                    {getInitials(item.name)}
-                  </Text>
+        renderItem={({ item }) => {
+          const isStarting = startingUserId === item.id;
+
+          return (
+            <View style={styles.userCard}>
+              <View style={styles.leftSide}>
+                {item.avatar ? (
+                  <Image source={{ uri: item.avatar }} style={styles.avatar} />
+                ) : (
+                  <View style={styles.avatarFallback}>
+                    <Text style={styles.avatarFallbackText}>
+                      {getInitials(item.name)}
+                    </Text>
+                  </View>
+                )}
+
+                <View style={styles.userInfo}>
+                  <Text style={styles.name}>{item.name}</Text>
+                  <Text style={styles.meta}>ReadSphere kullanıcısı</Text>
                 </View>
-              )}
-
-              <View style={styles.userInfo}>
-                <Text style={styles.name}>{item.name}</Text>
-                <Text style={styles.meta}>ReadSphere kullanıcısı</Text>
               </View>
-            </View>
 
-            <Pressable
-              onPress={() => handleStartChat(item)}
-              style={({ pressed }) => [
-                styles.startButton,
-                pressed && styles.buttonPressed,
-              ]}
-            >
-              <Text style={styles.startButtonText}>Başlat</Text>
-            </Pressable>
-          </View>
-        )}
+              <Pressable
+                onPress={() => handleStartChat(item)}
+                disabled={!!startingUserId}
+                style={({ pressed }) => [
+                  styles.startButton,
+                  !!startingUserId && styles.startButtonDisabled,
+                  pressed && !startingUserId && styles.buttonPressed,
+                ]}
+              >
+                <Text style={styles.startButtonText}>
+                  {isStarting ? "Açılıyor..." : "Başlat"}
+                </Text>
+              </Pressable>
+            </View>
+          );
+        }}
       />
     </SafeAreaView>
   );
@@ -202,7 +264,6 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: COLORS.bg,
   },
-
   header: {
     paddingHorizontal: 16,
     paddingTop: 10,
@@ -211,7 +272,6 @@ const styles = StyleSheet.create({
     alignItems: "center",
     gap: 12,
   },
-
   iconButton: {
     width: 40,
     height: 40,
@@ -222,30 +282,25 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: COLORS.border,
   },
-
   headerTextArea: {
     flex: 1,
   },
-
   title: {
     fontSize: 28,
     fontWeight: "900",
     color: COLORS.text,
   },
-
   subtitle: {
     marginTop: 4,
     fontSize: 14,
     color: COLORS.muted,
     lineHeight: 20,
   },
-
   listContent: {
     paddingHorizontal: 16,
     paddingBottom: 24,
     gap: 12,
   },
-
   userCard: {
     borderWidth: 1,
     borderColor: COLORS.border,
@@ -262,25 +317,21 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 5 },
     elevation: 1,
   },
-
   leftSide: {
     flexDirection: "row",
     alignItems: "center",
     gap: 12,
     flex: 1,
   },
-
   userInfo: {
     flex: 1,
   },
-
   avatar: {
     width: 56,
     height: 56,
     borderRadius: 28,
     backgroundColor: COLORS.graySoft,
   },
-
   avatarFallback: {
     width: 56,
     height: 56,
@@ -289,38 +340,35 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
-
   avatarFallbackText: {
     fontSize: 15,
     fontWeight: "900",
     color: COLORS.primary,
   },
-
   name: {
     fontSize: 16,
     fontWeight: "900",
     color: COLORS.text,
   },
-
   meta: {
     marginTop: 4,
     fontSize: 13,
     color: COLORS.muted,
   },
-
   startButton: {
     backgroundColor: COLORS.primary,
     paddingHorizontal: 14,
     paddingVertical: 10,
     borderRadius: 999,
   },
-
+  startButtonDisabled: {
+    opacity: 0.7,
+  },
   startButtonText: {
     color: COLORS.whiteSoft,
     fontSize: 13,
     fontWeight: "900",
   },
-
   emptyCard: {
     marginTop: 24,
     padding: 20,
@@ -329,7 +377,6 @@ const styles = StyleSheet.create({
     borderColor: COLORS.border,
     backgroundColor: COLORS.card,
   },
-
   emptyIconWrap: {
     width: 52,
     height: 52,
@@ -339,20 +386,17 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     marginBottom: 14,
   },
-
   emptyTitle: {
     fontSize: 19,
     fontWeight: "900",
     color: COLORS.text,
   },
-
   emptyText: {
     marginTop: 8,
     fontSize: 14,
     lineHeight: 21,
     color: COLORS.muted,
   },
-
   buttonPressed: {
     opacity: 0.9,
     transform: [{ scale: 0.98 }],

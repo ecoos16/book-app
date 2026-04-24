@@ -1,5 +1,4 @@
-// app/post-comments/[id].tsx
-
+//app/post-comments/[id].tsx
 import { Ionicons } from "@expo/vector-icons";
 import { router, useLocalSearchParams } from "expo-router";
 import React, { useMemo, useState } from "react";
@@ -18,9 +17,6 @@ import { useChat } from "../../context/ChatContext";
 import { usePosts } from "../../context/PostsContext";
 import { useUser } from "../../context/UserContext";
 
-/**
- * ReadSphere ortak renk paleti
- */
 const COLORS = {
   bg: "#fbf9f5",
   card: "#fffdf9",
@@ -37,9 +33,6 @@ const COLORS = {
   dangerText: "#a22b2b",
 };
 
-/**
- * Tarihi Türkçe formatta göstermek için yardımcı fonksiyon
- */
 function formatDate(timestamp: number) {
   return new Date(timestamp).toLocaleString("tr-TR", {
     day: "2-digit",
@@ -50,9 +43,6 @@ function formatDate(timestamp: number) {
   });
 }
 
-/**
- * Avatar yoksa isimden baş harf üret
- */
 function getInitials(name?: string) {
   if (!name?.trim()) return "U";
 
@@ -65,19 +55,22 @@ function getInitials(name?: string) {
   return `${parts[0][0] ?? ""}${parts[1][0] ?? ""}`.toUpperCase();
 }
 
-/**
- * Ortak yumuşak buton
- */
 function SoftButton({
   label,
   icon,
   onPress,
   variant = "secondary",
+  disabled = false,
+  iconColor,
+  textColor,
 }: {
   label: string;
   icon?: keyof typeof Ionicons.glyphMap;
   onPress: () => void;
   variant?: "secondary" | "primary" | "danger";
+  disabled?: boolean;
+  iconColor?: string;
+  textColor?: string;
 }) {
   const backgroundColor =
     variant === "primary"
@@ -93,17 +86,22 @@ function SoftButton({
         ? COLORS.dangerBorder
         : COLORS.border;
 
-  const textColor =
+  const defaultTextColor =
     variant === "primary"
       ? COLORS.whiteSoft
       : variant === "danger"
         ? COLORS.dangerText
         : COLORS.text;
 
+  const resolvedTextColor = textColor ?? defaultTextColor;
+  const resolvedIconColor = iconColor ?? resolvedTextColor;
+
   return (
     <Pressable
       onPress={onPress}
+      disabled={disabled}
       style={({ pressed }) => ({
+        opacity: disabled ? 0.6 : 1,
         paddingVertical: 12,
         paddingHorizontal: 14,
         borderRadius: 16,
@@ -121,10 +119,10 @@ function SoftButton({
         transform: [{ scale: pressed ? 0.985 : 1 }],
       })}
     >
-      {!!icon && <Ionicons name={icon} size={16} color={textColor} />}
+      {!!icon && <Ionicons name={icon} size={16} color={resolvedIconColor} />}
       <Text
         style={{
-          color: textColor,
+          color: resolvedTextColor,
           fontWeight: "900",
           fontSize: 14,
         }}
@@ -136,54 +134,30 @@ function SoftButton({
 }
 
 export default function PostCommentsScreen() {
-  /**
-   * Route parametresinden post id al
-   */
   const { id } = useLocalSearchParams<{ id: string }>();
 
-  /**
-   * Auth ve kullanıcı bilgisi
-   */
   const { user: authUser } = useAuth();
   const { user: appUser } = useUser();
 
-  /**
-   * Post işlemleri
-   */
   const { getById, addComment, removeComment, removePost, toggleLike } =
     usePosts();
-
-  /**
-   * Chat işlemleri
-   */
   const { getOrCreateConversationByParticipant } = useChat();
 
-  /**
-   * İlgili paylaşımı bul
-   */
   const post = id ? getById(id) : undefined;
 
-  /**
-   * Mevcut kullanıcı bilgisi
-   */
   const currentUserId = authUser?.id ?? "";
   const currentUserName =
     appUser?.name?.trim() || authUser?.email || "Kullanıcı";
-  const currentUserAvatar = appUser?.avatar;
 
-  /**
-   * Yeni yorum input state
-   */
   const [text, setText] = useState("");
-
-  /**
-   * Post silme onayı açık mı?
-   */
   const [confirmDeletePost, setConfirmDeletePost] = useState(false);
+  const [submittingComment, setSubmittingComment] = useState(false);
+  const [busyLike, setBusyLike] = useState(false);
+  const [busyDeletePost, setBusyDeletePost] = useState(false);
+  const [deletingCommentId, setDeletingCommentId] = useState<string | null>(
+    null,
+  );
 
-  /**
-   * Post yoksa fallback ekranı
-   */
   if (!post) {
     return (
       <ScrollView
@@ -202,23 +176,6 @@ export default function PostCommentsScreen() {
             gap: 10,
           }}
         >
-          <View
-            style={{
-              width: 60,
-              height: 60,
-              borderRadius: 30,
-              backgroundColor: COLORS.primarySoft,
-              alignItems: "center",
-              justifyContent: "center",
-            }}
-          >
-            <Ionicons
-              name="chatbubble-ellipses-outline"
-              size={28}
-              color={COLORS.primary}
-            />
-          </View>
-
           <Text
             style={{
               marginTop: 8,
@@ -228,17 +185,6 @@ export default function PostCommentsScreen() {
             }}
           >
             Paylaşım bulunamadı
-          </Text>
-
-          <Text
-            style={{
-              color: COLORS.muted,
-              textAlign: "center",
-              lineHeight: 21,
-            }}
-          >
-            Bu paylaşım silinmiş olabilir veya geçersiz bir bağlantı açılmış
-            olabilir.
           </Text>
 
           <View style={{ marginTop: 8, minWidth: 140 }}>
@@ -254,25 +200,15 @@ export default function PostCommentsScreen() {
   }
 
   const safePost = post;
-
-  /**
-   * Post bana mı ait?
-   */
   const isMine = safePost.userId === currentUserId;
 
-  /**
-   * Yorumları tarihe göre sırala
-   */
   const sortedComments = useMemo(() => {
     return [...(safePost.comments ?? [])].sort(
       (a, b) => a.createdAt - b.createdAt,
     );
   }, [safePost.comments]);
 
-  /**
-   * Yeni yorum ekle
-   */
-  function handleAddComment() {
+  async function handleAddComment() {
     const trimmed = text.trim();
 
     if (!trimmed) {
@@ -285,42 +221,56 @@ export default function PostCommentsScreen() {
       return;
     }
 
-    addComment({
-      postId: safePost.id,
-      text: trimmed,
-      userId: currentUserId,
-      userName: currentUserName,
-      userAvatar: currentUserAvatar,
-    });
-
-    setText("");
+    try {
+      setSubmittingComment(true);
+      await addComment(safePost.id, trimmed);
+      setText("");
+    } catch (error) {
+      console.log("ADD COMMENT SCREEN ERROR:", error);
+      Alert.alert("Hata", "Yorum eklenirken bir sorun oluştu.");
+    } finally {
+      setSubmittingComment(false);
+    }
   }
 
-  /**
-   * Yorumu sil
-   */
-  function handleDeleteComment(commentId: string) {
-    Alert.alert("Yorum silinsin mi?", "Bu yorum kaldırılacak.", [
-      { text: "Vazgeç", style: "cancel" },
-      {
-        text: "Sil",
-        style: "destructive",
-        onPress: () => removeComment(safePost.id, commentId),
-      },
-    ]);
+  async function handleDeleteComment(commentId: string) {
+    try {
+      setDeletingCommentId(commentId);
+      console.log("COMMENT DELETE BUTTON PRESSED:", commentId);
+
+      await removeComment(safePost.id, commentId);
+    } catch (error) {
+      console.log("REMOVE COMMENT SCREEN ERROR:", error);
+    } finally {
+      setDeletingCommentId(null);
+    }
   }
 
-  /**
-   * Post sil
-   */
-  function handleDeletePost() {
-    removePost(safePost.id);
-    router.back();
+  async function handleDeletePost() {
+    try {
+      setBusyDeletePost(true);
+      await removePost(safePost.id);
+      router.back();
+    } catch (error) {
+      console.log("REMOVE POST SCREEN ERROR:", error);
+      Alert.alert("Hata", "Paylaşım silinirken bir sorun oluştu.");
+    } finally {
+      setBusyDeletePost(false);
+    }
   }
 
-  /**
-   * Paylaşım sahibine mesaj gönder
-   */
+  async function handleToggleLike() {
+    try {
+      setBusyLike(true);
+      await toggleLike(safePost.id);
+    } catch (error) {
+      console.log("TOGGLE LIKE SCREEN ERROR:", error);
+      Alert.alert("Hata", "Beğeni işlemi sırasında bir sorun oluştu.");
+    } finally {
+      setBusyLike(false);
+    }
+  }
+
   async function handleMessagePostOwner() {
     if (!currentUserId) {
       Alert.alert("Hata", "Mesaj göndermek için giriş yapmalısın.");
@@ -441,55 +391,6 @@ export default function PostCommentsScreen() {
           </View>
         </View>
 
-        <View
-          style={{
-            flexDirection: "row",
-            gap: 12,
-            borderRadius: 16,
-            padding: 10,
-            backgroundColor: COLORS.graySoft,
-          }}
-        >
-          <View
-            style={{
-              width: 56,
-              height: 80,
-              borderRadius: 10,
-              overflow: "hidden",
-              backgroundColor: COLORS.primarySoft,
-              alignItems: "center",
-              justifyContent: "center",
-            }}
-          >
-            {safePost.bookThumbnail ? (
-              <Image
-                source={{ uri: safePost.bookThumbnail }}
-                style={{ width: 56, height: 80 }}
-                resizeMode="cover"
-              />
-            ) : (
-              <Ionicons name="book-outline" size={22} color={COLORS.primary} />
-            )}
-          </View>
-
-          <View style={{ flex: 1, gap: 4 }}>
-            <Text
-              style={{
-                fontWeight: "900",
-                fontSize: 16,
-                color: COLORS.text,
-              }}
-              numberOfLines={2}
-            >
-              {safePost.bookTitle}
-            </Text>
-
-            <Text style={{ color: COLORS.muted }} numberOfLines={1}>
-              {safePost.bookAuthor}
-            </Text>
-          </View>
-        </View>
-
         <Text style={{ color: COLORS.text, lineHeight: 22 }}>
           {safePost.shareText || "Paylaşım metni yok"}
         </Text>
@@ -503,8 +404,11 @@ export default function PostCommentsScreen() {
           }}
         >
           <SoftButton
-            label={`${safePost.isLiked ? "❤️" : "🤍"} ${safePost.likes ?? 0}`}
-            onPress={() => toggleLike(safePost.id)}
+            label={String(safePost.likes ?? 0)}
+            icon={safePost.isLiked ? "heart" : "heart-outline"}
+            iconColor={safePost.isLiked ? "red" : COLORS.text}
+            textColor={COLORS.text}
+            onPress={handleToggleLike}
           />
 
           <SoftButton
@@ -522,26 +426,11 @@ export default function PostCommentsScreen() {
 
           {isMine && (
             <SoftButton
-              label="Düzenle"
-              icon="create-outline"
-              onPress={() =>
-                router.push({
-                  pathname: "/share/[id]",
-                  params: {
-                    id: safePost.bookId,
-                    postId: safePost.id,
-                  },
-                })
-              }
-            />
-          )}
-
-          {isMine && (
-            <SoftButton
               label="Sil"
               icon="trash-outline"
               variant="danger"
               onPress={() => setConfirmDeletePost((prev) => !prev)}
+              disabled={busyDeletePost}
             />
           )}
         </View>
@@ -579,6 +468,7 @@ export default function PostCommentsScreen() {
                   label="Evet, Sil"
                   variant="primary"
                   onPress={handleDeletePost}
+                  disabled={busyDeletePost}
                 />
               </View>
             </View>
@@ -625,10 +515,11 @@ export default function PostCommentsScreen() {
         />
 
         <SoftButton
-          label="Yorumu Ekle"
+          label={submittingComment ? "Ekleniyor..." : "Yorumu Ekle"}
           icon="add-outline"
           onPress={handleAddComment}
           variant="primary"
+          disabled={submittingComment}
         />
       </View>
 
@@ -645,23 +536,6 @@ export default function PostCommentsScreen() {
             gap: 10,
           }}
         >
-          <View
-            style={{
-              width: 60,
-              height: 60,
-              borderRadius: 30,
-              backgroundColor: COLORS.primarySoft,
-              alignItems: "center",
-              justifyContent: "center",
-            }}
-          >
-            <Ionicons
-              name="chatbubble-outline"
-              size={26}
-              color={COLORS.primary}
-            />
-          </View>
-
           <Text
             style={{
               fontSize: 18,
@@ -671,20 +545,11 @@ export default function PostCommentsScreen() {
           >
             Henüz yorum yok
           </Text>
-
-          <Text
-            style={{
-              color: COLORS.muted,
-              textAlign: "center",
-              lineHeight: 21,
-            }}
-          >
-            Bu paylaşım için ilk yorumu sen yapabilirsin.
-          </Text>
         </View>
       ) : (
         sortedComments.map((comment) => {
           const commentIsMine = comment.userId === currentUserId;
+          const isDeletingThisComment = deletingCommentId === comment.id;
 
           return (
             <Pressable
@@ -700,6 +565,7 @@ export default function PostCommentsScreen() {
                 padding: 14,
                 backgroundColor: COLORS.card,
                 gap: 8,
+                opacity: isDeletingThisComment ? 0.6 : 1,
               }}
             >
               <View
@@ -718,42 +584,9 @@ export default function PostCommentsScreen() {
                     flex: 1,
                   }}
                 >
-                  {comment.userAvatar ? (
-                    <Image
-                      source={{ uri: comment.userAvatar }}
-                      style={{
-                        width: 34,
-                        height: 34,
-                        borderRadius: 17,
-                        backgroundColor: COLORS.primarySoft,
-                      }}
-                    />
-                  ) : (
-                    <View
-                      style={{
-                        width: 34,
-                        height: 34,
-                        borderRadius: 17,
-                        backgroundColor: COLORS.primarySoft,
-                        alignItems: "center",
-                        justifyContent: "center",
-                      }}
-                    >
-                      <Text
-                        style={{
-                          fontWeight: "900",
-                          color: COLORS.primary,
-                          fontSize: 12,
-                        }}
-                      >
-                        {getInitials(comment.userName)}
-                      </Text>
-                    </View>
-                  )}
-
                   <View style={{ flex: 1 }}>
                     <Text style={{ fontWeight: "900", color: COLORS.text }}>
-                      {comment.userName || "Kullanıcı"}
+                      {comment.userName || currentUserName}
                     </Text>
 
                     <Text style={{ color: COLORS.muted, fontSize: 12 }}>
@@ -763,7 +596,12 @@ export default function PostCommentsScreen() {
                 </View>
 
                 {commentIsMine && (
-                  <Pressable onPress={() => handleDeleteComment(comment.id)}>
+                  <Pressable
+                    onPress={() => {
+                      Alert.alert("TEST", "Yorum sil butonuna basıldı");
+                      handleDeleteComment(comment.id);
+                    }}
+                  >
                     <Ionicons
                       name="trash-outline"
                       size={16}
@@ -776,12 +614,6 @@ export default function PostCommentsScreen() {
               <Text style={{ color: COLORS.text, lineHeight: 21 }}>
                 {comment.text}
               </Text>
-
-              {commentIsMine && (
-                <Text style={{ color: COLORS.muted, fontSize: 12 }}>
-                  Uzun bas veya çöp ikonuyla sil
-                </Text>
-              )}
             </Pressable>
           );
         })
