@@ -544,9 +544,19 @@ export default function Profile() {
           >
             {user?.avatar?.trim() ? (
               <Image
+                key={user.avatar}
                 source={{ uri: user.avatar }}
-                style={{ width: 86, height: 86 }}
+                style={{
+                  width: 86,
+                  height: 86,
+                  borderRadius: 43,
+                  backgroundColor: COLORS.primarySoft,
+                }}
                 resizeMode="cover"
+                onError={(error) => {
+                  console.log("PROFILE AVATAR IMAGE ERROR:", error.nativeEvent);
+                  console.log("PROFILE AVATAR URL:", user.avatar);
+                }}
               />
             ) : (
               <Text
@@ -1350,15 +1360,20 @@ export default function Profile() {
                     <SoftButton
                       label="Düzenle"
                       icon="create-outline"
-                      onPress={() =>
+                      onPress={() => {
+                        if (!post.bookId) {
+                          console.log("BOOK ID YOK:", post);
+                          return;
+                        }
+
                         router.push({
                           pathname: "/share/[id]",
                           params: {
-                            id: post.bookId,
-                            postId: post.id,
+                            id: String(post.bookId),
+                            postId: String(post.id),
                           },
-                        })
-                      }
+                        });
+                      }}
                     />
                   </View>
 

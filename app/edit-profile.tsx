@@ -204,58 +204,33 @@ export default function EditProfileScreen() {
       mediaTypes: ["images"],
       allowsEditing: true,
       aspect: [1, 1],
-      quality: 0.8,
+      quality: 0.35,
+      base64: true,
     });
 
-    if (!result.canceled && result.assets?.[0]?.uri) {
-      setAvatarUri(result.assets[0].uri);
+    if (result.canceled) return;
+
+    const asset = result.assets?.[0];
+
+    if (!asset?.base64) {
+      Alert.alert("Hata", "Fotoğraf okunamadı.");
+      return;
     }
+
+    const mimeType = asset.mimeType || "image/jpeg";
+    const base64Url = `data:${mimeType};base64,${asset.base64}`;
+
+    setAvatarUri(base64Url);
   };
 
-  const uploadAvatar = async (userId: string) => {
+  const uploadAvatar = async () => {
     if (!avatarUri) return null;
-
-    if (avatarUri.startsWith("http://") || avatarUri.startsWith("https://")) {
-      return avatarUri;
-    }
-
-    const fileExt = avatarUri.split(".").pop()?.toLowerCase() || "jpg";
-    const fileName = `avatar-${Date.now()}.${fileExt}`;
-    const filePath = `${userId}/${fileName}`;
-
-    const response = await fetch(avatarUri);
-    const blob = await response.blob();
-    const arrayBuffer = await blob.arrayBuffer();
-
-    const contentType =
-      fileExt === "png"
-        ? "image/png"
-        : fileExt === "webp"
-          ? "image/webp"
-          : "image/jpeg";
-
-    const { error: uploadError } = await supabase.storage
-      .from("avatars")
-      .upload(filePath, arrayBuffer, {
-        contentType,
-        upsert: true,
-      });
-
-    if (uploadError) {
-      console.log("AVATAR UPLOAD ERROR:", uploadError);
-      throw new Error(uploadError.message);
-    }
-
-    const { data } = supabase.storage.from("avatars").getPublicUrl(filePath);
-
-    const publicUrl = `${data.publicUrl}?t=${Date.now()}`;
-
-    console.log("AVATAR FILE PATH:", filePath);
-    console.log("AVATAR PUBLIC URL:", publicUrl);
-
-    return publicUrl;
+    return avatarUri;
   };
+
   const onSave = async () => {
+    console.log("SAVE BUTTON PRESSED");
+
     if (!authUser?.id) {
       Alert.alert("Hata", "Oturum açık değil.");
       return;
@@ -266,18 +241,45 @@ export default function EditProfileScreen() {
       return;
     }
 
-    setSaving(true);
-
     try {
+      setSaving(true);
+
       let finalAvatarUrl = user.avatar ?? null;
 
       if (avatarUri && avatarUri !== user.avatar) {
         setUploadingAvatar(true);
-        finalAvatarUrl = await uploadAvatar(authUser.id);
+        finalAvatarUrl = await uploadAvatar();
         setUploadingAvatar(false);
       }
 
       console.log("FINAL AVATAR URL:", finalAvatarUrl);
+
+      const profilePayload = {
+        first_name: firstName.trim(),
+        last_name: lastName.trim(),
+        full_name: `${firstName.trim()} ${lastName.trim()}`.trim(),
+        username: username.trim().toLowerCase(),
+        avatar_url: finalAvatarUrl,
+        bio: bio.trim(),
+        favorite_book: favoriteBook.trim(),
+        reader_type: readerType,
+        reading_mood: readingMood,
+        book_value: bookValue,
+        yearly_goal: yearlyGoal ? Number(yearlyGoal) : null,
+        favorite_genres: favoriteGenres,
+        favorite_authors: favoriteAuthors,
+        updated_at: new Date().toISOString(),
+      };
+
+      const { error: profileUpdateError } = await supabase
+        .from("profiles")
+        .update(profilePayload)
+        .eq("id", authUser.id);
+
+      if (profileUpdateError) {
+        console.log("PROFILE DIRECT UPDATE ERROR:", profileUpdateError);
+        throw new Error(profileUpdateError.message);
+      }
 
       const result = await setUser({
         firstName: firstName.trim(),
@@ -295,28 +297,20 @@ export default function EditProfileScreen() {
         favoriteAuthors,
       });
 
-      if (result.error) {
+      if (result?.error) {
         console.log("PROFILE SAVE RESULT ERROR:", result.error);
-        setSaving(false);
-        Alert.alert("Kaydedilemedi", result.error);
-        return;
+        throw new Error(result.error);
       }
 
       await refreshUser();
 
-      setSaving(false);
-
-      Alert.alert("Kaydedildi", "Profilin güncellendi.", [
-        {
-          text: "Tamam",
-          onPress: () => router.back(),
-        },
-      ]);
+      router.replace("/profile");
     } catch (err: any) {
       console.log("PROFILE SAVE ERROR:", err);
+      Alert.alert("Hata", err?.message ?? "Profil güncellenemedi.");
+    } finally {
       setSaving(false);
       setUploadingAvatar(false);
-      Alert.alert("Hata", err?.message ?? "Profil güncellenemedi.");
     }
   };
 
@@ -412,7 +406,7 @@ export default function EditProfileScreen() {
 
         {uploadingAvatar && (
           <Text style={{ color: COLORS.primary, fontWeight: "700" }}>
-            Fotoğraf yükleniyor...
+            Fotoğraf hazırlanıyor...
           </Text>
         )}
       </View>
