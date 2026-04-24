@@ -40,7 +40,7 @@ Kullanıcılar kitaplarını takip edebilir, paylaşımlar yapabilir ve diğer k
 ## ⚙️ Kurulum
 
 ```bash
-git clone https://github.com/kullaniciadi/book-app.git
+git clone https://github.com/ecoos16/book-app.git
 cd book-app
 npm install
 npx expo start
