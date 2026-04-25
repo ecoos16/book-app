@@ -24,6 +24,31 @@ export type BookComment = {
 };
 
 /**
+ * AI öneri sistemi için kullanılacak hafif kitap özeti
+ */
+export type BookRecommendationSeed = {
+  id: string;
+  title: string;
+  author: string;
+  rating?: number;
+  note?: string;
+  categories?: string[];
+  description?: string;
+};
+
+/**
+ * AI tarafından önerilecek kitap modeli
+ */
+export type AIRecommendedBook = {
+  id: string;
+  title: string;
+  author: string;
+  reason: string;
+  matchScore?: number;
+  suggestedStatus?: BookStatus;
+};
+
+/**
  * Uygulamadaki temel kitap modeli
  */
 export type Book = {
@@ -57,6 +82,13 @@ export type Book = {
   likes?: number;
   isLiked?: boolean;
   comments?: BookComment[];
+
+  /**
+   * İleride AI öneri sistemi için kullanılabilir.
+   * Varsayılan olarak opsiyonel bırakıldı, mevcut kodları bozmaz.
+   */
+  recommendationTags?: string[];
+  lastRecommendedAt?: number;
 
   createdAt: number;
 };

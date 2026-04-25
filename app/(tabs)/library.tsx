@@ -220,6 +220,41 @@ export default function Library() {
         </Text>
       </View>
 
+      <Pressable
+        onPress={() => router.push("/ai-recommendations")}
+        style={({ pressed, hovered }) => ({
+          backgroundColor: pressed
+            ? "#6b4c33"
+            : hovered
+              ? "#8a6240"
+              : COLORS.primary,
+          paddingVertical: 16,
+          paddingHorizontal: 16,
+          borderRadius: 20,
+          alignItems: "center",
+          justifyContent: "center",
+          flexDirection: "row",
+          gap: 10,
+          shadowColor: "#2f2a24",
+          shadowOpacity: 0.12,
+          shadowRadius: 14,
+          shadowOffset: { width: 0, height: 8 },
+          elevation: 3,
+          transform: [{ scale: pressed ? 0.985 : 1 }],
+        })}
+      >
+        <Ionicons name="sparkles-outline" size={20} color="#fff7f4" />
+
+        <Text
+          style={{
+            color: "#fff7f4",
+            fontWeight: "900",
+            fontSize: 15,
+          }}
+        >
+          AI Kitap Önerisi Al
+        </Text>
+      </Pressable>
       {/* ================= LOADING ================= */}
       {!isHydrated ? (
         <View

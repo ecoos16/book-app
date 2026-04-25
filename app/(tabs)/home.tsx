@@ -561,17 +561,26 @@ export default function Home() {
                 backgroundColor: COLORS.primarySoft,
                 alignItems: "center",
                 justifyContent: "center",
+                overflow: "hidden",
               }}
             >
-              <Text
-                style={{
-                  color: COLORS.primary,
-                  fontWeight: "900",
-                  fontSize: 14,
-                }}
-              >
-                {getInitials(displayName)}
-              </Text>
+              {appUser?.avatar?.trim() ? (
+                <Image
+                  source={{ uri: appUser.avatar }}
+                  style={{ width: 44, height: 44, borderRadius: 22 }}
+                  resizeMode="cover"
+                />
+              ) : (
+                <Text
+                  style={{
+                    color: COLORS.primary,
+                    fontWeight: "900",
+                    fontSize: 14,
+                  }}
+                >
+                  {getInitials(displayName)}
+                </Text>
+              )}
             </View>
 
             <View style={{ flex: 1 }}>

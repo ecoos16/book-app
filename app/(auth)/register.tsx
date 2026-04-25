@@ -1,6 +1,5 @@
+//app/(auth)/register.tsx
 import { Ionicons } from "@expo/vector-icons";
-import { decode } from "base64-arraybuffer";
-import * as FileSystem from "expo-file-system";
 import * as ImagePicker from "expo-image-picker";
 import { Link, router } from "expo-router";
 import React, { useMemo, useRef, useState } from "react";
@@ -222,8 +221,18 @@ export default function Register() {
   );
 
   const birthDateString = useMemo(() => {
-    if (!birthYear || !birthMonth || !birthDay) return "";
-    return `${birthYear}-${birthMonth}-${birthDay}`;
+    if (
+      birthYear.length !== 4 ||
+      birthMonth.length < 1 ||
+      birthDay.length < 1
+    ) {
+      return "";
+    }
+
+    const day = birthDay.padStart(2, "0");
+    const month = birthMonth.padStart(2, "0");
+
+    return `${birthYear}-${month}-${day}`;
   }, [birthYear, birthMonth, birthDay]);
 
   const calculatedAge = useMemo(() => {
@@ -286,12 +295,23 @@ export default function Register() {
       mediaTypes: ["images"],
       allowsEditing: true,
       aspect: [1, 1],
-      quality: 0.8,
+      quality: 0.35,
+      base64: true,
     });
 
-    if (!result.canceled && result.assets?.[0]?.uri) {
-      setAvatarUri(result.assets[0].uri);
+    if (result.canceled) return;
+
+    const asset = result.assets?.[0];
+
+    if (!asset?.base64) {
+      Alert.alert("Hata", "Fotoğraf okunamadı.");
+      return;
     }
+
+    const mimeType = asset.mimeType || "image/jpeg";
+    const base64Url = `data:${mimeType};base64,${asset.base64}`;
+
+    setAvatarUri(base64Url);
   };
 
   const checkUsernameAvailability = async () => {
@@ -324,40 +344,10 @@ export default function Register() {
     return { available: true, message: "" };
   };
 
-  const uploadAvatar = async (userId: string) => {
+  const uploadAvatar = async () => {
     if (!avatarUri) return null;
-
-    const fileExt = avatarUri.split(".").pop()?.toLowerCase() || "jpg";
-    const filePath = `${userId}/avatar.${fileExt}`;
-
-    const base64 = await FileSystem.readAsStringAsync(avatarUri, {
-      encoding: "base64",
-    });
-
-    const arrayBuffer = decode(base64);
-
-    const contentType =
-      fileExt === "png"
-        ? "image/png"
-        : fileExt === "webp"
-          ? "image/webp"
-          : "image/jpeg";
-
-    const { error: uploadError } = await supabase.storage
-      .from("avatars")
-      .upload(filePath, arrayBuffer, {
-        contentType,
-        upsert: true,
-      });
-
-    if (uploadError) {
-      throw new Error(uploadError.message);
-    }
-
-    const { data } = supabase.storage.from("avatars").getPublicUrl(filePath);
-    return data.publicUrl;
+    return avatarUri;
   };
-
   const validateStepOne = () => {
     if (
       !firstName.trim() ||
@@ -434,7 +424,7 @@ export default function Register() {
 
       if (avatarUri) {
         try {
-          avatarUrl = await uploadAvatar(userId);
+          avatarUrl = await uploadAvatar();
         } catch (avatarError: any) {
           console.log("AVATAR UPLOAD ERROR:", avatarError);
         }
@@ -687,30 +677,49 @@ export default function Register() {
               onSubmitEditing={goNext}
               style={inputStyle}
             />
-
             <View style={{ gap: 8 }}>
               <Text style={{ fontWeight: "800", color: COLORS.text }}>
                 Doğum tarihi
               </Text>
 
               <View style={{ flexDirection: "row", gap: 8 }}>
-                <SimpleSelect
-                  value={birthDay}
+                <TextInput
                   placeholder="Gün"
-                  options={DAYS}
-                  onSelect={setBirthDay}
+                  placeholderTextColor="#9a9389"
+                  value={birthDay}
+                  onChangeText={(value) => {
+                    const clean = value.replace(/\D/g, "").slice(0, 2);
+                    setBirthDay(clean);
+                  }}
+                  keyboardType="numeric"
+                  maxLength={2}
+                  style={[inputStyle, { flex: 1, textAlign: "center" }]}
                 />
-                <SimpleSelect
-                  value={birthMonth}
+
+                <TextInput
                   placeholder="Ay"
-                  options={MONTHS}
-                  onSelect={setBirthMonth}
+                  placeholderTextColor="#9a9389"
+                  value={birthMonth}
+                  onChangeText={(value) => {
+                    const clean = value.replace(/\D/g, "").slice(0, 2);
+                    setBirthMonth(clean);
+                  }}
+                  keyboardType="numeric"
+                  maxLength={2}
+                  style={[inputStyle, { flex: 1, textAlign: "center" }]}
                 />
-                <SimpleSelect
-                  value={birthYear}
+
+                <TextInput
                   placeholder="Yıl"
-                  options={YEARS}
-                  onSelect={setBirthYear}
+                  placeholderTextColor="#9a9389"
+                  value={birthYear}
+                  onChangeText={(value) => {
+                    const clean = value.replace(/\D/g, "").slice(0, 4);
+                    setBirthYear(clean);
+                  }}
+                  keyboardType="numeric"
+                  maxLength={4}
+                  style={[inputStyle, { flex: 1.4, textAlign: "center" }]}
                 />
               </View>
 
@@ -721,7 +730,7 @@ export default function Register() {
                 </Text>
               ) : (
                 <Text style={{ color: COLORS.muted, fontSize: 13 }}>
-                  Gün, ay ve yılı seç.
+                  Örnek: 05 / 09 / 2002
                 </Text>
               )}
             </View>
