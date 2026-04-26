@@ -221,7 +221,10 @@ export default function Library() {
       </View>
 
       <Pressable
-        onPress={() => router.push("/ai-recommendations")}
+        onPress={() => {
+          console.log("GO AI PAGE");
+          router.push("/ai-recommendations");
+        }}
         style={({ pressed, hovered }) => ({
           backgroundColor: pressed
             ? "#6b4c33"

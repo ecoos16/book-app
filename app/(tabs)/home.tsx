@@ -520,7 +520,19 @@ export default function Home() {
       console.log("HOME START CHAT ERROR:", error);
     }
   }
+  function openUserProfile(userId?: string) {
+    if (!userId) return;
 
+    if (userId === currentUserId) {
+      router.push("/profile");
+      return;
+    }
+
+    router.push({
+      pathname: "/user/[id]",
+      params: { id: userId },
+    });
+  }
   return (
     <View style={{ flex: 1, backgroundColor: COLORS.bg }}>
       <ScrollView
@@ -816,13 +828,15 @@ export default function Home() {
                         gap: 12,
                       }}
                     >
-                      <View
-                        style={{
+                      <Pressable
+                        onPress={() => openUserProfile(post.userId)}
+                        style={({ pressed }) => ({
                           flexDirection: "row",
                           alignItems: "center",
                           gap: 12,
                           flex: 1,
-                        }}
+                          opacity: pressed ? 0.75 : 1,
+                        })}
                       >
                         <View
                           style={{
@@ -834,17 +848,30 @@ export default function Home() {
                               : COLORS.greenSoft,
                             alignItems: "center",
                             justifyContent: "center",
+                            overflow: "hidden",
                           }}
                         >
-                          <Text
-                            style={{
-                              color: COLORS.primary,
-                              fontWeight: "900",
-                              fontSize: 13,
-                            }}
-                          >
-                            {getInitials(post.userName)}
-                          </Text>
+                          {post.userAvatar?.trim() ? (
+                            <Image
+                              source={{ uri: post.userAvatar }}
+                              style={{
+                                width: 42,
+                                height: 42,
+                                borderRadius: 21,
+                              }}
+                              resizeMode="cover"
+                            />
+                          ) : (
+                            <Text
+                              style={{
+                                color: COLORS.primary,
+                                fontWeight: "900",
+                                fontSize: 13,
+                              }}
+                            >
+                              {getInitials(post.userName)}
+                            </Text>
+                          )}
                         </View>
 
                         <View style={{ flex: 1 }}>
@@ -868,21 +895,6 @@ export default function Home() {
                             {formatTimeAgo(post.createdAt)}
                           </Text>
                         </View>
-                      </View>
-
-                      <Pressable
-                        onPress={() =>
-                          router.push({
-                            pathname: "/post-comments/[id]",
-                            params: { id: post.id },
-                          })
-                        }
-                      >
-                        <Ionicons
-                          name="chevron-forward"
-                          size={18}
-                          color={COLORS.primary}
-                        />
                       </Pressable>
                     </View>
 

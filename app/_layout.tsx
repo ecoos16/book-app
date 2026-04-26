@@ -24,16 +24,6 @@ function RootNavigator() {
     const inAuthGroup = firstSegment === "(auth)";
     const inTabsGroup = firstSegment === "(tabs)";
 
-    /**
-     * Tabs dışında olup giriş yapmış kullanıcı için erişime açık sayfalar
-     *
-     * Not:
-     * Expo Router'da dynamic route klasörlerinde ilk segment klasör adıdır.
-     * Örn:
-     * /book/123         -> firstSegment = "book"
-     * /lists/read       -> firstSegment = "lists"
-     * /edit-book/123    -> firstSegment = "edit-book"
-     */
     const allowedAuthenticatedRoutes = [
       "edit-profile",
       "add-book",
@@ -43,8 +33,10 @@ function RootNavigator() {
       "share",
       "post-comments",
       "chat",
+      "ai-recommendations",
+      "user",
+      "book-community",
     ];
-
     const inAllowedStandaloneRoute =
       typeof firstSegment === "string" &&
       allowedAuthenticatedRoutes.includes(firstSegment);

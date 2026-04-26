@@ -302,7 +302,19 @@ export default function PostCommentsScreen() {
       Alert.alert("Hata", "Sohbet açılırken bir sorun oluştu.");
     }
   }
+  function openUserProfile(userId?: string) {
+    if (!userId) return;
 
+    if (userId === currentUserId) {
+      router.push("/profile");
+      return;
+    }
+
+    router.push({
+      pathname: "/user/[id]",
+      params: { id: String(userId) },
+    });
+  }
   return (
     <ScrollView
       style={{ flex: 1, backgroundColor: COLORS.bg }}
@@ -335,12 +347,14 @@ export default function PostCommentsScreen() {
           gap: 12,
         }}
       >
-        <View
-          style={{
+        <Pressable
+          onPress={() => openUserProfile(safePost.userId)}
+          style={({ pressed }) => ({
             flexDirection: "row",
             gap: 12,
             alignItems: "center",
-          }}
+            opacity: pressed ? 0.75 : 1,
+          })}
         >
           {safePost.userAvatar ? (
             <Image
@@ -389,7 +403,7 @@ export default function PostCommentsScreen() {
               {formatDate(safePost.createdAt)}
             </Text>
           </View>
-        </View>
+        </Pressable>
 
         <Text style={{ color: COLORS.text, lineHeight: 22 }}>
           {safePost.shareText || "Paylaşım metni yok"}
@@ -585,9 +599,11 @@ export default function PostCommentsScreen() {
                   }}
                 >
                   <View style={{ flex: 1 }}>
-                    <Text style={{ fontWeight: "900", color: COLORS.text }}>
-                      {comment.userName || currentUserName}
-                    </Text>
+                    <Pressable onPress={() => openUserProfile(comment.userId)}>
+                      <Text style={{ fontWeight: "900", color: COLORS.text }}>
+                        {comment.userName || currentUserName}
+                      </Text>
+                    </Pressable>
 
                     <Text style={{ color: COLORS.muted, fontSize: 12 }}>
                       {formatDate(comment.createdAt)}

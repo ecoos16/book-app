@@ -640,6 +640,40 @@ Bu kitap hakkında ne düşünüyorsun?`;
       Alert.alert("Hata", "Sohbet açılırken bir sorun oluştu.");
     }
   };
+  // ...existing code...
+
+  // Assuming these functions are used in JSX, e.g., onPress handlers
+  // If not, remove them to fix unused variable warnings
+
+  const openUserProfile = (userId: string) => {
+    if (userId === currentUserId) {
+      router.push("/profile");
+      return;
+    }
+
+    router.push({
+      pathname: "/user/[id]",
+      params: { id: String(userId) },
+    });
+  };
+
+  const openBookCommunity = () => {
+    if (!book) return;
+
+    // If "/book-community/[id]" is invalid, replace with a valid path, e.g., "/book/[id]"
+    router.push({
+      pathname: "/book-community/[id]", // Ensure this route is defined in your app
+      params: {
+        id: String(book.id),
+        title: book.title,
+        author: book.author,
+        thumbnail: book.thumbnail ?? "",
+        googleId: book.googleId ?? "",
+      },
+    });
+  };
+
+  // ...existing code...
 
   const handleOpenRelatedPost = (postId: string) => {
     router.push({
@@ -1262,12 +1296,14 @@ Bu kitap hakkında ne düşünüyorsun?`;
                       gap: 12,
                     }}
                   >
-                    <View
-                      style={{
+                    <Pressable
+                      onPress={() => openUserProfile(person.user_id)}
+                      style={({ pressed }) => ({
                         flexDirection: "row",
                         gap: 10,
                         alignItems: "center",
-                      }}
+                        opacity: pressed ? 0.75 : 1,
+                      })}
                     >
                       {person.avatar_url ? (
                         <Image
@@ -1310,7 +1346,7 @@ Bu kitap hakkında ne düşünüyorsun?`;
                           {person.pages_read || 0} sayfa okudu
                         </Text>
                       </View>
-                    </View>
+                    </Pressable>
 
                     <SoftPillButton
                       label="Mesaj Gönder"
@@ -1347,6 +1383,12 @@ Bu kitap hakkında ne düşünüyorsun?`;
         }
         icon="swap-horizontal-outline"
         onPress={cycleStatus}
+        variant="primary"
+      />
+      <SoftPillButton
+        label="Kitap Topluluğuna Git"
+        icon="chatbubbles-outline"
+        onPress={openBookCommunity}
         variant="primary"
       />
 
