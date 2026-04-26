@@ -820,84 +820,6 @@ export default function Home() {
                       elevation: 2,
                     }}
                   >
-                    <View
-                      style={{
-                        flexDirection: "row",
-                        alignItems: "center",
-                        justifyContent: "space-between",
-                        gap: 12,
-                      }}
-                    >
-                      <Pressable
-                        onPress={() => openUserProfile(post.userId)}
-                        style={({ pressed }) => ({
-                          flexDirection: "row",
-                          alignItems: "center",
-                          gap: 12,
-                          flex: 1,
-                          opacity: pressed ? 0.75 : 1,
-                        })}
-                      >
-                        <View
-                          style={{
-                            width: 42,
-                            height: 42,
-                            borderRadius: 21,
-                            backgroundColor: isMine
-                              ? COLORS.primarySoft
-                              : COLORS.greenSoft,
-                            alignItems: "center",
-                            justifyContent: "center",
-                            overflow: "hidden",
-                          }}
-                        >
-                          {post.userAvatar?.trim() ? (
-                            <Image
-                              source={{ uri: post.userAvatar }}
-                              style={{
-                                width: 42,
-                                height: 42,
-                                borderRadius: 21,
-                              }}
-                              resizeMode="cover"
-                            />
-                          ) : (
-                            <Text
-                              style={{
-                                color: COLORS.primary,
-                                fontWeight: "900",
-                                fontSize: 13,
-                              }}
-                            >
-                              {getInitials(post.userName)}
-                            </Text>
-                          )}
-                        </View>
-
-                        <View style={{ flex: 1 }}>
-                          <Text
-                            style={{
-                              fontWeight: "900",
-                              fontSize: 15,
-                              color: COLORS.text,
-                            }}
-                          >
-                            {post.userName}
-                          </Text>
-
-                          <Text
-                            style={{
-                              color: COLORS.muted,
-                              fontSize: 12.5,
-                              marginTop: 2,
-                            }}
-                          >
-                            {formatTimeAgo(post.createdAt)}
-                          </Text>
-                        </View>
-                      </Pressable>
-                    </View>
-
                     <Pressable
                       onPress={() => {
                         if (!post.bookId) return;
@@ -994,18 +916,35 @@ export default function Home() {
                       </View>
                     </Pressable>
 
-                    {!!post.shareText && (
-                      <Text
-                        style={{
-                          color: COLORS.text,
-                          fontSize: 15,
-                          lineHeight: 23,
-                        }}
-                      >
-                        {post.shareText}
-                      </Text>
-                    )}
+                    <View style={{ gap: 6 }}>
+                      <Pressable onPress={() => openUserProfile(post.userId)}>
+                        <Text
+                          style={{
+                            color: COLORS.primary,
+                            fontWeight: "900",
+                            fontSize: 13,
+                          }}
+                        >
+                          {post.userName}
+                        </Text>
+                      </Pressable>
 
+                      {!!post.shareText && (
+                        <Text
+                          style={{
+                            color: COLORS.text,
+                            fontSize: 15,
+                            lineHeight: 23,
+                          }}
+                        >
+                          {post.shareText}
+                        </Text>
+                      )}
+
+                      <Text style={{ color: COLORS.muted, fontSize: 12 }}>
+                        {formatTimeAgo(post.createdAt)}
+                      </Text>
+                    </View>
                     <View
                       style={{
                         flexDirection: "row",

@@ -5,9 +5,18 @@ export type PostComment = {
   postId: string;
   text: string;
   createdAt: number;
+
   userId: string;
   userName: string;
   userAvatar?: string;
+
+  parentId?: string;
+  replyToUserName?: string;
+};
+
+export type AddCommentOptions = {
+  parentId?: string;
+  replyToUserName?: string;
 };
 
 export type Post = {

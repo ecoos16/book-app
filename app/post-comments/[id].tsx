@@ -1,4 +1,5 @@
 //app/post-comments/[id].tsx
+
 import { Ionicons } from "@expo/vector-icons";
 import { router, useLocalSearchParams } from "expo-router";
 import React, { useMemo, useState } from "react";
@@ -16,6 +17,7 @@ import { useAuth } from "../../context/AuthContext";
 import { useChat } from "../../context/ChatContext";
 import { usePosts } from "../../context/PostsContext";
 import { useUser } from "../../context/UserContext";
+import type { BookComment } from "../../types/book";
 
 const COLORS = {
   bg: "#fbf9f5",
@@ -45,13 +47,8 @@ function formatDate(timestamp: number) {
 
 function getInitials(name?: string) {
   if (!name?.trim()) return "U";
-
   const parts = name.trim().split(" ").filter(Boolean);
-
-  if (parts.length === 1) {
-    return parts[0].slice(0, 2).toUpperCase();
-  }
-
+  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
   return `${parts[0][0] ?? ""}${parts[1][0] ?? ""}`.toUpperCase();
 }
 
@@ -157,6 +154,7 @@ export default function PostCommentsScreen() {
   const [deletingCommentId, setDeletingCommentId] = useState<string | null>(
     null,
   );
+  const [replyTo, setReplyTo] = useState<BookComment | null>(null);
 
   if (!post) {
     return (
@@ -184,7 +182,7 @@ export default function PostCommentsScreen() {
               color: COLORS.text,
             }}
           >
-            Paylaşım bulunamadı
+            Kitap blogu bulunamadı
           </Text>
 
           <View style={{ marginTop: 8, minWidth: 140 }}>
@@ -223,8 +221,13 @@ export default function PostCommentsScreen() {
 
     try {
       setSubmittingComment(true);
-      await addComment(safePost.id, trimmed);
+
+      await addComment(safePost.id, trimmed, {
+        parentId: replyTo?.id,
+        replyToUserName: replyTo?.userName,
+      });
       setText("");
+      setReplyTo(null);
     } catch (error) {
       console.log("ADD COMMENT SCREEN ERROR:", error);
       Alert.alert("Hata", "Yorum eklenirken bir sorun oluştu.");
@@ -236,8 +239,6 @@ export default function PostCommentsScreen() {
   async function handleDeleteComment(commentId: string) {
     try {
       setDeletingCommentId(commentId);
-      console.log("COMMENT DELETE BUTTON PRESSED:", commentId);
-
       await removeComment(safePost.id, commentId);
     } catch (error) {
       console.log("REMOVE COMMENT SCREEN ERROR:", error);
@@ -253,7 +254,7 @@ export default function PostCommentsScreen() {
       router.back();
     } catch (error) {
       console.log("REMOVE POST SCREEN ERROR:", error);
-      Alert.alert("Hata", "Paylaşım silinirken bir sorun oluştu.");
+      Alert.alert("Hata", "Blog silinirken bir sorun oluştu.");
     } finally {
       setBusyDeletePost(false);
     }
@@ -287,8 +288,8 @@ export default function PostCommentsScreen() {
       });
 
       const prefillText = `${
-        safePost.bookTitle || "Paylaşımın"
-      } hakkında yazdığını gördüm, yorumun ilgimi çekti.`;
+        safePost.bookTitle || "Bu kitap"
+      } hakkındaki blog yazını gördüm, yorumun ilgimi çekti.`;
 
       router.push({
         pathname: "/chat/[id]",
@@ -302,6 +303,7 @@ export default function PostCommentsScreen() {
       Alert.alert("Hata", "Sohbet açılırken bir sorun oluştu.");
     }
   }
+
   function openUserProfile(userId?: string) {
     if (!userId) return;
 
@@ -315,6 +317,7 @@ export default function PostCommentsScreen() {
       params: { id: String(userId) },
     });
   }
+
   return (
     <ScrollView
       style={{ flex: 1, backgroundColor: COLORS.bg }}
@@ -329,11 +332,11 @@ export default function PostCommentsScreen() {
             color: COLORS.text,
           }}
         >
-          Paylaşım Detayı
+          {safePost.bookTitle || "Kitap Blogu"}
         </Text>
 
         <Text style={{ color: COLORS.muted }}>
-          {sortedComments.length} yorum
+          Kitap blogu · {sortedComments.length} yorum
         </Text>
       </View>
 
@@ -344,54 +347,61 @@ export default function PostCommentsScreen() {
           borderWidth: 1,
           borderColor: COLORS.border,
           backgroundColor: COLORS.card,
-          gap: 12,
+          gap: 14,
         }}
       >
-        <Pressable
-          onPress={() => openUserProfile(safePost.userId)}
-          style={({ pressed }) => ({
+        <View
+          style={{
             flexDirection: "row",
             gap: 12,
             alignItems: "center",
-            opacity: pressed ? 0.75 : 1,
-          })}
+          }}
         >
-          {safePost.userAvatar ? (
+          {safePost.bookThumbnail ? (
             <Image
-              source={{ uri: safePost.userAvatar }}
+              source={{ uri: safePost.bookThumbnail }}
               style={{
-                width: 42,
-                height: 42,
-                borderRadius: 21,
+                width: 58,
+                height: 82,
+                borderRadius: 12,
                 backgroundColor: COLORS.primarySoft,
               }}
+              resizeMode="cover"
             />
           ) : (
             <View
               style={{
-                width: 42,
-                height: 42,
-                borderRadius: 21,
+                width: 58,
+                height: 82,
+                borderRadius: 12,
                 backgroundColor: COLORS.primarySoft,
                 alignItems: "center",
                 justifyContent: "center",
               }}
             >
-              <Text style={{ fontWeight: "900", color: COLORS.primary }}>
-                {getInitials(safePost.userName)}
-              </Text>
+              <Ionicons name="book-outline" size={25} color={COLORS.primary} />
             </View>
           )}
 
-          <View style={{ flex: 1 }}>
+          <View style={{ flex: 1, gap: 4 }}>
             <Text
               style={{
                 fontWeight: "900",
-                fontSize: 15,
+                fontSize: 19,
                 color: COLORS.text,
               }}
             >
-              {safePost.userName}
+              {safePost.bookTitle || "Kitap Tartışması"}
+            </Text>
+
+            <Text
+              style={{
+                color: COLORS.muted,
+                fontSize: 13,
+                fontWeight: "700",
+              }}
+            >
+              {safePost.bookAuthor || "Yazar bilinmiyor"}
             </Text>
 
             <Text
@@ -403,11 +413,32 @@ export default function PostCommentsScreen() {
               {formatDate(safePost.createdAt)}
             </Text>
           </View>
-        </Pressable>
+        </View>
 
-        <Text style={{ color: COLORS.text, lineHeight: 22 }}>
-          {safePost.shareText || "Paylaşım metni yok"}
-        </Text>
+        <View
+          style={{
+            borderTopWidth: 1,
+            borderTopColor: COLORS.border,
+            paddingTop: 12,
+            gap: 6,
+          }}
+        >
+          <Pressable onPress={() => openUserProfile(safePost.userId)}>
+            <Text
+              style={{
+                color: COLORS.primary,
+                fontSize: 13,
+                fontWeight: "900",
+              }}
+            >
+              {safePost.userName}
+            </Text>
+          </Pressable>
+
+          <Text style={{ color: COLORS.text, lineHeight: 22, fontSize: 15 }}>
+            {safePost.shareText || "Bu kitap hakkında henüz yorum yok."}
+          </Text>
+        </View>
 
         <View
           style={{
@@ -423,6 +454,7 @@ export default function PostCommentsScreen() {
             iconColor={safePost.isLiked ? "red" : COLORS.text}
             textColor={COLORS.text}
             onPress={handleToggleLike}
+            disabled={busyLike}
           />
 
           <SoftButton
@@ -440,7 +472,7 @@ export default function PostCommentsScreen() {
 
           {isMine && (
             <SoftButton
-              label="Sil"
+              label="Blogu Sil"
               icon="trash-outline"
               variant="danger"
               onPress={() => setConfirmDeletePost((prev) => !prev)}
@@ -466,7 +498,7 @@ export default function PostCommentsScreen() {
                 fontWeight: "800",
               }}
             >
-              Bu paylaşım silinsin mi?
+              Bu kitap blogu silinsin mi?
             </Text>
 
             <View style={{ flexDirection: "row", gap: 10 }}>
@@ -507,13 +539,45 @@ export default function PostCommentsScreen() {
             color: COLORS.text,
           }}
         >
-          Yorum Yaz
+          Yorum Ekle
         </Text>
+
+        {replyTo && (
+          <View
+            style={{
+              padding: 10,
+              borderRadius: 14,
+              backgroundColor: COLORS.primarySoft,
+              flexDirection: "row",
+              alignItems: "center",
+              justifyContent: "space-between",
+              gap: 10,
+            }}
+          >
+            <Text
+              style={{
+                color: COLORS.primary,
+                fontWeight: "800",
+                flex: 1,
+              }}
+            >
+              @{replyTo.userName || "Kullanıcı"} kullanıcısına yanıt veriliyor
+            </Text>
+
+            <Pressable onPress={() => setReplyTo(null)}>
+              <Ionicons name="close" size={18} color={COLORS.primary} />
+            </Pressable>
+          </View>
+        )}
 
         <TextInput
           value={text}
           onChangeText={setText}
-          placeholder="Bu paylaşım hakkında düşünceni yaz..."
+          placeholder={
+            replyTo
+              ? `@${replyTo.userName || "Kullanıcı"} için yanıt yaz...`
+              : "Bu kitap hakkında düşünceni yaz..."
+          }
           placeholderTextColor="#9a9389"
           multiline
           style={{
@@ -559,6 +623,9 @@ export default function PostCommentsScreen() {
           >
             Henüz yorum yok
           </Text>
+          <Text style={{ color: COLORS.muted, textAlign: "center" }}>
+            Bu kitap bloguna ilk yorumu sen yap.
+          </Text>
         </View>
       ) : (
         sortedComments.map((comment) => {
@@ -566,12 +633,8 @@ export default function PostCommentsScreen() {
           const isDeletingThisComment = deletingCommentId === comment.id;
 
           return (
-            <Pressable
+            <View
               key={comment.id}
-              onLongPress={() =>
-                commentIsMine ? handleDeleteComment(comment.id) : undefined
-              }
-              delayLongPress={250}
               style={{
                 borderWidth: 1,
                 borderColor: COLORS.border,
@@ -590,34 +653,20 @@ export default function PostCommentsScreen() {
                   gap: 10,
                 }}
               >
-                <View
-                  style={{
-                    flexDirection: "row",
-                    alignItems: "center",
-                    gap: 10,
-                    flex: 1,
-                  }}
-                >
-                  <View style={{ flex: 1 }}>
-                    <Pressable onPress={() => openUserProfile(comment.userId)}>
-                      <Text style={{ fontWeight: "900", color: COLORS.text }}>
-                        {comment.userName || currentUserName}
-                      </Text>
-                    </Pressable>
-
-                    <Text style={{ color: COLORS.muted, fontSize: 12 }}>
-                      {formatDate(comment.createdAt)}
+                <View style={{ flex: 1 }}>
+                  <Pressable onPress={() => openUserProfile(comment.userId)}>
+                    <Text style={{ fontWeight: "900", color: COLORS.text }}>
+                      {comment.userName || currentUserName}
                     </Text>
-                  </View>
+                  </Pressable>
+
+                  <Text style={{ color: COLORS.muted, fontSize: 12 }}>
+                    {formatDate(comment.createdAt)}
+                  </Text>
                 </View>
 
                 {commentIsMine && (
-                  <Pressable
-                    onPress={() => {
-                      Alert.alert("TEST", "Yorum sil butonuna basıldı");
-                      handleDeleteComment(comment.id);
-                    }}
-                  >
+                  <Pressable onPress={() => handleDeleteComment(comment.id)}>
                     <Ionicons
                       name="trash-outline"
                       size={16}
@@ -628,9 +677,25 @@ export default function PostCommentsScreen() {
               </View>
 
               <Text style={{ color: COLORS.text, lineHeight: 21 }}>
+                {comment.replyToUserName ? (
+                  <Text style={{ color: COLORS.primary, fontWeight: "900" }}>
+                    @{comment.replyToUserName}{" "}
+                  </Text>
+                ) : null}
                 {comment.text}
               </Text>
-            </Pressable>
+              <Pressable onPress={() => setReplyTo(comment as BookComment)}>
+                <Text
+                  style={{
+                    color: COLORS.primary,
+                    fontWeight: "900",
+                    fontSize: 13,
+                  }}
+                >
+                  Yanıtla
+                </Text>
+              </Pressable>
+            </View>
           );
         })
       )}

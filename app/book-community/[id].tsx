@@ -185,10 +185,15 @@ export default function BookCommunityScreen() {
               gap: 8,
             })}
           >
-            <Text style={{ color: COLORS.primary, fontWeight: "900" }}>
-              {post.userName}
+            <Text
+              style={{ color: COLORS.primary, fontWeight: "900", fontSize: 12 }}
+            >
+              Kitap yorumu
             </Text>
 
+            <Text style={{ color: COLORS.muted, fontSize: 12 }}>
+              {post.userName}
+            </Text>
             <Text style={{ color: COLORS.text, lineHeight: 22 }}>
               {post.shareText || "Paylaşım metni yok"}
             </Text>

@@ -10,8 +10,7 @@ import React, {
   useState,
 } from "react";
 import { supabase } from "../lib/supabase";
-import type { Post, PostComment } from "../types/post";
-
+import type { AddCommentOptions, Post, PostComment } from "../types/post";
 type AddPostInput = {
   bookId?: string;
   bookTitle?: string;
@@ -37,7 +36,11 @@ type PostsContextType = {
   deletePost: (postId: string) => Promise<void>;
   removePost: (postId: string) => Promise<void>;
   toggleLike: (postId: string) => Promise<void>;
-  addComment: (postId: string, text: string) => Promise<void>;
+  addComment: (
+    postId: string,
+    text: string,
+    options?: AddCommentOptions,
+  ) => Promise<void>;
   removeComment: (postId: string, commentId: string) => Promise<void>;
   getById: (postId: string) => Post | undefined;
   getByBookId: (bookId: string) => Post[];
@@ -84,6 +87,8 @@ type DbCommentRow = {
   post_id: string;
   user_id: string;
   content: string;
+  parent_id: string | null;
+  reply_to_user_name: string | null;
   created_at: string;
   profiles: DbProfile | DbProfile[] | null;
 };
@@ -131,6 +136,8 @@ export function PostsProvider({ children }: { children: React.ReactNode }) {
             userName: normalizeName(commentProfile),
             userAvatar: commentProfile?.avatar_url ?? undefined,
             text: comment.content,
+            parentId: comment.parent_id ?? undefined,
+            replyToUserName: comment.reply_to_user_name ?? undefined,
             createdAt: new Date(comment.created_at).getTime(),
           };
         });
@@ -222,10 +229,12 @@ export function PostsProvider({ children }: { children: React.ReactNode }) {
         .select(
           `
           id,
-          post_id,
-          user_id,
-          content,
-          created_at,
+post_id,
+user_id,
+content,
+parent_id,
+reply_to_user_name,
+created_at,
           profiles:user_id (
             id,
             full_name,
@@ -400,36 +409,40 @@ export function PostsProvider({ children }: { children: React.ReactNode }) {
     },
     [refreshPosts],
   );
+  const addComment = useCallback(
+    async (postId: string, text: string, options?: AddCommentOptions) => {
+      const trimmed = text.trim();
+      if (!trimmed) return;
+      if (commentLocksRef.current.has(postId)) return;
 
-  const addComment = useCallback(async (postId: string, text: string) => {
-    const trimmed = text.trim();
-    if (!trimmed) return;
-    if (commentLocksRef.current.has(postId)) return;
+      commentLocksRef.current.add(postId);
 
-    commentLocksRef.current.add(postId);
+      try {
+        const {
+          data: { user },
+        } = await supabase.auth.getUser();
 
-    try {
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
+        if (!user?.id) {
+          throw new Error("Oturum açık değil.");
+        }
 
-      if (!user?.id) {
-        throw new Error("Oturum açık değil.");
-      }
-
-      const { data: insertedComment, error } = await supabase
-        .from("post_comments")
-        .insert({
-          post_id: postId,
-          user_id: user.id,
-          content: trimmed,
-        })
-        .select(
-          `
+        const { data: insertedComment, error } = await supabase
+          .from("post_comments")
+          .insert({
+            post_id: postId,
+            user_id: user.id,
+            content: trimmed,
+            parent_id: options?.parentId ?? null,
+            reply_to_user_name: options?.replyToUserName ?? null,
+          })
+          .select(
+            `
           id,
           post_id,
           user_id,
           content,
+          parent_id,
+          reply_to_user_name,
           created_at,
           profiles:user_id (
             id,
@@ -438,44 +451,48 @@ export function PostsProvider({ children }: { children: React.ReactNode }) {
             avatar_url
           )
         `,
-        )
-        .single();
+          )
+          .single();
 
-      if (error) {
-        console.log("ADD COMMENT ERROR:", error);
-        throw new Error(error.message);
+        if (error) {
+          console.log("ADD COMMENT ERROR:", error);
+          throw new Error(error.message);
+        }
+
+        const profile = pickOne(
+          (insertedComment as DbCommentRow | null)?.profiles ?? null,
+        );
+
+        const newComment: PostComment = {
+          id: insertedComment.id,
+          postId: insertedComment.post_id,
+          userId: insertedComment.user_id,
+          userName: normalizeName(profile),
+          userAvatar: profile?.avatar_url ?? undefined,
+          text: insertedComment.content,
+          parentId: insertedComment.parent_id ?? undefined,
+          replyToUserName: insertedComment.reply_to_user_name ?? undefined,
+          createdAt: new Date(insertedComment.created_at).getTime(),
+        };
+
+        setPosts((prev) =>
+          prev.map((post) =>
+            post.id === postId
+              ? {
+                  ...post,
+                  comments: [...(post.comments ?? []), newComment].sort(
+                    (a, b) => a.createdAt - b.createdAt,
+                  ),
+                }
+              : post,
+          ),
+        );
+      } finally {
+        commentLocksRef.current.delete(postId);
       }
-
-      const profile = pickOne(
-        (insertedComment as DbCommentRow | null)?.profiles ?? null,
-      );
-
-      const newComment: PostComment = {
-        id: insertedComment.id,
-        postId: insertedComment.post_id,
-        userId: insertedComment.user_id,
-        userName: normalizeName(profile),
-        userAvatar: profile?.avatar_url ?? undefined,
-        text: insertedComment.content,
-        createdAt: new Date(insertedComment.created_at).getTime(),
-      };
-
-      setPosts((prev) =>
-        prev.map((post) =>
-          post.id === postId
-            ? {
-                ...post,
-                comments: [...(post.comments ?? []), newComment].sort(
-                  (a, b) => a.createdAt - b.createdAt,
-                ),
-              }
-            : post,
-        ),
-      );
-    } finally {
-      commentLocksRef.current.delete(postId);
-    }
-  }, []);
+    },
+    [],
+  );
 
   const removeComment = useCallback(
     async (postId: string, commentId: string) => {

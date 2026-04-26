@@ -18,9 +18,14 @@ export type BookComment = {
   id: string;
   text: string;
   createdAt: number;
+
   userId?: string;
   userName?: string;
   userAvatar?: string;
+
+  // 🔥 YENİ
+  parentId?: string; // hangi yoruma cevap
+  replyToUserName?: string; // @kime cevap
 };
 
 /**
