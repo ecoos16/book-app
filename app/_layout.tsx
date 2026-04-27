@@ -11,6 +11,7 @@ import { PostsProvider } from "../context/PostsContext";
 import { ReadingGoalProvider } from "../context/ReadingGoalContext";
 import { ReadingLogProvider } from "../context/ReadingLogContext";
 import { UserProvider } from "../context/UserContext";
+import { registerForPushNotificationsAsync } from "../lib/notifications";
 
 function RootNavigator() {
   const { session, loading } = useAuth();
@@ -37,6 +38,7 @@ function RootNavigator() {
       "user",
       "book-community",
     ];
+
     const inAllowedStandaloneRoute =
       typeof firstSegment === "string" &&
       allowedAuthenticatedRoutes.includes(firstSegment);
@@ -50,6 +52,16 @@ function RootNavigator() {
       router.replace("/(tabs)/home");
     }
   }, [session, loading, segments, router]);
+
+  useEffect(() => {
+    const userId = session?.user?.id;
+
+    if (!userId) return;
+
+    registerForPushNotificationsAsync(userId).catch((error) => {
+      console.log("PUSH NOTIFICATION REGISTER ERROR:", error);
+    });
+  }, [session?.user?.id]);
 
   if (loading) {
     return (

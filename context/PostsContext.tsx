@@ -9,8 +9,10 @@ import React, {
   useRef,
   useState,
 } from "react";
+
 import { supabase } from "../lib/supabase";
 import type { AddCommentOptions, Post, PostComment } from "../types/post";
+
 type AddPostInput = {
   bookId?: string;
   bookTitle?: string;
@@ -101,6 +103,14 @@ function pickOne<T>(value: T | T[] | null | undefined): T | null {
 
 function normalizeName(profile: DbProfile | null) {
   return profile?.full_name?.trim() || profile?.username?.trim() || "Kullanıcı";
+}
+
+function isUuid(value?: string) {
+  if (!value) return false;
+
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+    value,
+  );
 }
 
 export function PostsProvider({ children }: { children: React.ReactNode }) {
@@ -229,12 +239,12 @@ export function PostsProvider({ children }: { children: React.ReactNode }) {
         .select(
           `
           id,
-post_id,
-user_id,
-content,
-parent_id,
-reply_to_user_name,
-created_at,
+          post_id,
+          user_id,
+          content,
+          parent_id,
+          reply_to_user_name,
+          created_at,
           profiles:user_id (
             id,
             full_name,
@@ -271,11 +281,13 @@ created_at,
 
   const addPost = useCallback(
     async (input: AddPostInput) => {
+      const safeBookId = isUuid(input.bookId) ? input.bookId : null;
+
       const { data, error } = await supabase
         .from("posts")
         .insert({
           user_id: input.userId,
-          book_id: input.bookId ?? null,
+          book_id: safeBookId,
           book_title: input.bookTitle ?? null,
           book_author: input.bookAuthor ?? null,
           book_thumbnail: input.bookThumbnail ?? null,
@@ -345,6 +357,7 @@ created_at,
 
     setPosts((prev) => prev.filter((post) => post.id !== postId));
   }, []);
+
   const removePost = useCallback(
     async (postId: string) => {
       await deletePost(postId);
@@ -409,6 +422,7 @@ created_at,
     },
     [refreshPosts],
   );
+
   const addComment = useCallback(
     async (postId: string, text: string, options?: AddCommentOptions) => {
       const trimmed = text.trim();
@@ -437,20 +451,20 @@ created_at,
           })
           .select(
             `
-          id,
-          post_id,
-          user_id,
-          content,
-          parent_id,
-          reply_to_user_name,
-          created_at,
-          profiles:user_id (
             id,
-            full_name,
-            username,
-            avatar_url
-          )
-        `,
+            post_id,
+            user_id,
+            content,
+            parent_id,
+            reply_to_user_name,
+            created_at,
+            profiles:user_id (
+              id,
+              full_name,
+              username,
+              avatar_url
+            )
+          `,
           )
           .single();
 

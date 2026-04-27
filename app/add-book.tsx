@@ -1,5 +1,4 @@
 // app/add-book.tsx
-
 import { Ionicons } from "@expo/vector-icons";
 import { router, useLocalSearchParams } from "expo-router";
 import React, { useEffect, useMemo, useRef, useState } from "react";
@@ -40,6 +39,7 @@ const STATUS_LABEL: Record<BookStatus, string> = {
 };
 
 type AddBookParams = {
+  query?: string;
   title?: string;
   author?: string;
   pagesTotal?: string;
@@ -209,6 +209,7 @@ function mapGoogleBookToForm(item: GoogleBook) {
 }
 
 function getIncomingParams(params: AddBookParams) {
+  const query = typeof params.query === "string" ? params.query : "";
   const title = typeof params.title === "string" ? params.title : "";
   const author = typeof params.author === "string" ? params.author : "";
   const pagesTotalText =
@@ -220,6 +221,7 @@ function getIncomingParams(params: AddBookParams) {
   const status = getSafeStatus(params.status);
 
   return {
+    query,
     title,
     author,
     pagesTotalText,
@@ -227,6 +229,7 @@ function getIncomingParams(params: AddBookParams) {
     googleId,
     status,
     hasIncoming:
+      !!query ||
       !!title ||
       !!author ||
       !!pagesTotalText ||
@@ -244,6 +247,9 @@ export default function AddBook() {
   const { addBook, books } = useBooks();
 
   const params = useLocalSearchParams<AddBookParams>();
+  const initialSearchQuery =
+    typeof params.query === "string" ? params.query.trim() : "";
+
   const didHydrate = useRef(false);
 
   const authorRef = useRef<TextInput>(null);
@@ -273,7 +279,10 @@ export default function AddBook() {
     const incoming = getIncomingParams(params);
     if (!incoming.hasIncoming) return;
 
-    setTitle(incoming.title);
+    if (incoming.title) {
+      setTitle(incoming.title);
+    }
+
     setAuthor(incoming.author);
     setPagesTotalText(incoming.pagesTotalText);
     setThumbnail(incoming.thumbnail);
@@ -443,7 +452,10 @@ export default function AddBook() {
       </View>
 
       <SectionCard title="Kitap Ara">
-        <BookSearchPicker onSelect={handleSelectGoogleBook} />
+        <BookSearchPicker
+          initialQuery={params.query as string}
+          onSelect={handleSelectGoogleBook}
+        />
       </SectionCard>
 
       {(selectedGoogleBook || thumbnail || title || author) && (

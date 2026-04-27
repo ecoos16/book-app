@@ -1,5 +1,4 @@
 // context/ChatContext.tsx
-
 import React, {
   createContext,
   useCallback,
@@ -9,6 +8,7 @@ import React, {
   useRef,
   useState,
 } from "react";
+import { sendPushNotification } from "../lib/notifications";
 import { supabase } from "../lib/supabase";
 import type { ChatParticipant, Conversation, Message } from "../types/chat";
 import { useAuth } from "./AuthContext";
@@ -19,6 +19,8 @@ type ChatContextType = {
   messages: Message[];
   loading: boolean;
   typingByConversation: Record<string, boolean>;
+  totalUnreadCount: number;
+  unreadByConversation: Record<string, number>;
 
   createConversation: (participant: ChatParticipant) => Promise<string>;
   getOrCreateConversationByParticipant: (
@@ -103,10 +105,24 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
   const [typingByConversation, setTypingByConversation] = useState<
     Record<string, boolean>
   >({});
+  const [unreadByConversation, setUnreadByConversation] = useState<
+    Record<string, number>
+  >({});
 
   const activeChannelRef = useRef<ReturnType<typeof supabase.channel> | null>(
     null,
   );
+
+  const globalChannelRef = useRef<ReturnType<typeof supabase.channel> | null>(
+    null,
+  );
+
+  const totalUnreadCount = useMemo(() => {
+    return Object.values(unreadByConversation).reduce(
+      (total, count) => total + count,
+      0,
+    );
+  }, [unreadByConversation]);
 
   const me: ChatParticipant = useMemo(
     () => ({
@@ -250,6 +266,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
   const fetchConversations = useCallback(async () => {
     if (!authUser?.id) {
       setConversations([]);
+      setUnreadByConversation({});
       return;
     }
 
@@ -270,6 +287,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
 
     if (myConversationIds.length === 0) {
       setConversations([]);
+      setUnreadByConversation({});
       return;
     }
 
@@ -335,6 +353,31 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
       participantsByConversation.set(row.conversation_id, current);
     }
 
+    const nextUnread: Record<string, number> = {};
+
+    for (const conv of typedConversationRows) {
+      const lastMsg = latestByConversation.get(conv.id);
+
+      const myParticipant = typedParticipantRows.find(
+        (row) => row.conversation_id === conv.id && row.user_id === authUser.id,
+      );
+
+      const lastReadAt = myParticipant?.last_read_at
+        ? new Date(myParticipant.last_read_at).getTime()
+        : 0;
+
+      const lastMessageAt = lastMsg?.created_at
+        ? new Date(lastMsg.created_at).getTime()
+        : 0;
+
+      const isUnread =
+        !!lastMsg &&
+        lastMsg.sender_id !== authUser.id &&
+        lastMessageAt > lastReadAt;
+
+      nextUnread[conv.id] = isUnread ? 1 : 0;
+    }
+
     const nextConversations: Conversation[] = typedConversationRows.map(
       (conv) => {
         const lastMsg = latestByConversation.get(conv.id);
@@ -355,6 +398,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
       },
     );
 
+    setUnreadByConversation(nextUnread);
     setConversations(sortConversations(nextConversations));
   }, [authUser?.id, mapParticipant]);
 
@@ -409,6 +453,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
       if (!authUser?.id) {
         setConversations([]);
         setMessages([]);
+        setUnreadByConversation({});
         setLoading(false);
         return;
       }
@@ -427,6 +472,55 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
 
     return () => {
       active = false;
+    };
+  }, [authUser?.id, fetchConversations]);
+
+  useEffect(() => {
+    if (!authUser?.id) return;
+
+    if (globalChannelRef.current) {
+      supabase.removeChannel(globalChannelRef.current);
+      globalChannelRef.current = null;
+    }
+
+    const channel = supabase
+      .channel(`global-messages:${authUser.id}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "INSERT",
+          schema: "public",
+          table: "messages",
+        },
+        async (payload) => {
+          const inserted = payload.new as {
+            conversation_id: string;
+            sender_id: string;
+          };
+
+          if (inserted.sender_id === authUser.id) return;
+
+          const { data: participantRow } = await supabase
+            .from("conversation_participants")
+            .select("conversation_id")
+            .eq("conversation_id", inserted.conversation_id)
+            .eq("user_id", authUser.id)
+            .maybeSingle();
+
+          if (!participantRow) return;
+
+          await fetchConversations();
+        },
+      )
+      .subscribe();
+
+    globalChannelRef.current = channel;
+
+    return () => {
+      if (globalChannelRef.current) {
+        supabase.removeChannel(globalChannelRef.current);
+        globalChannelRef.current = null;
+      }
     };
   }, [authUser?.id, fetchConversations]);
 
@@ -506,6 +600,13 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
                 ),
               ),
             );
+
+            if (incoming.senderId !== me.id) {
+              setUnreadByConversation((prev) => ({
+                ...prev,
+                [conversationId]: 1,
+              }));
+            }
           },
         )
         .subscribe();
@@ -547,7 +648,6 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
     },
     [getOrCreateConversationByParticipant],
   );
-
   const sendMessage = useCallback(
     async (conversationId: string, text: string) => {
       const trimmed = text.trim();
@@ -586,78 +686,54 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
           ),
         ),
       );
-    },
-    [authUser?.id],
-  );
 
+      const { data: participantRows } = await supabase
+        .from("conversation_participants")
+        .select(
+          `
+        user_id,
+        profiles:user_id (
+          id,
+          full_name,
+          username,
+          expo_push_token
+        )
+      `,
+        )
+        .eq("conversation_id", conversationId)
+        .neq("user_id", authUser.id);
+
+      const senderName =
+        appUser?.name || authUser.email || "ReadSphere Kullanıcısı";
+
+      for (const row of participantRows ?? []) {
+        const profileRaw = row.profiles;
+        const profile = Array.isArray(profileRaw) ? profileRaw[0] : profileRaw;
+
+        const token = profile?.expo_push_token;
+
+        if (token) {
+          await sendPushNotification(
+            token,
+            senderName,
+            trimmed.length > 80 ? `${trimmed.slice(0, 80)}...` : trimmed,
+          );
+        }
+      }
+    },
+    [authUser?.id, authUser?.email, appUser?.name],
+  );
   const removeConversationLocally = useCallback((conversationId: string) => {
     setConversations((prev) => prev.filter((c) => c.id !== conversationId));
     setMessages((prev) =>
       prev.filter((m) => m.conversationId !== conversationId),
     );
+    setUnreadByConversation((prev) => {
+      const next = { ...prev };
+      delete next[conversationId];
+      return next;
+    });
   }, []);
-
-  const removeSelfFromParticipants = useCallback(
-    async (conversationId: string) => {
-      if (!authUser?.id) {
-        throw new Error("Oturum açık değil.");
-      }
-
-      const { error } = await supabase
-        .from("conversation_participants")
-        .delete()
-        .eq("conversation_id", conversationId)
-        .eq("user_id", authUser.id);
-
-      if (error) {
-        console.log("REMOVE SELF FROM PARTICIPANTS ERROR:", error);
-        throw new Error(error.message);
-      }
-    },
-    [authUser?.id],
-  );
-
-  const cleanupConversationIfEmpty = useCallback(
-    async (conversationId: string) => {
-      const { data: remainingRows, error: remainingError } = await supabase
-        .from("conversation_participants")
-        .select("id")
-        .eq("conversation_id", conversationId)
-        .limit(1);
-
-      if (remainingError) {
-        console.log("CHECK REMAINING PARTICIPANTS ERROR:", remainingError);
-        return;
-      }
-
-      if (!remainingRows || remainingRows.length === 0) {
-        const { error: deleteMessagesError } = await supabase
-          .from("messages")
-          .delete()
-          .eq("conversation_id", conversationId);
-
-        if (deleteMessagesError) {
-          console.log(
-            "DELETE EMPTY CONVERSATION MESSAGES ERROR:",
-            deleteMessagesError,
-          );
-        }
-
-        const { error: deleteConversationError } = await supabase
-          .from("conversations")
-          .delete()
-          .eq("id", conversationId);
-
-        if (deleteConversationError) {
-          console.log(
-            "DELETE EMPTY CONVERSATION ERROR:",
-            deleteConversationError,
-          );
-        }
-      }
-    },
-    [],
-  );
 
   const leaveGroupConversation = useCallback(
     async (conversationId: string) => {
@@ -730,6 +806,11 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
             : message,
         ),
       );
+
+      setUnreadByConversation((prev) => ({
+        ...prev,
+        [conversationId]: 0,
+      }));
     },
     [authUser?.id, me.id],
   );
@@ -738,6 +819,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
     setConversations([]);
     setMessages([]);
     setTypingByConversation({});
+    setUnreadByConversation({});
     unsubscribeFromConversation();
   }, [unsubscribeFromConversation]);
 
@@ -747,6 +829,8 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
       messages,
       loading,
       typingByConversation,
+      totalUnreadCount,
+      unreadByConversation,
       createConversation,
       getOrCreateConversationByParticipant,
       sendMessage,
@@ -767,6 +851,8 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
       messages,
       loading,
       typingByConversation,
+      totalUnreadCount,
+      unreadByConversation,
       createConversation,
       getOrCreateConversationByParticipant,
       sendMessage,

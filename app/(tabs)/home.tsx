@@ -19,6 +19,18 @@ type ProfileRow = {
   first_name: string | null;
   last_name: string | null;
   birth_date: string | null;
+  favorite_genres: string[] | null;
+  reader_type: string[] | null;
+  reading_mood: string[] | null;
+  book_value: string[] | null;
+};
+
+type PersonalizedCard = {
+  id: string;
+  emoji: string;
+  title: string;
+  subtitle: string;
+  query: string;
 };
 
 const COLORS = {
@@ -141,16 +153,12 @@ function RecentBookCard({
   return (
     <Pressable
       onPress={onPress}
-      style={({ pressed, hovered }) => ({
+      style={({ pressed }) => ({
         width: 180,
         borderRadius: 24,
         borderWidth: 1,
         borderColor: COLORS.border,
-        backgroundColor: pressed
-          ? "#f7f1ea"
-          : hovered
-            ? "#fff9f3"
-            : COLORS.card,
+        backgroundColor: pressed ? "#f7f1ea" : COLORS.card,
         padding: 14,
         gap: 12,
         transform: [{ scale: pressed ? 0.985 : 1 }],
@@ -302,7 +310,7 @@ function ActionPill({
   return (
     <Pressable
       onPress={onPress}
-      style={({ pressed, hovered }) => ({
+      style={({ pressed }) => ({
         flexDirection: "row",
         alignItems: "center",
         gap: 6,
@@ -314,12 +322,10 @@ function ActionPill({
         backgroundColor: pressed
           ? variant === "primary"
             ? COLORS.primaryDark
-            : "#ede7de"
-          : hovered
-            ? variant === "primary"
+            : variant === "danger"
               ? "#8b6240"
               : "#f8f3ed"
-            : backgroundColor,
+          : backgroundColor,
         transform: [{ scale: pressed ? 0.98 : 1 }],
       })}
     >
@@ -349,6 +355,155 @@ function getPostBookMeta(post: {
   };
 }
 
+function normalizeProfileArray(value?: string[] | null) {
+  return Array.isArray(value) ? value.filter(Boolean) : [];
+}
+
+function buildPersonalizedCards(
+  profile: ProfileRow | null,
+): PersonalizedCard[] {
+  if (!profile) return [];
+
+  const genres = normalizeProfileArray(profile.favorite_genres);
+  const readerTypes = normalizeProfileArray(profile.reader_type);
+  const moods = normalizeProfileArray(profile.reading_mood);
+  const values = normalizeProfileArray(profile.book_value);
+
+  const cards: PersonalizedCard[] = [];
+
+  genres.slice(0, 4).forEach((genre) => {
+    cards.push({
+      id: `genre-${genre}`,
+      emoji: "📚",
+      title: `${genre} türünde yeni kitaplar keşfet`,
+      subtitle: "Favori türlerinden yola çıkarak hazırlandı.",
+      query: genre,
+    });
+  });
+
+  readerTypes.slice(0, 3).forEach((type) => {
+    cards.push({
+      id: `reader-${type}`,
+      emoji: "✨",
+      title: `${type} ruhuna uygun öneriler`,
+      subtitle: "Okur vibe’ına yakın kitapları ara.",
+      query: type.replace(/[✨📚🌙✍️🪄🔍💔⚡☕🔥😅]/g, "").trim() || type,
+    });
+  });
+
+  moods.slice(0, 3).forEach((mood) => {
+    cards.push({
+      id: `mood-${mood}`,
+      emoji: "🧭",
+      title: `${mood} için kitap seçimi`,
+      subtitle: "Bugünkü okuma moduna göre keşif başlat.",
+      query: mood,
+    });
+  });
+
+  values.slice(0, 3).forEach((value) => {
+    cards.push({
+      id: `value-${value}`,
+      emoji: "🧠",
+      title: `${value} sevenlere özel`,
+      subtitle: "Kitapta önemsediğin detaylara göre önerildi.",
+      query: value,
+    });
+  });
+
+  return cards.slice(0, 10);
+}
+
+function PersonalizedRecommendationCard({
+  item,
+  onPress,
+}: {
+  item: PersonalizedCard;
+  onPress: () => void;
+}) {
+  return (
+    <Pressable
+      onPress={onPress}
+      style={({ pressed }) => ({
+        width: 230,
+        borderRadius: 24,
+        padding: 16,
+        gap: 12,
+        borderWidth: 1,
+        borderColor: COLORS.border,
+        backgroundColor: pressed ? "#f4ece3" : COLORS.card,
+        shadowColor: "#2f2a24",
+        shadowOpacity: 0.06,
+        shadowRadius: 14,
+        shadowOffset: { width: 0, height: 8 },
+        elevation: 2,
+        transform: [{ scale: pressed ? 0.985 : 1 }],
+      })}
+    >
+      <View
+        style={{
+          width: 46,
+          height: 46,
+          borderRadius: 23,
+          backgroundColor: COLORS.primarySoft,
+          alignItems: "center",
+          justifyContent: "center",
+        }}
+      >
+        <Text style={{ fontSize: 24 }}>{item.emoji}</Text>
+      </View>
+
+      <View style={{ gap: 6 }}>
+        <Text
+          numberOfLines={2}
+          style={{
+            color: COLORS.text,
+            fontSize: 17,
+            fontWeight: "900",
+            lineHeight: 22,
+          }}
+        >
+          {item.title}
+        </Text>
+
+        <Text
+          numberOfLines={2}
+          style={{
+            color: COLORS.muted,
+            fontSize: 13,
+            lineHeight: 19,
+          }}
+        >
+          {item.subtitle}
+        </Text>
+      </View>
+
+      <View
+        style={{
+          marginTop: 2,
+          alignSelf: "flex-start",
+          flexDirection: "row",
+          alignItems: "center",
+          gap: 6,
+          paddingHorizontal: 11,
+          paddingVertical: 8,
+          borderRadius: 999,
+          backgroundColor: COLORS.graySoft,
+          borderWidth: 1,
+          borderColor: COLORS.border,
+        }}
+      >
+        <Ionicons name="search-outline" size={14} color={COLORS.primary} />
+        <Text
+          style={{ color: COLORS.primary, fontSize: 12, fontWeight: "900" }}
+        >
+          Keşfet
+        </Text>
+      </View>
+    </Pressable>
+  );
+}
+
 export default function Home() {
   const { user: authUser } = useAuth();
   const { user: appUser } = useUser();
@@ -368,7 +523,9 @@ export default function Home() {
 
       const { data, error } = await supabase
         .from("profiles")
-        .select("id, first_name, last_name, birth_date")
+        .select(
+          "id, first_name, last_name, birth_date, favorite_genres, reader_type, reading_mood, book_value",
+        )
         .eq("id", authUser.id)
         .single();
 
@@ -388,6 +545,11 @@ export default function Home() {
   const currentUserId = authUser?.id ?? "";
 
   const last3 = useMemo(() => books.slice(0, 3), [books]);
+
+  const personalizedCards = useMemo(
+    () => buildPersonalizedCards(profile),
+    [profile],
+  );
 
   const sortedPosts = useMemo(() => {
     return [...posts].sort((a, b) => b.createdAt - a.createdAt);
@@ -644,6 +806,37 @@ export default function Home() {
           }}
         />
 
+        {personalizedCards.length > 0 && (
+          <View style={{ gap: 14 }}>
+            <SectionHeader
+              title="Sana Özel"
+              subtitle="Onboarding seçimlerine göre AI hissi veren keşif kartları."
+            />
+
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={{ gap: 14, paddingRight: 8 }}
+            >
+              {personalizedCards.map((item) => (
+                <PersonalizedRecommendationCard
+                  key={item.id}
+                  item={item}
+                  onPress={() =>
+                    router.push({
+                      pathname: "/add-book",
+                      params: {
+                        query: item.query,
+                        status: "want",
+                      },
+                    })
+                  }
+                />
+              ))}
+            </ScrollView>
+          </View>
+        )}
+
         <View style={{ gap: 14 }}>
           <SectionHeader
             title="Son Eklenenler"
@@ -719,7 +912,13 @@ export default function Home() {
                     onPress={() =>
                       router.push({
                         pathname: "/book/[id]",
-                        params: { id: book.id },
+                        params: {
+                          id: book.id,
+                          googleId: book.googleId ?? "",
+                          title: book.title,
+                          author: book.author,
+                          bookJson: JSON.stringify(book),
+                        },
                       })
                     }
                   />
@@ -822,10 +1021,28 @@ export default function Home() {
                   >
                     <Pressable
                       onPress={() => {
-                        if (!post.bookId) return;
                         router.push({
                           pathname: "/book/[id]",
-                          params: { id: post.bookId },
+                          params: {
+                            id: post.bookId || post.id,
+                            title: bookMeta.title,
+                            author: bookMeta.author,
+                            thumbnail: bookMeta.thumbnail ?? "",
+                            googleId: localBook?.googleId ?? "",
+                            bookJson: JSON.stringify({
+                              id: post.bookId || post.id,
+                              title: bookMeta.title,
+                              author: bookMeta.author,
+                              thumbnail: bookMeta.thumbnail,
+                              googleId: localBook?.googleId,
+                              status: localBook?.status ?? "want",
+                              pagesTotal: localBook?.pagesTotal,
+                              pagesRead: localBook?.pagesRead,
+                              rating: localBook?.rating,
+                              note: localBook?.note,
+                              createdAt: Date.now(),
+                            }),
+                          },
                         });
                       }}
                       style={({ pressed }) => ({
@@ -945,6 +1162,7 @@ export default function Home() {
                         {formatTimeAgo(post.createdAt)}
                       </Text>
                     </View>
+
                     <View
                       style={{
                         flexDirection: "row",
@@ -1159,16 +1377,12 @@ export default function Home() {
                           params: { id: post.id },
                         })
                       }
-                      style={({ pressed, hovered }) => ({
+                      style={({ pressed }) => ({
                         borderWidth: 1,
                         borderColor: COLORS.border,
                         borderRadius: 22,
                         padding: 16,
-                        backgroundColor: pressed
-                          ? "#f6f1ea"
-                          : hovered
-                            ? "#fff9f3"
-                            : COLORS.card,
+                        backgroundColor: pressed ? "#f6f1ea" : COLORS.card,
                         gap: 8,
                         transform: [{ scale: pressed ? 0.99 : 1 }],
                       })}
@@ -1257,18 +1471,14 @@ export default function Home() {
 
       <Pressable
         onPress={() => router.push("/add-book")}
-        style={({ pressed, hovered }) => ({
+        style={({ pressed }) => ({
           position: "absolute",
           right: 18,
           bottom: 22,
           width: 62,
           height: 62,
           borderRadius: 31,
-          backgroundColor: pressed
-            ? COLORS.primaryDark
-            : hovered
-              ? "#8b6240"
-              : COLORS.primary,
+          backgroundColor: pressed ? COLORS.primaryDark : COLORS.primary,
           alignItems: "center",
           justifyContent: "center",
           shadowColor: COLORS.primary,

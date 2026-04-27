@@ -1,5 +1,7 @@
-//components/BookSearchPicker.tsx
+// components/BookSearchPicker.tsx
+
 import { Ionicons } from "@expo/vector-icons";
+import { router } from "expo-router";
 import React, { useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
@@ -10,7 +12,9 @@ import {
   View,
 } from "react-native";
 
+import { useAuth } from "../context/AuthContext";
 import { searchGoogleBooks } from "../lib/googleBooks";
+import { supabase } from "../lib/supabase";
 import type { GoogleBook } from "../types/googleBooks";
 
 const COLORS = {
@@ -30,6 +34,16 @@ const COLORS = {
 
 type Props = {
   onSelect: (item: GoogleBook) => void;
+  initialQuery?: string;
+};
+
+type ProfileSearchRow = {
+  id: string;
+  username: string | null;
+  full_name: string | null;
+  first_name: string | null;
+  last_name: string | null;
+  avatar_url: string | null;
 };
 
 type StateMessage = {
@@ -37,6 +51,88 @@ type StateMessage = {
   description: string;
   variant: "empty" | "error";
 };
+
+function getDisplayName(user: ProfileSearchRow) {
+  return (
+    user.full_name?.trim() ||
+    `${user.first_name ?? ""} ${user.last_name ?? ""}`.trim() ||
+    user.username ||
+    "Kullanıcı"
+  );
+}
+
+function getInitials(name?: string) {
+  if (!name?.trim()) return "U";
+  const parts = name.trim().split(" ").filter(Boolean);
+  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+  return `${parts[0][0] ?? ""}${parts[1][0] ?? ""}`.toUpperCase();
+}
+
+function UserResultCard({
+  user,
+  isMe,
+  onPress,
+}: {
+  user: ProfileSearchRow;
+  isMe: boolean;
+  onPress: () => void;
+}) {
+  const displayName = getDisplayName(user);
+
+  return (
+    <Pressable
+      onPress={onPress}
+      style={({ pressed }) => ({
+        flexDirection: "row",
+        alignItems: "center",
+        gap: 12,
+        padding: 12,
+        borderWidth: 1,
+        borderColor: COLORS.border,
+        borderRadius: 18,
+        backgroundColor: pressed ? "#f5efe7" : COLORS.graySoft,
+      })}
+    >
+      {user.avatar_url ? (
+        <Image
+          source={{ uri: user.avatar_url }}
+          style={{ width: 46, height: 46, borderRadius: 23 }}
+          resizeMode="cover"
+        />
+      ) : (
+        <View
+          style={{
+            width: 46,
+            height: 46,
+            borderRadius: 23,
+            backgroundColor: COLORS.primarySoft,
+            alignItems: "center",
+            justifyContent: "center",
+          }}
+        >
+          <Text style={{ color: COLORS.primary, fontWeight: "900" }}>
+            {getInitials(displayName)}
+          </Text>
+        </View>
+      )}
+
+      <View style={{ flex: 1 }}>
+        <Text
+          numberOfLines={1}
+          style={{ color: COLORS.text, fontWeight: "900", fontSize: 15 }}
+        >
+          {displayName}
+        </Text>
+
+        <Text numberOfLines={1} style={{ color: COLORS.muted, fontSize: 13 }}>
+          {user.username ? `@${user.username}` : isMe ? "Sen" : "Okur"}
+        </Text>
+      </View>
+
+      <Ionicons name="chevron-forward" size={18} color={COLORS.muted} />
+    </Pressable>
+  );
+}
 
 function BookCover({ thumbnail }: { thumbnail?: string }) {
   if (thumbnail) {
@@ -91,48 +187,17 @@ function SearchResultCard({
       <BookCover thumbnail={item.thumbnail} />
 
       <View style={{ flex: 1 }}>
-        <View
+        <Text
           style={{
-            flexDirection: "row",
-            alignItems: "flex-start",
-            gap: 8,
+            fontSize: 15,
+            fontWeight: "900",
+            flex: 1,
+            color: COLORS.text,
           }}
+          numberOfLines={2}
         >
-          <Text
-            style={{
-              fontSize: 15,
-              fontWeight: "900",
-              flex: 1,
-              color: COLORS.text,
-            }}
-            numberOfLines={2}
-          >
-            {item.title || "Başlıksız"}
-          </Text>
-
-          {item.source ? (
-            <View
-              style={{
-                paddingHorizontal: 8,
-                paddingVertical: 4,
-                borderRadius: 999,
-                backgroundColor: COLORS.graySoft,
-                borderWidth: 1,
-                borderColor: COLORS.border,
-              }}
-            >
-              <Text
-                style={{
-                  fontSize: 11,
-                  color: COLORS.primary,
-                  fontWeight: "800",
-                }}
-              >
-                {item.source === "google" ? "Google" : "Kaynak"}
-              </Text>
-            </View>
-          ) : null}
-        </View>
+          {item.title || "Başlıksız"}
+        </Text>
 
         <Text
           style={{ color: COLORS.muted, marginTop: 4, fontSize: 13 }}
@@ -165,22 +230,11 @@ function SearchStateBox({ message }: { message: StateMessage }) {
         gap: 8,
       }}
     >
-      <View
-        style={{
-          width: 56,
-          height: 56,
-          borderRadius: 28,
-          backgroundColor: COLORS.graySoft,
-          alignItems: "center",
-          justifyContent: "center",
-        }}
-      >
-        <Ionicons
-          name={isEmpty ? "search-outline" : "alert-circle-outline"}
-          size={24}
-          color={COLORS.primary}
-        />
-      </View>
+      <Ionicons
+        name={isEmpty ? "search-outline" : "alert-circle-outline"}
+        size={24}
+        color={COLORS.primary}
+      />
 
       <Text
         style={{
@@ -203,12 +257,20 @@ function SearchStateBox({ message }: { message: StateMessage }) {
   );
 }
 
-export default function BookSearchPicker({ onSelect }: Props) {
+export default function BookSearchPicker({ onSelect, initialQuery }: Props) {
+  const { user: authUser } = useAuth();
+
   const [query, setQuery] = useState("");
   const [debouncedQuery, setDebouncedQuery] = useState("");
-  const [results, setResults] = useState<GoogleBook[]>([]);
+  const [bookResults, setBookResults] = useState<GoogleBook[]>([]);
+  const [userResults, setUserResults] = useState<ProfileSearchRow[]>([]);
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState<StateMessage | null>(null);
+  useEffect(() => {
+    if (initialQuery && initialQuery.trim()) {
+      setQuery(initialQuery);
+    }
+  }, [initialQuery]);
 
   const abortRef = useRef<AbortController | null>(null);
 
@@ -229,16 +291,9 @@ export default function BookSearchPicker({ onSelect }: Props) {
   useEffect(() => {
     const q = debouncedQuery.trim();
 
-    if (q.length === 0) {
-      setResults([]);
-      setMessage(null);
-      setLoading(false);
-      abortRef.current?.abort();
-      return;
-    }
-
     if (q.length < 2) {
-      setResults([]);
+      setBookResults([]);
+      setUserResults([]);
       setMessage(null);
       setLoading(false);
       abortRef.current?.abort();
@@ -255,21 +310,42 @@ export default function BookSearchPicker({ onSelect }: Props) {
         setLoading(true);
         setMessage(null);
 
-        const data = await searchGoogleBooks(q, 10, controller.signal);
+        const [booksData, usersResponse] = await Promise.all([
+          searchGoogleBooks(q, 10, controller.signal),
+          supabase
+            .from("profiles")
+            .select(
+              "id, username, full_name, first_name, last_name, avatar_url",
+            )
+            .or(
+              `username.ilike.%${q}%,full_name.ilike.%${q}%,first_name.ilike.%${q}%,last_name.ilike.%${q}%`,
+            )
+            .limit(6),
+        ]);
 
-        setResults(data);
+        if (controller.signal.aborted) return;
 
-        if (data.length === 0) {
+        if (usersResponse.error) {
+          console.log("USER SEARCH ERROR:", usersResponse.error);
+        }
+
+        const users = (usersResponse.data ?? []) as ProfileSearchRow[];
+
+        setBookResults(booksData);
+        setUserResults(users);
+
+        if (booksData.length === 0 && users.length === 0) {
           setMessage({
             title: "Sonuç bulunamadı",
-            description: "Farklı bir kitap adı veya yazar adı deneyebilirsin.",
+            description: "Farklı bir kitap, yazar veya kullanıcı adı dene.",
             variant: "empty",
           });
         }
       } catch (error: any) {
         if (error?.name === "AbortError") return;
 
-        setResults([]);
+        setBookResults([]);
+        setUserResults([]);
         setMessage({
           title: "Arama hatası",
           description:
@@ -290,15 +366,31 @@ export default function BookSearchPicker({ onSelect }: Props) {
     abortRef.current?.abort();
     setQuery("");
     setDebouncedQuery("");
-    setResults([]);
+    setBookResults([]);
+    setUserResults([]);
     setMessage(null);
     setLoading(false);
   };
 
-  const handleSelect = (item: GoogleBook) => {
+  const handleSelectBook = (item: GoogleBook) => {
     onSelect(item);
-    setResults([]);
+    setBookResults([]);
+    setUserResults([]);
     setMessage(null);
+  };
+
+  const handleSelectUser = (userId: string) => {
+    handleClear();
+
+    if (userId === authUser?.id) {
+      router.push("/profile");
+      return;
+    }
+
+    router.push({
+      pathname: "/user/[id]",
+      params: { id: userId },
+    });
   };
 
   return (
@@ -321,7 +413,7 @@ export default function BookSearchPicker({ onSelect }: Props) {
         <TextInput
           value={query}
           onChangeText={setQuery}
-          placeholder="Kitap adı veya yazar ara"
+          placeholder="Kitap, yazar veya kullanıcı ara"
           placeholderTextColor="#9a9389"
           autoCorrect={false}
           autoCapitalize="none"
@@ -361,13 +453,13 @@ export default function BookSearchPicker({ onSelect }: Props) {
           }}
         >
           <ActivityIndicator color={COLORS.primary} />
-          <Text style={{ color: COLORS.muted }}>Kitaplar aranıyor...</Text>
+          <Text style={{ color: COLORS.muted }}>Aranıyor...</Text>
         </View>
       )}
 
       {!loading && !!message && <SearchStateBox message={message} />}
 
-      {!loading && results.length > 0 && (
+      {!loading && userResults.length > 0 && (
         <View
           style={{
             gap: 8,
@@ -386,14 +478,47 @@ export default function BookSearchPicker({ onSelect }: Props) {
               fontSize: 15,
             }}
           >
-            Sonuçlar
+            Kullanıcılar
           </Text>
 
-          {results.map((item) => (
+          {userResults.map((user) => (
+            <UserResultCard
+              key={user.id}
+              user={user}
+              isMe={user.id === authUser?.id}
+              onPress={() => handleSelectUser(user.id)}
+            />
+          ))}
+        </View>
+      )}
+
+      {!loading && bookResults.length > 0 && (
+        <View
+          style={{
+            gap: 8,
+            borderWidth: 1,
+            borderColor: COLORS.border,
+            borderRadius: 20,
+            padding: 10,
+            backgroundColor: COLORS.card,
+          }}
+        >
+          <Text
+            style={{
+              fontWeight: "900",
+              color: COLORS.text,
+              marginBottom: 4,
+              fontSize: 15,
+            }}
+          >
+            Kitaplar
+          </Text>
+
+          {bookResults.map((item) => (
             <SearchResultCard
               key={item.id}
               item={item}
-              onPress={() => handleSelect(item)}
+              onPress={() => handleSelectBook(item)}
             />
           ))}
         </View>

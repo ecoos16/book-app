@@ -4,12 +4,12 @@ import { Ionicons } from "@expo/vector-icons";
 import { router, useLocalSearchParams } from "expo-router";
 import React, { useEffect, useMemo, useState } from "react";
 import {
-    ActivityIndicator,
-    Image,
-    Pressable,
-    ScrollView,
-    Text,
-    View,
+  ActivityIndicator,
+  Image,
+  Pressable,
+  ScrollView,
+  Text,
+  View,
 } from "react-native";
 
 import { useAuth } from "../../context/AuthContext";
@@ -42,10 +42,22 @@ type ProfileRow = {
   favorite_book: string | null;
   favorite_genres: string[] | null;
   favorite_authors: string[] | null;
-  reader_type: string | null;
-  reading_mood: string | null;
-  book_value: string | null;
+  reader_type: string | string[] | null;
+  reading_mood: string | string[] | null;
+  book_value: string | string[] | null;
   yearly_goal: number | null;
+};
+
+type BookRow = {
+  id: string;
+  user_id: string;
+  title: string;
+  author: string | null;
+  thumbnail: string | null;
+  status: "reading" | "read" | "want";
+  pages_read: number | null;
+  page_count: number | null;
+  rating: number | null;
 };
 
 function getInitials(name?: string) {
@@ -53,6 +65,159 @@ function getInitials(name?: string) {
   const parts = name.trim().split(" ").filter(Boolean);
   if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
   return `${parts[0][0] ?? ""}${parts[1][0] ?? ""}`.toUpperCase();
+}
+
+function formatProfileField(value: string | string[] | null | undefined) {
+  if (!value) return "";
+
+  if (Array.isArray(value)) {
+    return value.filter(Boolean).join(", ");
+  }
+
+  return value.trim();
+}
+
+function BookMiniCard({ book }: { book: BookRow }) {
+  const pagesRead = book.pages_read ?? 0;
+  const pageCount = book.page_count ?? 0;
+  const progress =
+    pageCount > 0
+      ? Math.min(100, Math.round((pagesRead / pageCount) * 100))
+      : 0;
+
+  return (
+    <Pressable
+      onPress={() =>
+        router.push({
+          pathname: "/book/[id]",
+          params: { id: book.id },
+        })
+      }
+      style={({ pressed }) => ({
+        flexDirection: "row",
+        gap: 12,
+        padding: 12,
+        borderRadius: 20,
+        borderWidth: 1,
+        borderColor: COLORS.border,
+        backgroundColor: pressed ? "#f6f1ea" : COLORS.graySoft,
+        transform: [{ scale: pressed ? 0.985 : 1 }],
+      })}
+    >
+      {book.thumbnail ? (
+        <Image
+          source={{ uri: book.thumbnail }}
+          style={{
+            width: 54,
+            height: 78,
+            borderRadius: 10,
+            backgroundColor: COLORS.primarySoft,
+          }}
+          resizeMode="cover"
+        />
+      ) : (
+        <View
+          style={{
+            width: 54,
+            height: 78,
+            borderRadius: 10,
+            backgroundColor: COLORS.primarySoft,
+            alignItems: "center",
+            justifyContent: "center",
+          }}
+        >
+          <Ionicons name="book-outline" size={24} color={COLORS.primary} />
+        </View>
+      )}
+
+      <View style={{ flex: 1, gap: 6 }}>
+        <Text
+          numberOfLines={2}
+          style={{
+            color: COLORS.text,
+            fontWeight: "900",
+            fontSize: 15,
+            lineHeight: 20,
+          }}
+        >
+          {book.title}
+        </Text>
+
+        {!!book.author && (
+          <Text numberOfLines={1} style={{ color: COLORS.muted, fontSize: 13 }}>
+            {book.author}
+          </Text>
+        )}
+
+        {book.status === "reading" && pageCount > 0 && (
+          <View style={{ gap: 5 }}>
+            <View
+              style={{
+                height: 7,
+                borderRadius: 999,
+                backgroundColor: "#e6ded3",
+                overflow: "hidden",
+              }}
+            >
+              <View
+                style={{
+                  width: `${progress}%`,
+                  height: "100%",
+                  borderRadius: 999,
+                  backgroundColor: COLORS.primary,
+                }}
+              />
+            </View>
+
+            <Text style={{ color: COLORS.muted, fontSize: 12 }}>
+              {pagesRead}/{pageCount} sayfa · %{progress}
+            </Text>
+          </View>
+        )}
+
+        {book.status === "read" && !!book.rating && (
+          <Text
+            style={{ color: COLORS.primary, fontWeight: "800", fontSize: 12 }}
+          >
+            {"⭐".repeat(book.rating)} {book.rating}/5
+          </Text>
+        )}
+
+        {book.status === "want" && (
+          <Text style={{ color: COLORS.muted, fontSize: 12 }}>
+            Okuma listesinde
+          </Text>
+        )}
+      </View>
+
+      <Ionicons name="chevron-forward" size={18} color={COLORS.muted} />
+    </Pressable>
+  );
+}
+function BookSection({
+  title,
+  icon,
+  books,
+}: {
+  title: string;
+  icon: string;
+  books: BookRow[];
+}) {
+  return (
+    <View style={{ gap: 8 }}>
+      <Text style={{ fontWeight: "900", color: COLORS.primary }}>
+        {icon} {title} ({books.length})
+      </Text>
+
+      {books.length === 0 ? (
+        <Text style={{ color: COLORS.muted, fontSize: 13 }}>
+          Bu kategoride kitap yok.
+        </Text>
+      ) : (
+        books.map((book) => <BookMiniCard key={book.id} book={book} />)
+      )}
+    </View>
+  );
 }
 
 export default function UserProfileScreen() {
@@ -63,6 +228,7 @@ export default function UserProfileScreen() {
     useChat();
 
   const [profile, setProfile] = useState<ProfileRow | null>(null);
+  const [books, setBooks] = useState<BookRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [openingChat, setOpeningChat] = useState(false);
 
@@ -72,7 +238,7 @@ export default function UserProfileScreen() {
   useEffect(() => {
     let mounted = true;
 
-    async function fetchProfile() {
+    async function fetchProfileAndBooks() {
       if (!userId) return;
 
       try {
@@ -104,16 +270,29 @@ export default function UserProfileScreen() {
 
         if (error) {
           console.log("USER PROFILE FETCH ERROR:", error);
-          return;
         }
 
-        if (mounted) setProfile(data as ProfileRow | null);
+        const { data: booksData, error: booksError } = await supabase
+          .from("books")
+          .select(
+            "id, user_id, title, author, thumbnail, status, pages_read, page_count, rating",
+          )
+          .eq("user_id", userId)
+          .order("created_at", { ascending: false });
+        if (booksError) {
+          console.log("USER BOOKS FETCH ERROR:", booksError);
+        }
+
+        if (mounted) {
+          setProfile(data as ProfileRow | null);
+          setBooks((booksData ?? []) as BookRow[]);
+        }
       } finally {
         if (mounted) setLoading(false);
       }
     }
 
-    fetchProfile();
+    fetchProfileAndBooks();
 
     return () => {
       mounted = false;
@@ -130,6 +309,21 @@ export default function UserProfileScreen() {
       "Kullanıcı"
     );
   }, [profile]);
+
+  const readingBooks = useMemo(
+    () => books.filter((book) => book.status === "reading"),
+    [books],
+  );
+
+  const readBooks = useMemo(
+    () => books.filter((book) => book.status === "read"),
+    [books],
+  );
+
+  const wantBooks = useMemo(
+    () => books.filter((book) => book.status === "want"),
+    [books],
+  );
 
   const userPosts = useMemo(() => {
     return posts
@@ -362,16 +556,22 @@ export default function UserProfileScreen() {
           Okur Bilgileri
         </Text>
 
-        {!!profile.reader_type && (
-          <Text style={{ color: COLORS.text }}>📚 {profile.reader_type}</Text>
+        {!!formatProfileField(profile.reader_type) && (
+          <Text style={{ color: COLORS.text }}>
+            📚 {formatProfileField(profile.reader_type)}
+          </Text>
         )}
 
-        {!!profile.reading_mood && (
-          <Text style={{ color: COLORS.text }}>✨ {profile.reading_mood}</Text>
+        {!!formatProfileField(profile.reading_mood) && (
+          <Text style={{ color: COLORS.text }}>
+            ✨ {formatProfileField(profile.reading_mood)}
+          </Text>
         )}
 
-        {!!profile.book_value && (
-          <Text style={{ color: COLORS.text }}>💭 {profile.book_value}</Text>
+        {!!formatProfileField(profile.book_value) && (
+          <Text style={{ color: COLORS.text }}>
+            💭 {formatProfileField(profile.book_value)}
+          </Text>
         )}
 
         {!!profile.favorite_book && (
@@ -385,6 +585,25 @@ export default function UserProfileScreen() {
             🎯 Yıllık hedef: {profile.yearly_goal} kitap
           </Text>
         )}
+      </View>
+
+      <View
+        style={{
+          backgroundColor: COLORS.card,
+          borderWidth: 1,
+          borderColor: COLORS.border,
+          borderRadius: 24,
+          padding: 16,
+          gap: 16,
+        }}
+      >
+        <Text style={{ fontSize: 18, fontWeight: "900", color: COLORS.text }}>
+          Kitapları
+        </Text>
+
+        <BookSection title="Okuyor" icon="📖" books={readingBooks} />
+        <BookSection title="Okudu" icon="✅" books={readBooks} />
+        <BookSection title="İstiyor" icon="⭐" books={wantBooks} />
       </View>
 
       <View

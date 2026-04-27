@@ -238,8 +238,20 @@ export default function ChatDetailScreen() {
 
   useEffect(() => {
     if (!conversationId) return;
+
+    // 🔥 Mesajları çek
+    fetchMessagesForConversation(conversationId).catch(() => {});
+
+    // 🔥 Sohbete realtime bağlan
+    subscribeToConversation(conversationId);
+
+    // 🔥 OKUNDU YAP (badge sıfırlama)
     markConversationAsRead(conversationId);
-  }, [conversationId, markConversationAsRead]);
+
+    return () => {
+      unsubscribeFromConversation();
+    };
+  }, [conversationId]);
 
   useEffect(() => {
     if (!messages.length) return;

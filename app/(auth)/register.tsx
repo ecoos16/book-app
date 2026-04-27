@@ -1,4 +1,4 @@
-//app/(auth)/register.tsx
+// app/(auth)/register.tsx
 import { Ionicons } from "@expo/vector-icons";
 import * as ImagePicker from "expo-image-picker";
 import { Link, router } from "expo-router";
@@ -83,95 +83,19 @@ const BOOK_VALUES = [
   "Gerçek hayata yakınlık",
 ];
 
-const DAYS = Array.from({ length: 31 }, (_, i) =>
-  String(i + 1).padStart(2, "0"),
-);
-const MONTHS = Array.from({ length: 12 }, (_, i) =>
-  String(i + 1).padStart(2, "0"),
-);
 const CURRENT_YEAR = new Date().getFullYear();
-const YEARS = Array.from({ length: 90 }, (_, i) => String(CURRENT_YEAR - i));
 
-function SimpleSelect({
-  value,
-  placeholder,
-  options,
-  onSelect,
-}: {
-  value: string;
-  placeholder: string;
-  options: string[];
-  onSelect: (value: string) => void;
-}) {
-  const [open, setOpen] = useState(false);
+const chipStyle = {
+  backgroundColor: COLORS.primary,
+  paddingHorizontal: 10,
+  paddingVertical: 6,
+  borderRadius: 999,
+};
 
-  return (
-    <View style={{ flex: 1, position: "relative" }}>
-      <Pressable
-        onPress={() => setOpen((prev) => !prev)}
-        style={({ pressed }) => ({
-          borderWidth: 1,
-          borderColor: COLORS.border,
-          borderRadius: 16,
-          paddingHorizontal: 14,
-          paddingVertical: 14,
-          backgroundColor: "#fff",
-          opacity: pressed ? 0.95 : 1,
-        })}
-      >
-        <Text
-          style={{
-            color: value ? COLORS.text : "#9a9389",
-            fontSize: 15,
-            fontWeight: "600",
-          }}
-        >
-          {value || placeholder}
-        </Text>
-      </Pressable>
-
-      {open && (
-        <View
-          style={{
-            position: "absolute",
-            top: 56,
-            left: 0,
-            right: 0,
-            maxHeight: 180,
-            backgroundColor: "#fff",
-            borderWidth: 1,
-            borderColor: COLORS.border,
-            borderRadius: 14,
-            zIndex: 999,
-            elevation: 10,
-            overflow: "hidden",
-          }}
-        >
-          <ScrollView nestedScrollEnabled>
-            {options.map((item) => (
-              <Pressable
-                key={item}
-                onPress={() => {
-                  onSelect(item);
-                  setOpen(false);
-                }}
-                style={({ pressed }) => ({
-                  paddingHorizontal: 14,
-                  paddingVertical: 12,
-                  backgroundColor: pressed ? COLORS.primarySoft : "#fff",
-                  borderBottomWidth: 1,
-                  borderBottomColor: "#f3eee8",
-                })}
-              >
-                <Text style={{ color: COLORS.text }}>{item}</Text>
-              </Pressable>
-            ))}
-          </ScrollView>
-        </View>
-      )}
-    </View>
-  );
-}
+const chipText = {
+  color: "#fff",
+  fontWeight: "700" as const,
+};
 
 export default function Register() {
   const { signUp } = useAuth();
@@ -195,9 +119,9 @@ export default function Register() {
   const [favoriteGenres, setFavoriteGenres] = useState<string[]>([]);
   const [favoriteAuthorsInput, setFavoriteAuthorsInput] = useState("");
   const [favoriteBook, setFavoriteBook] = useState("");
-  const [readerVibe, setReaderVibe] = useState("");
-  const [readingMood, setReadingMood] = useState("");
-  const [bookValue, setBookValue] = useState("");
+  const [readerVibe, setReaderVibe] = useState<string[]>([]);
+  const [readingMood, setReadingMood] = useState<string[]>([]);
+  const [bookValue, setBookValue] = useState<string[]>([]);
   const [yearlyGoal, setYearlyGoal] = useState("");
   const [bio, setBio] = useState("");
 
@@ -272,12 +196,31 @@ export default function Register() {
     color: COLORS.text,
   };
 
+  const toggleMultiWithLimit = (
+    value: string,
+    state: string[],
+    setState: (v: string[]) => void,
+    limit: number,
+    label: string,
+  ) => {
+    if (state.includes(value)) {
+      setState(state.filter((i) => i !== value));
+      return;
+    }
+
+    if (state.length >= limit) {
+      Alert.alert(
+        "Limit aşıldı",
+        `${label} için en fazla ${limit} seçim yapabilirsin.`,
+      );
+      return;
+    }
+
+    setState([...state, value]);
+  };
+
   const toggleGenre = (genre: string) => {
-    setFavoriteGenres((prev) =>
-      prev.includes(genre)
-        ? prev.filter((item) => item !== genre)
-        : [...prev, genre],
-    );
+    toggleMultiWithLimit(genre, favoriteGenres, setFavoriteGenres, 5, "Tür");
   };
 
   const pickAvatar = async () => {
@@ -348,6 +291,7 @@ export default function Register() {
     if (!avatarUri) return null;
     return avatarUri;
   };
+
   const validateStepOne = () => {
     if (
       !firstName.trim() ||
@@ -397,7 +341,7 @@ export default function Register() {
   };
 
   const handleRegister = async () => {
-    if (!readerVibe) {
+    if (readerVibe.length === 0) {
       Alert.alert("Eksik bilgi", "Kendine en yakın okur vibe’ını seç.");
       return;
     }
@@ -443,8 +387,8 @@ export default function Register() {
           favorite_authors: favoriteAuthors,
           favorite_book: favoriteBook.trim() || null,
           reader_type: readerVibe,
-          reading_mood: readingMood || null,
-          book_value: bookValue || null,
+          reading_mood: readingMood.length ? readingMood : null,
+          book_value: bookValue.length ? bookValue : null,
           yearly_goal: yearlyGoal ? Number(yearlyGoal) : null,
           bio: bio.trim(),
           onboarding_completed: true,
@@ -677,6 +621,7 @@ export default function Register() {
               onSubmitEditing={goNext}
               style={inputStyle}
             />
+
             <View style={{ gap: 8 }}>
               <Text style={{ fontWeight: "800", color: COLORS.text }}>
                 Doğum tarihi
@@ -737,12 +682,8 @@ export default function Register() {
 
             <Pressable
               onPress={goNext}
-              style={({ pressed, hovered }) => ({
-                backgroundColor: pressed
-                  ? COLORS.primaryDark
-                  : hovered
-                    ? "#8b6240"
-                    : COLORS.primary,
+              style={({ pressed }) => ({
+                backgroundColor: pressed ? COLORS.primaryDark : COLORS.primary,
                 paddingVertical: 16,
                 borderRadius: 18,
                 alignItems: "center",
@@ -756,6 +697,7 @@ export default function Register() {
                 size={18}
                 color={COLORS.whiteSoft}
               />
+
               <Text
                 style={{
                   color: COLORS.whiteSoft,
@@ -775,15 +717,28 @@ export default function Register() {
                 backgroundColor: COLORS.successSoft,
                 borderRadius: 18,
                 padding: 14,
-                gap: 10,
+                gap: 12,
               }}
             >
               <Text style={sectionTitleStyle}>
                 En çok hangi türlere düşüyorsun? 📚
               </Text>
+
               <Text style={{ color: COLORS.muted, lineHeight: 20 }}>
                 Profilinde öne çıksın, sana daha iyi öneriler gelsin.
               </Text>
+
+              {favoriteGenres.length > 0 && (
+                <View
+                  style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}
+                >
+                  {favoriteGenres.map((item) => (
+                    <View key={item} style={chipStyle}>
+                      <Text style={chipText}>✓ {item}</Text>
+                    </View>
+                  ))}
+                </View>
+              )}
 
               <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 10 }}>
                 {GENRES.map((genre) => {
@@ -808,6 +763,7 @@ export default function Register() {
                           fontWeight: "700",
                         }}
                       >
+                        {selected ? "✓ " : ""}
                         {genre}
                       </Text>
                     </Pressable>
@@ -889,13 +845,33 @@ export default function Register() {
             >
               <Text style={sectionTitleStyle}>Okur vibe’ın hangisi? ✨</Text>
 
+              {readerVibe.length > 0 && (
+                <View
+                  style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}
+                >
+                  {readerVibe.map((item) => (
+                    <View key={item} style={chipStyle}>
+                      <Text style={chipText}>✓ {item}</Text>
+                    </View>
+                  ))}
+                </View>
+              )}
+
               {READER_VIBES.map((item) => {
-                const selected = readerVibe === item;
+                const selected = readerVibe.includes(item);
 
                 return (
                   <Pressable
                     key={item}
-                    onPress={() => setReaderVibe(item)}
+                    onPress={() =>
+                      toggleMultiWithLimit(
+                        item,
+                        readerVibe,
+                        setReaderVibe,
+                        4,
+                        "Okur vibe",
+                      )
+                    }
                     style={{
                       borderWidth: 1,
                       borderColor: selected ? COLORS.primary : COLORS.border,
@@ -911,6 +887,7 @@ export default function Register() {
                         fontWeight: selected ? "800" : "600",
                       }}
                     >
+                      {selected ? "✓ " : ""}
                       {item}
                     </Text>
                   </Pressable>
@@ -930,14 +907,34 @@ export default function Register() {
                 Son zamanlarda hangi moddasın?
               </Text>
 
+              {readingMood.length > 0 && (
+                <View
+                  style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}
+                >
+                  {readingMood.map((item) => (
+                    <View key={item} style={chipStyle}>
+                      <Text style={chipText}>✓ {item}</Text>
+                    </View>
+                  ))}
+                </View>
+              )}
+
               <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 10 }}>
                 {READING_MOODS.map((item) => {
-                  const selected = readingMood === item;
+                  const selected = readingMood.includes(item);
 
                   return (
                     <Pressable
                       key={item}
-                      onPress={() => setReadingMood(item)}
+                      onPress={() =>
+                        toggleMultiWithLimit(
+                          item,
+                          readingMood,
+                          setReadingMood,
+                          4,
+                          "Okuma modu",
+                        )
+                      }
                       style={{
                         paddingHorizontal: 14,
                         paddingVertical: 10,
@@ -953,6 +950,7 @@ export default function Register() {
                           fontWeight: "700",
                         }}
                       >
+                        {selected ? "✓ " : ""}
                         {item}
                       </Text>
                     </Pressable>
@@ -964,14 +962,34 @@ export default function Register() {
                 Bir kitapta seni en çok ne çeker?
               </Text>
 
+              {bookValue.length > 0 && (
+                <View
+                  style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}
+                >
+                  {bookValue.map((item) => (
+                    <View key={item} style={chipStyle}>
+                      <Text style={chipText}>✓ {item}</Text>
+                    </View>
+                  ))}
+                </View>
+              )}
+
               <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 10 }}>
                 {BOOK_VALUES.map((item) => {
-                  const selected = bookValue === item;
+                  const selected = bookValue.includes(item);
 
                   return (
                     <Pressable
                       key={item}
-                      onPress={() => setBookValue(item)}
+                      onPress={() =>
+                        toggleMultiWithLimit(
+                          item,
+                          bookValue,
+                          setBookValue,
+                          4,
+                          "Kitap beklentisi",
+                        )
+                      }
                       style={{
                         paddingHorizontal: 14,
                         paddingVertical: 10,
@@ -987,6 +1005,7 @@ export default function Register() {
                           fontWeight: "700",
                         }}
                       >
+                        {selected ? "✓ " : ""}
                         {item}
                       </Text>
                     </Pressable>
@@ -994,30 +1013,6 @@ export default function Register() {
                 })}
               </View>
             </View>
-
-            <TextInput
-              placeholder="Bu yıl kaç kitaplık hedef koyuyorsun? (örn: 24)"
-              placeholderTextColor="#9a9389"
-              keyboardType="numeric"
-              value={yearlyGoal}
-              onChangeText={setYearlyGoal}
-              style={inputStyle}
-            />
-
-            <TextInput
-              placeholder="Profiline kısa bir not bırak... Nasıl bir okursun?"
-              placeholderTextColor="#9a9389"
-              multiline
-              value={bio}
-              onChangeText={setBio}
-              style={[
-                inputStyle,
-                {
-                  minHeight: 110,
-                  textAlignVertical: "top",
-                },
-              ]}
-            />
 
             <View style={{ flexDirection: "row", gap: 12 }}>
               <Pressable
@@ -1068,6 +1063,7 @@ export default function Register() {
                       size={18}
                       color={COLORS.whiteSoft}
                     />
+
                     <Text
                       style={{
                         color: COLORS.whiteSoft,

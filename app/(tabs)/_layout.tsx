@@ -3,7 +3,11 @@
 import { Ionicons } from "@expo/vector-icons";
 import { Tabs } from "expo-router";
 
+import { useChat } from "../../context/ChatContext";
+
 export default function TabsLayout() {
+  const { totalUnreadCount } = useChat();
+
   return (
     <Tabs
       screenOptions={{
@@ -48,6 +52,13 @@ export default function TabsLayout() {
         name="chat"
         options={{
           title: "Sohbet",
+          tabBarBadge: totalUnreadCount > 0 ? totalUnreadCount : undefined,
+          tabBarBadgeStyle: {
+            backgroundColor: "#7d5739",
+            color: "#fffdf9",
+            fontSize: 11,
+            fontWeight: "900",
+          },
           tabBarIcon: ({ color, size, focused }) => (
             <Ionicons
               name={
