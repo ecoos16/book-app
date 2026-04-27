@@ -33,6 +33,59 @@ const COLORS = {
   dangerText: "#a22b2b",
 };
 
+const recommendationCache = new Map<string, RecommendedBookWithThumbnail[]>();
+
+const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+const GOOGLE_BOOKS_API_KEYS = [
+  process.env.EXPO_PUBLIC_GOOGLE_BOOKS_KEY_1,
+  process.env.EXPO_PUBLIC_GOOGLE_BOOKS_KEY_2,
+  process.env.EXPO_PUBLIC_GOOGLE_BOOKS_KEY_3,
+  process.env.EXPO_PUBLIC_GOOGLE_BOOKS_KEY_4,
+].filter((key): key is string => Boolean(key && key.trim()));
+
+let googleBooksKeyIndex = 0;
+
+function getNextGoogleBooksKey() {
+  if (GOOGLE_BOOKS_API_KEYS.length === 0) return "";
+
+  const key =
+    GOOGLE_BOOKS_API_KEYS[googleBooksKeyIndex % GOOGLE_BOOKS_API_KEYS.length];
+  googleBooksKeyIndex += 1;
+
+  return key;
+}
+
+async function fetchGoogleBooksWithKeyRotation(query: string) {
+  const attempts = Math.max(GOOGLE_BOOKS_API_KEYS.length, 1);
+
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    const apiKey = getNextGoogleBooksKey();
+
+    const url =
+      `https://www.googleapis.com/books/v1/volumes` +
+      `?q=${encodeURIComponent(query)}` +
+      `&printType=books` +
+      `&maxResults=5` +
+      `&orderBy=relevance` +
+      (apiKey ? `&key=${apiKey}` : "");
+
+    const response = await fetch(url);
+
+    if (response.status === 429) {
+      console.log(
+        `GOOGLE BOOKS 429 - key değiştiriliyor (${attempt + 1}/${attempts})`,
+      );
+      await wait(350);
+      continue;
+    }
+
+    return response;
+  }
+
+  return null;
+}
+
 function buildSeeds(books: ReturnType<typeof useBooks>["books"]) {
   const ratedReadBooks = books
     .filter((book) => book.status === "read" && typeof book.rating === "number")
@@ -104,19 +157,34 @@ export default function AIRecommendationsScreen() {
 
       const results: RecommendedBookWithThumbnail[] = [];
 
-      for (const query of queries) {
-        const url =
-          `https://www.googleapis.com/books/v1/volumes` +
-          `?q=${encodeURIComponent(query)}` +
-          `&printType=books` +
-          `&maxResults=10` +
-          `&orderBy=relevance` +
-          `&key=${process.env.EXPO_PUBLIC_GOOGLE_BOOKS_KEY ?? ""}`;
+      const limitedQueries = queries.slice(0, 3);
 
-        const response = await fetch(url);
+      for (const query of limitedQueries) {
+        const cached = recommendationCache.get(query);
+
+        if (cached) {
+          results.push(...cached);
+          if (results.length >= 5) break;
+          continue;
+        }
+
+        await wait(500);
+
+        const response = await fetchGoogleBooksWithKeyRotation(query);
+
+        if (!response) {
+          setError("Google Books limiti doldu. Biraz bekleyip tekrar dene.");
+          break;
+        }
+
+        if (!response.ok) {
+          console.log("GOOGLE BOOKS RESPONSE ERROR:", response.status);
+          continue;
+        }
+
         const json = await response.json();
-
         const items = Array.isArray(json.items) ? json.items : [];
+        const queryResults: RecommendedBookWithThumbnail[] = [];
 
         for (const item of items) {
           const info = item.volumeInfo ?? {};
@@ -127,8 +195,12 @@ export default function AIRecommendationsScreen() {
 
           if (!title) continue;
           if (readTitles.has(title.toLowerCase())) continue;
+
           if (
             results.some(
+              (book) => book.title.toLowerCase() === title.toLowerCase(),
+            ) ||
+            queryResults.some(
               (book) => book.title.toLowerCase() === title.toLowerCase(),
             )
           ) {
@@ -154,7 +226,7 @@ export default function AIRecommendationsScreen() {
             72 + (categoryMatch ? 12 : 0) + (authorMatch ? 10 : 0),
           );
 
-          results.push({
+          queryResults.push({
             id: String(item.id ?? `${title}-${author}`),
             title,
             author,
@@ -172,6 +244,9 @@ export default function AIRecommendationsScreen() {
               info.imageLinks?.smallThumbnail?.replace("http://", "https://"),
           });
         }
+
+        recommendationCache.set(query, queryResults);
+        results.push(...queryResults);
 
         if (results.length >= 5) break;
       }

@@ -284,24 +284,11 @@ export default function ChatListScreen() {
               <Pressable
                 onPress={(event) => {
                   event.stopPropagation?.();
-
                   Alert.alert(
-                    item.isGroup ? "Gruptan ayrıl" : "Sohbeti sil",
-                    item.isGroup
-                      ? "Bu grup sohbetinden ayrılmak istediğine emin misin?"
-                      : "Bu sohbeti silmek istediğine emin misin?",
-                    [
-                      {
-                        text: "Vazgeç",
-                        style: "cancel",
-                      },
-                      {
-                        text: "Eminim",
-                        style: item.isGroup ? "default" : "destructive",
-                        onPress: () => handleDeleteOrLeave(item),
-                      },
-                    ],
+                    "TEST",
+                    item.isGroup ? "Ayrıl basıldı" : "Sil basıldı",
                   );
+                  handleDeleteOrLeave(item);
                 }}
                 style={({ pressed }) => [
                   styles.actionButton,
