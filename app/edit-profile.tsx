@@ -50,39 +50,39 @@ const GENRES = [
   "Manga",
   "Distopya",
 ];
-
 const READER_VIBES = [
-  "Gece okuru 🌙",
-  "Altını çize çize okurum ✍️",
-  "Klasikçiyim 📚",
-  "Fantastik dünyalara kaçarım 🪄",
-  "Polisiye severim 🔍",
-  "Duygusal yıkım seviyorum 💔",
-  "Bir günde bitiririm ⚡",
-  "Yavaş ama derin okurum ☕",
-  "Popüler olanı merak ederim 🔥",
-  "Yarım bırakırım ama severim 😅",
+  "Düzenli okuma alışkanlığına sahibim",
+  "Yavaş ve sindirerek okumayı tercih ederim",
+  "Not alarak ve altını çizerek okurum",
+  "Klasik ve nitelikli eserleri tercih ederim",
+  "Güncel ve popüler kitapları takip ederim",
+  "Kurgu dünyalarında derinleşmeyi severim",
+  "Bilgi ve bakış açısı kazandıran kitapları önemserim",
+  "Kısa sürede yoğun okuma yapabilirim",
+  "Dönemsel olarak okuma alışkanlığım değişebilir",
+  "Farklı türleri keşfetmeyi severim",
 ];
-
 const READING_MOODS = [
-  "Klasik modundayım",
-  "Romantik şeyler sarıyor",
-  "Gerilim istiyorum",
-  "Bilim kurguya sardım",
-  "Kişisel gelişim okuyorum",
-  "Karışık gidiyorum",
-  "Ne bulursam okuyorum",
+  "Klasik eserler okumak istiyorum",
+  "Düşündüren ve derinlikli metinler arıyorum",
+  "Sürükleyici bir kurgu okumak istiyorum",
+  "Gerilim ve gizem türlerine yöneliyorum",
+  "Kişisel gelişim ve farkındalık odaklı okuyorum",
+  "Tarih ve biyografi okumak istiyorum",
+  "Daha hafif ve akıcı kitaplar tercih ediyorum",
+  "Farklı türleri keşfetmek istiyorum",
 ];
-
 const BOOK_VALUES = [
-  "Güçlü karakterler",
-  "Akıcı dil",
-  "Duygusal yoğunluk",
-  "Plot twist",
-  "Karanlık atmosfer",
-  "Felsefi derinlik",
-  "Romantizm",
-  "Gerçek hayata yakınlık",
+  "Güçlü karakter gelişimi",
+  "Akıcı ve anlaşılır anlatım",
+  "Derinlikli konu işlenişi",
+  "Düşündürücü temalar",
+  "Etkileyici atmosfer",
+  "Gerçekçi olay örgüsü",
+  "Duygusal bağ kurabilme",
+  "Özgün bakış açısı",
+  "Bilgi ve farkındalık kazandırması",
+  "Kalıcı etki bırakması",
 ];
 
 function ChipSelect({
@@ -353,7 +353,8 @@ export default function EditProfileScreen() {
             Profili Düzenle
           </Text>
           <Text style={{ color: COLORS.muted }}>
-            Profilini daha çok sana benzet
+            Profil bilgilerini güncelleyerek önerileri
+            kişiselleştirebilirsin{" "}
           </Text>
         </View>
       </View>
@@ -462,7 +463,7 @@ export default function EditProfileScreen() {
           ref={bioRef}
           value={bio}
           onChangeText={setBio}
-          placeholder="Kendinden kısaca bahset"
+          placeholder="Kendini kısaca tanıtabilir veya okuma ilgi alanlarını yazabilirsin"
           placeholderTextColor="#9a9389"
           multiline
           style={[
@@ -498,7 +499,7 @@ export default function EditProfileScreen() {
         }}
       >
         <Text style={{ fontSize: 18, fontWeight: "900", color: COLORS.text }}>
-          Sevdiğin Türler
+          Tercih Ettiğin Türler{" "}
         </Text>
 
         <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 10 }}>
@@ -524,14 +525,14 @@ export default function EditProfileScreen() {
         }}
       >
         <Text style={{ fontSize: 18, fontWeight: "900", color: COLORS.text }}>
-          Kitap Zevkin
+          Okuma Tercihlerin{" "}
         </Text>
 
         <TextInput
           ref={favoriteAuthorsRef}
           value={favoriteAuthorsInput}
           onChangeText={setFavoriteAuthorsInput}
-          placeholder="Favori yazarlar (virgülle ayır)"
+          placeholder="Sevdiğin yazarları virgülle ayırarak yazabilirsin"
           placeholderTextColor="#9a9389"
           returnKeyType="next"
           onSubmitEditing={() => favoriteBookRef.current?.focus()}
@@ -542,7 +543,7 @@ export default function EditProfileScreen() {
           ref={favoriteBookRef}
           value={favoriteBook}
           onChangeText={setFavoriteBook}
-          placeholder="En sevdiğin kitap"
+          placeholder="Seni en çok etkileyen kitap"
           placeholderTextColor="#9a9389"
           returnKeyType="next"
           onSubmitEditing={() => yearlyGoalRef.current?.focus()}
@@ -561,7 +562,7 @@ export default function EditProfileScreen() {
         }}
       >
         <Text style={{ fontSize: 18, fontWeight: "900", color: COLORS.text }}>
-          Okur Vibe’ın
+          Okuma Alışkanlığın{" "}
         </Text>
 
         {READER_VIBES.map((item) => (
@@ -585,7 +586,7 @@ export default function EditProfileScreen() {
         }}
       >
         <Text style={{ fontSize: 18, fontWeight: "900", color: COLORS.text }}>
-          Okuma Modun
+          Okuma Tercihi{" "}
         </Text>
 
         <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 10 }}>
@@ -600,7 +601,7 @@ export default function EditProfileScreen() {
         </View>
 
         <Text style={{ fontSize: 16, fontWeight: "800", color: COLORS.text }}>
-          Bir kitapta seni en çok ne çeker?
+          Bir kitapta senin için en önemli özellikler nelerdir?{" "}
         </Text>
 
         <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 10 }}>
@@ -626,13 +627,13 @@ export default function EditProfileScreen() {
         }}
       >
         <Text style={{ fontSize: 18, fontWeight: "900", color: COLORS.text }}>
-          Hedef
+          Okuma Hedefi
         </Text>
 
         <TextInput
           value={yearlyGoal}
           onChangeText={setYearlyGoal}
-          placeholder="Yıllık kitap hedefin"
+          placeholder="Bu yıl için okuma hedefin (örn: 24)"
           placeholderTextColor="#9a9389"
           keyboardType="numeric"
           style={inputStyle}

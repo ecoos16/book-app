@@ -783,28 +783,54 @@ export default function Home() {
           </View>
         </View>
 
-        <BookSearchPicker
-          onSelect={(book) => {
-            const author = Array.isArray(book.authors)
-              ? book.authors.join(", ")
-              : "";
-
-            router.push({
-              pathname: "/add-book",
-              params: {
-                title: book.title ?? "",
-                author,
-                pagesTotal:
-                  typeof book.pageCount === "number"
-                    ? String(book.pageCount)
-                    : "",
-                thumbnail: book.thumbnail ?? "",
-                googleId: book.id ?? "",
-                status: "want",
-              },
-            });
+        <View
+          style={{
+            flexDirection: "row",
+            alignItems: "center",
+            gap: 10,
           }}
-        />
+        >
+          <View style={{ flex: 1 }}>
+            <BookSearchPicker
+              onSelect={(book) => {
+                const author = Array.isArray(book.authors)
+                  ? book.authors.join(", ")
+                  : "";
+
+                router.push({
+                  pathname: "/add-book",
+                  params: {
+                    title: book.title ?? "",
+                    author,
+                    pagesTotal:
+                      typeof book.pageCount === "number"
+                        ? String(book.pageCount)
+                        : "",
+                    thumbnail: book.thumbnail ?? "",
+                    googleId: book.id ?? "",
+                    status: "want",
+                  },
+                });
+              }}
+            />
+          </View>
+
+          {/* 🔥 AI ADD BUTTON */}
+          <Pressable
+            onPress={() => router.push("/ai-add-book")}
+            style={({ pressed }) => ({
+              width: 48,
+              height: 48,
+              borderRadius: 16,
+              backgroundColor: pressed ? COLORS.primaryDark : COLORS.primary,
+              alignItems: "center",
+              justifyContent: "center",
+              transform: [{ scale: pressed ? 0.95 : 1 }],
+            })}
+          >
+            <Ionicons name="sparkles" size={22} color="#fff" />
+          </Pressable>
+        </View>
 
         {personalizedCards.length > 0 && (
           <View style={{ gap: 14 }}>

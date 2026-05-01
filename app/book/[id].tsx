@@ -17,7 +17,7 @@ import { supabase } from "../../lib/supabase";
 import type { Book, BookStatus } from "../../types/book";
 
 const STORAGE_KEY = "BOOKS_V1";
-
+const AI_BACKEND_URL = "http://localhost:3001/api/ai-books/insight";
 const COLORS = {
   bg: "#fbf9f5",
   card: "#fffdf9",
@@ -319,10 +319,18 @@ export default function BookDetail() {
   const [storageBook, setStorageBook] = useState<Book | undefined>(undefined);
   const [loadingFallback, setLoadingFallback] = useState(true);
   const [deletingBook, setDeletingBook] = useState(false);
+  const [notice, setNotice] = useState("");
 
   const [sameReaders, setSameReaders] = useState<SameReader[]>([]);
   const [loadingReaders, setLoadingReaders] = useState(true);
   const [creatingGroupChat, setCreatingGroupChat] = useState(false);
+
+  const [aiInsight, setAiInsight] = useState<any>(null);
+  const [loadingInsight, setLoadingInsight] = useState(false);
+  const [generatingInsight, setGeneratingInsight] = useState(false);
+
+  const [alsoReadBooks, setAlsoReadBooks] = useState<any[]>([]);
+  const [loadingAlsoRead, setLoadingAlsoRead] = useState(false);
 
   const contextBook = useMemo(
     () => findBookInList(books, safeId, safeGoogleId, safeTitle, safeAuthor),
@@ -389,6 +397,135 @@ export default function BookDetail() {
 
   const book = contextBook ?? storageBook ?? fallbackBookFromRoute;
 
+  const showNotice = (message: string) => {
+    setNotice(message);
+    setTimeout(() => setNotice(""), 3000);
+  };
+
+  const loadCachedAIInsight = async () => {
+    if (!book || !authUser?.id) return;
+
+    try {
+      setLoadingInsight(true);
+
+      const { data, error } = await supabase
+        .from("book_ai_insights")
+        .select("*")
+        .eq("user_id", authUser.id)
+        .eq("book_id", book.id)
+        .maybeSingle();
+
+      if (error) {
+        console.log("AI INSIGHT CACHE ERROR:", error);
+        return;
+      }
+
+      if (data) {
+        setAiInsight({
+          summary: data.summary || "",
+          themes: data.themes || [],
+          who_should_read: data.who_should_read || "",
+          similar: data.similar_books || [],
+        });
+      }
+    } catch (error) {
+      console.log("AI INSIGHT CACHE LOAD ERROR:", error);
+    } finally {
+      setLoadingInsight(false);
+    }
+  };
+
+  const generateAIInsight = async () => {
+    if (!book || !authUser?.id) return;
+
+    try {
+      setGeneratingInsight(true);
+
+      const res = await fetch(AI_BACKEND_URL, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          title: book.title,
+          author: book.author,
+          description: book.description || book.note || "",
+        }),
+      });
+
+      const json = await res.json();
+
+      if (!json.success) {
+        console.log("AI INSIGHT RESPONSE ERROR:", json);
+        Alert.alert("Hata", "AI analiz oluşturulamadı.");
+        return;
+      }
+
+      const insight = json.data;
+      setAiInsight(insight);
+
+      const { error } = await supabase.from("book_ai_insights").insert({
+        user_id: authUser.id,
+        book_id: book.id,
+        title: book.title,
+        author: book.author,
+        summary: insight.summary || "",
+        themes: insight.themes || [],
+        who_should_read: insight.who_should_read || "",
+        similar_books: insight.similar || [],
+      });
+
+      if (error) {
+        console.log("AI INSIGHT INSERT ERROR:", error);
+      }
+    } catch (error) {
+      console.log("AI INSIGHT GENERATE ERROR:", error);
+      Alert.alert("Hata", "AI analiz oluşturulurken bir sorun oluştu.");
+    } finally {
+      setGeneratingInsight(false);
+    }
+  };
+
+  const fetchAlsoReadBooks = async () => {
+    if (!book || !authUser?.id) return;
+
+    try {
+      setLoadingAlsoRead(true);
+
+      const { data, error } = await supabase.rpc("get_also_read_books", {
+        p_title: book.title,
+        p_author: book.author,
+        p_current_user_id: authUser.id,
+        p_limit: 5,
+      });
+
+      if (error) {
+        console.log("ALSO READ BOOKS ERROR:", error);
+        setAlsoReadBooks([]);
+        return;
+      }
+
+      setAlsoReadBooks(data || []);
+    } catch (error) {
+      console.log("ALSO READ BOOKS FETCH ERROR:", error);
+      setAlsoReadBooks([]);
+    } finally {
+      setLoadingAlsoRead(false);
+    }
+  };
+
+  useEffect(() => {
+    if (book?.id && authUser?.id) {
+      loadCachedAIInsight();
+    }
+  }, [book?.id, authUser?.id]);
+
+  useEffect(() => {
+    if (book?.id && authUser?.id) {
+      fetchAlsoReadBooks();
+    }
+  }, [book?.id, authUser?.id]);
+
   useEffect(() => {
     async function fetchReaders() {
       if (!authUser?.id) {
@@ -433,7 +570,6 @@ export default function BookDetail() {
 
     fetchReaders();
   }, [book, authUser?.id]);
-
   const readersCount = useMemo(() => {
     if (!sameReaders) return 0;
     return sameReaders.filter((r) => r.user_id !== currentUserId).length;
@@ -529,16 +665,26 @@ export default function BookDetail() {
   const confirmDelete = async () => {
     if (!book) return;
 
+    const deletedTitle = book.title;
+    const deletedId = book.id;
+
     try {
       setDeletingBook(true);
-      console.log("BOOK DELETE BUTTON PRESSED:", book.id);
+      showNotice(`${deletedTitle} kitabı silindi.`);
 
-      await removeBook(book.id);
-
-      router.replace("/library");
+      setTimeout(async () => {
+        try {
+          await removeBook(deletedId);
+          router.replace("/(tabs)/library");
+        } catch (error) {
+          console.log("BOOK DELETE ERROR:", error);
+          showNotice("Kitap silinirken bir sorun oluştu.");
+        } finally {
+          setDeletingBook(false);
+        }
+      }, 900);
     } catch (error) {
       console.log("BOOK DELETE ERROR:", error);
-    } finally {
       setDeletingBook(false);
     }
   };
@@ -1071,6 +1217,148 @@ Bu kitap hakkında ne düşünüyorsun?`;
           ) : null}
         </SectionCard>
       ) : null}
+      <SectionCard title="AI Kitap Analizi 🤖">
+        {loadingInsight ? (
+          <Text style={{ color: COLORS.muted }}>
+            Kayıtlı AI analiz kontrol ediliyor...
+          </Text>
+        ) : !aiInsight ? (
+          <>
+            <Text style={{ color: COLORS.muted, lineHeight: 22 }}>
+              Bu kitap için henüz AI analiz oluşturulmadı. İstersen yapay zeka
+              ile özet, tema ve benzer kitap önerisi üretebilirsin.
+            </Text>
+
+            <SoftPillButton
+              label={
+                generatingInsight
+                  ? "AI analiz hazırlanıyor..."
+                  : "AI Analiz Yap"
+              }
+              icon="sparkles-outline"
+              variant="primary"
+              disabled={generatingInsight}
+              onPress={generateAIInsight}
+            />
+          </>
+        ) : (
+          <>
+            <Text style={{ fontWeight: "900", color: COLORS.text }}>
+              Geliştirilmiş Özet
+            </Text>
+            <Text style={{ color: COLORS.muted, lineHeight: 22 }}>
+              {aiInsight.summary || "Özet bulunamadı."}
+            </Text>
+
+            <Text
+              style={{ marginTop: 10, fontWeight: "900", color: COLORS.text }}
+            >
+              Temalar
+            </Text>
+            <Text style={{ color: COLORS.muted }}>
+              {aiInsight.themes?.length
+                ? aiInsight.themes.join(", ")
+                : "Tema bulunamadı."}
+            </Text>
+
+            <Text
+              style={{ marginTop: 10, fontWeight: "900", color: COLORS.text }}
+            >
+              Kimler Okumalı?
+            </Text>
+            <Text style={{ color: COLORS.muted, lineHeight: 22 }}>
+              {aiInsight.who_should_read || "Okuyucu önerisi bulunamadı."}
+            </Text>
+
+            <Text
+              style={{ marginTop: 10, fontWeight: "900", color: COLORS.text }}
+            >
+              Benzer Kitaplar
+            </Text>
+            <Text style={{ color: COLORS.muted }}>
+              {aiInsight.similar?.length
+                ? aiInsight.similar.join(", ")
+                : "Benzer kitap bulunamadı."}
+            </Text>
+          </>
+        )}
+      </SectionCard>
+
+      <SectionCard title="Bunu Okuyanlar Şunları da Okudu 📚">
+        {loadingAlsoRead ? (
+          <Text style={{ color: COLORS.muted }}>Öneriler hazırlanıyor...</Text>
+        ) : alsoReadBooks.length === 0 ? (
+          <Text style={{ color: COLORS.muted, lineHeight: 22 }}>
+            Bu kitap için henüz yeterli ortak okuma verisi yok. Daha fazla
+            kullanıcı bu kitabı kitaplığına ekledikçe öneriler güçlenecek.
+          </Text>
+        ) : (
+          alsoReadBooks.map((item, index) => (
+            <View
+              key={`${item.title}-${item.author}-${index}`}
+              style={{
+                flexDirection: "row",
+                gap: 12,
+                padding: 12,
+                borderRadius: 18,
+                borderWidth: 1,
+                borderColor: COLORS.border,
+                backgroundColor: COLORS.graySoft,
+              }}
+            >
+              {item.thumbnail ? (
+                <Image
+                  source={{ uri: item.thumbnail }}
+                  style={{
+                    width: 48,
+                    height: 72,
+                    borderRadius: 10,
+                    backgroundColor: COLORS.primarySoft,
+                  }}
+                  resizeMode="cover"
+                />
+              ) : (
+                <View
+                  style={{
+                    width: 48,
+                    height: 72,
+                    borderRadius: 10,
+                    backgroundColor: COLORS.primarySoft,
+                    alignItems: "center",
+                    justifyContent: "center",
+                  }}
+                >
+                  <Ionicons
+                    name="book-outline"
+                    size={22}
+                    color={COLORS.primary}
+                  />
+                </View>
+              )}
+
+              <View style={{ flex: 1 }}>
+                <Text style={{ color: COLORS.text, fontWeight: "900" }}>
+                  {item.title}
+                </Text>
+
+                <Text style={{ color: COLORS.muted, marginTop: 3 }}>
+                  {item.author || "Yazar bilinmiyor"}
+                </Text>
+
+                <Text
+                  style={{
+                    color: COLORS.primary,
+                    fontWeight: "800",
+                    marginTop: 6,
+                  }}
+                >
+                  {item.reader_count} ortak okuyucu
+                </Text>
+              </View>
+            </View>
+          ))
+        )}
+      </SectionCard>
 
       {book.status === "reading" && (
         <SectionCard title="Okuma İlerlemesi">
@@ -1367,6 +1655,29 @@ Bu kitap hakkında ne düşünüyorsun?`;
         </SectionCard>
       )}
 
+      {!!notice && (
+        <View
+          style={{
+            backgroundColor: COLORS.text,
+            paddingVertical: 13,
+            paddingHorizontal: 14,
+            borderRadius: 16,
+            borderWidth: 1,
+            borderColor: COLORS.border,
+          }}
+        >
+          <Text
+            style={{
+              color: COLORS.whiteSoft,
+              textAlign: "center",
+              fontWeight: "900",
+            }}
+          >
+            {notice}
+          </Text>
+        </View>
+      )}
+
       <SoftPillButton
         label="Düzenle"
         icon="create-outline"
@@ -1403,10 +1714,7 @@ Bu kitap hakkında ne düşünüyorsun?`;
         icon="trash-outline"
         variant="danger"
         disabled={deletingBook}
-        onPress={() => {
-          Alert.alert("TEST", "Kitabı Sil butonuna basıldı");
-          confirmDelete();
-        }}
+        onPress={confirmDelete}
       />
       <SoftPillButton
         label="Geri"

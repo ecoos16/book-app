@@ -34,53 +34,56 @@ const COLORS = {
 
 const GENRES = [
   "Roman",
-  "Fantastik",
+  "Klasik Edebiyat",
+  "Modern Edebiyat",
   "Bilim Kurgu",
-  "Polisiye",
-  "Klasik",
+  "Fantastik",
+  "Polisiye / Gizem",
   "Tarih",
   "Psikoloji",
-  "Kişisel Gelişim",
   "Felsefe",
-  "Biyografi",
-  "Romantik",
-  "Gerilim",
-  "Manga",
-  "Distopya",
+  "Biyografi / Anı",
+  "Kişisel Gelişim",
+  "Deneme",
+  "Şiir",
+  "Akademik / Araştırma",
 ];
 
-const READER_VIBES = [
-  "Gece okuru 🌙",
-  "Altını çize çize okurum ✍️",
-  "Klasikçiyim 📚",
-  "Fantastik dünyalara kaçarım 🪄",
-  "Polisiye severim 🔍",
-  "Duygusal yıkım seviyorum 💔",
-  "Bir günde bitiririm ⚡",
-  "Yavaş ama derin okurum ☕",
-  "Popüler olanı merak ederim 🔥",
-  "Yarım bırakırım ama severim 😅",
+const READER_TYPES = [
+  "Düzenli okuma alışkanlığına sahibim",
+  "Yavaş ve sindirerek okumayı tercih ederim",
+  "Not alarak ve altını çizerek okurum",
+  "Klasik ve nitelikli eserleri tercih ederim",
+  "Güncel ve popüler kitapları takip ederim",
+  "Kurgu dünyalarında derinleşmeyi severim",
+  "Bilgi ve bakış açısı kazandıran kitapları önemserim",
+  "Kısa sürede yoğun okuma yapabilirim",
+  "Dönem dönem okuma rutinim değişebilir",
+  "Farklı türleri keşfetmeyi severim",
 ];
 
 const READING_MOODS = [
-  "Klasik modundayım",
-  "Romantik şeyler sarıyor",
-  "Gerilim istiyorum",
-  "Bilim kurguya sardım",
-  "Kişisel gelişim okuyorum",
-  "Karışık gidiyorum",
-  "Ne bulursam okuyorum",
+  "Klasik eserler okumak istiyorum",
+  "Düşündüren ve derinlikli metinler arıyorum",
+  "Sürükleyici bir kurgu okumak istiyorum",
+  "Gerilim / gizem türlerine yöneliyorum",
+  "Kişisel gelişim ve farkındalık odaklı okuyorum",
+  "Tarih ve biyografi okumak istiyorum",
+  "Daha hafif ve akıcı kitaplar tercih ediyorum",
+  "Farklı türleri keşfetmek istiyorum",
 ];
 
 const BOOK_VALUES = [
-  "Güçlü karakterler",
-  "Akıcı dil",
-  "Duygusal yoğunluk",
-  "Plot twist",
-  "Karanlık atmosfer",
-  "Felsefi derinlik",
-  "Romantizm",
-  "Gerçek hayata yakınlık",
+  "Güçlü karakter gelişimi",
+  "Akıcı ve anlaşılır anlatım",
+  "Derinlikli konu işlenişi",
+  "Düşündürücü temalar",
+  "Etkileyici atmosfer",
+  "Gerçekçi olay örgüsü",
+  "Duygusal bağ kurabilme",
+  "Özgün bakış açısı",
+  "Bilgi ve farkındalık kazandırması",
+  "Kalıcı etki bırakması",
 ];
 
 const CURRENT_YEAR = new Date().getFullYear();
@@ -342,7 +345,10 @@ export default function Register() {
 
   const handleRegister = async () => {
     if (readerVibe.length === 0) {
-      Alert.alert("Eksik bilgi", "Kendine en yakın okur vibe’ını seç.");
+      Alert.alert(
+        "Eksik bilgi",
+        "Devam etmek için okuma alışkanlığını tanımlayan en az bir seçenek seçmelisin.",
+      );
       return;
     }
 
@@ -402,7 +408,7 @@ export default function Register() {
         return;
       }
 
-      Alert.alert("Hazırsın ✨", "Hesabın oluşturuldu.");
+      Alert.alert("Kayıt tamamlandı", "Hesabın başarıyla oluşturuldu.");
       router.replace("/(tabs)/home");
     } catch (err: any) {
       setSubmitting(false);
@@ -433,7 +439,7 @@ export default function Register() {
           }}
         >
           <Ionicons
-            name={step === 1 ? "person-add-outline" : "sparkles-outline"}
+            name={step === 1 ? "person-add-outline" : "library-outline"}
             size={34}
             color={COLORS.primary}
           />
@@ -458,7 +464,7 @@ export default function Register() {
             marginBottom: 8,
           }}
         >
-          {step === 1 ? "Hesabını oluştur" : "Profilini kişiselleştir"}
+          {step === 1 ? "Hesabını oluştur" : "Okuma profilini oluştur"}
         </Text>
 
         <Text
@@ -472,7 +478,7 @@ export default function Register() {
         >
           {step === 1
             ? "Önce temel bilgileri tamamlayalım."
-            : "Biraz seni tanıyalım, profilin daha çok seni yansıtsın ✨"}
+            : "Okuma tercihlerini belirleyerek sana daha uygun öneriler sunabiliriz."}
         </Text>
       </View>
 
@@ -721,11 +727,12 @@ export default function Register() {
               }}
             >
               <Text style={sectionTitleStyle}>
-                En çok hangi türlere düşüyorsun? 📚
+                En çok hangi türleri okumayı tercih edersin?
               </Text>
 
               <Text style={{ color: COLORS.muted, lineHeight: 20 }}>
-                Profilinde öne çıksın, sana daha iyi öneriler gelsin.
+                Seçimlerin profilini kişiselleştirmek ve önerileri iyileştirmek
+                için kullanılır.
               </Text>
 
               {favoriteGenres.length > 0 && (
@@ -781,12 +788,12 @@ export default function Register() {
               }}
             >
               <Text style={sectionTitleStyle}>
-                Takip ettiğin yazarlar kimler? ✍️
+                Sevdiğin veya takip ettiğin yazarlar
               </Text>
 
               <TextInput
                 ref={favoriteAuthorsRef}
-                placeholder="Örn: Sabahattin Ali, Matt Haig, Stefan Zweig"
+                placeholder="Örn: Sabahattin Ali, Stefan Zweig, Yaşar Kemal"
                 placeholderTextColor="#9a9389"
                 value={favoriteAuthorsInput}
                 onChangeText={setFavoriteAuthorsInput}
@@ -797,7 +804,7 @@ export default function Register() {
 
               <TextInput
                 ref={favoriteBookRef}
-                placeholder="Seni en çok etkileyen kitap"
+                placeholder="Seni etkileyen veya önermek istediğin bir kitap"
                 placeholderTextColor="#9a9389"
                 value={favoriteBook}
                 onChangeText={setFavoriteBook}
@@ -808,7 +815,7 @@ export default function Register() {
 
               <TextInput
                 ref={yearlyGoalRef}
-                placeholder="Bu yıl kaç kitaplık hedef koyuyorsun? (örn: 24)"
+                placeholder="Bu yıl için okuma hedefin (örn: 24)"
                 placeholderTextColor="#9a9389"
                 keyboardType="numeric"
                 value={yearlyGoal}
@@ -820,7 +827,7 @@ export default function Register() {
 
               <TextInput
                 ref={bioRef}
-                placeholder="Profiline kısa bir not bırak... Nasıl bir okursun?"
+                placeholder="Kendini kısaca tanıtabilir veya okuma ilgi alanlarını yazabilirsin."
                 placeholderTextColor="#9a9389"
                 multiline
                 value={bio}
@@ -843,7 +850,9 @@ export default function Register() {
                 gap: 12,
               }}
             >
-              <Text style={sectionTitleStyle}>Okur vibe’ın hangisi? ✨</Text>
+              <Text style={sectionTitleStyle}>
+                Okuma alışkanlığını en iyi hangileri tanımlar?
+              </Text>
 
               {readerVibe.length > 0 && (
                 <View
@@ -857,7 +866,7 @@ export default function Register() {
                 </View>
               )}
 
-              {READER_VIBES.map((item) => {
+              {READER_TYPES.map((item) => {
                 const selected = readerVibe.includes(item);
 
                 return (
@@ -869,7 +878,7 @@ export default function Register() {
                         readerVibe,
                         setReaderVibe,
                         4,
-                        "Okur vibe",
+                        "Okuma alışkanlığı",
                       )
                     }
                     style={{
@@ -904,7 +913,7 @@ export default function Register() {
               }}
             >
               <Text style={sectionTitleStyle}>
-                Son zamanlarda hangi moddasın?
+                Şu sıralar okumak istediğin içerik türü nedir?
               </Text>
 
               {readingMood.length > 0 && (
@@ -932,7 +941,7 @@ export default function Register() {
                           readingMood,
                           setReadingMood,
                           4,
-                          "Okuma modu",
+                          "Okuma tercihi",
                         )
                       }
                       style={{
@@ -959,7 +968,7 @@ export default function Register() {
               </View>
 
               <Text style={sectionTitleStyle}>
-                Bir kitapta seni en çok ne çeker?
+                Bir kitapta senin için en önemli özellikler nelerdir?
               </Text>
 
               {bookValue.length > 0 && (
@@ -1059,7 +1068,7 @@ export default function Register() {
                 ) : (
                   <>
                     <Ionicons
-                      name="sparkles-outline"
+                      name="checkmark-circle-outline"
                       size={18}
                       color={COLORS.whiteSoft}
                     />
@@ -1071,7 +1080,7 @@ export default function Register() {
                         fontSize: 15,
                       }}
                     >
-                      Profili tamamla
+                      Kaydı tamamla
                     </Text>
                   </>
                 )}

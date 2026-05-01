@@ -37,6 +37,15 @@ type Props = {
   initialQuery?: string;
 };
 
+type SearchBookSource = GoogleBook["source"] | "database";
+
+type SearchBook = Omit<GoogleBook, "source"> & {
+  source?: SearchBookSource;
+  dbBookId?: string;
+  publisher?: string;
+  isbn?: string;
+};
+
 type ProfileSearchRow = {
   id: string;
   username: string | null;
@@ -44,6 +53,21 @@ type ProfileSearchRow = {
   first_name: string | null;
   last_name: string | null;
   avatar_url: string | null;
+};
+
+type SupabaseBookRow = {
+  id: string;
+  title: string | null;
+  author: string | null;
+  thumbnail: string | null;
+  description: string | null;
+  page_count: number | null;
+  categories?: string[] | null;
+  language?: string | null;
+  isbn?: string | null;
+  publisher?: string | null;
+  source_type?: string | null;
+  created_at?: string | null;
 };
 
 type StateMessage = {
@@ -66,6 +90,98 @@ function getInitials(name?: string) {
   const parts = name.trim().split(" ").filter(Boolean);
   if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
   return `${parts[0][0] ?? ""}${parts[1][0] ?? ""}`.toUpperCase();
+}
+
+function normalizeText(value: unknown) {
+  if (typeof value !== "string") return "";
+  return value.trim().toLocaleLowerCase("tr").replace(/\s+/g, " ");
+}
+
+function makeDuplicateKey(book: SearchBook) {
+  const title = normalizeText(book.title);
+  const authors = Array.isArray(book.authors)
+    ? normalizeText(book.authors.join(", "))
+    : "";
+
+  return `${title}__${authors}`;
+}
+
+function removeDuplicateBooks(books: SearchBook[]) {
+  const seen = new Set<string>();
+
+  return books.filter((book) => {
+    const key = makeDuplicateKey(book);
+
+    if (!key.replace(/_/g, "").trim()) return false;
+    if (seen.has(key)) return false;
+
+    seen.add(key);
+    return true;
+  });
+}
+
+function mapDbBookToSearchBook(book: SupabaseBookRow): SearchBook {
+  return {
+    id: `db-${book.id}`,
+    title: book.title || "Başlıksız",
+    authors: book.author ? [book.author] : [],
+    thumbnail: book.thumbnail || undefined,
+    description: book.description || undefined,
+    pageCount:
+      typeof book.page_count === "number" && book.page_count > 0
+        ? book.page_count
+        : undefined,
+    categories: Array.isArray(book.categories) ? book.categories : undefined,
+    language: book.language || undefined,
+    source: "database",
+    dbBookId: book.id,
+    publisher: book.publisher || undefined,
+    isbn: book.isbn || undefined,
+  };
+}
+
+function mapGoogleBookToSearchBook(book: GoogleBook): SearchBook {
+  return {
+    ...book,
+    source: book.source ?? "google",
+  };
+}
+
+async function searchDatabaseBooks(query: string): Promise<SearchBook[]> {
+  const safeQuery = query.trim();
+
+  if (safeQuery.length < 2) return [];
+
+  const { data, error } = await supabase
+    .from("books")
+    .select(
+      `
+      id,
+      title,
+      author,
+      thumbnail,
+      description,
+      page_count,
+      categories,
+      language,
+      isbn,
+      publisher,
+      source_type,
+      created_at
+    `,
+    )
+    .or(
+      `title.ilike.%${safeQuery}%,author.ilike.%${safeQuery}%,publisher.ilike.%${safeQuery}%,isbn.ilike.%${safeQuery}%`,
+    )
+    .order("created_at", { ascending: false })
+    .limit(10);
+
+  if (error) {
+    console.log("SUPABASE BOOK SEARCH ERROR:", error);
+    return [];
+  }
+
+  return ((data ?? []) as SupabaseBookRow[]).map(mapDbBookToSearchBook);
 }
 
 function UserResultCard({
@@ -163,11 +279,42 @@ function BookCover({ thumbnail }: { thumbnail?: string }) {
   );
 }
 
+function SourceBadge({ source }: { source?: SearchBookSource }) {
+  if (!source) return null;
+
+  const isDatabase = source === "database";
+
+  return (
+    <View
+      style={{
+        alignSelf: "flex-start",
+        marginTop: 7,
+        paddingHorizontal: 8,
+        paddingVertical: 4,
+        borderRadius: 999,
+        backgroundColor: isDatabase ? COLORS.primarySoft : COLORS.graySoft,
+        borderWidth: 1,
+        borderColor: COLORS.border,
+      }}
+    >
+      <Text
+        style={{
+          fontSize: 10,
+          fontWeight: "900",
+          color: isDatabase ? COLORS.primary : COLORS.muted,
+        }}
+      >
+        {isDatabase ? "ReadSphere veritabanı" : "Google Books"}
+      </Text>
+    </View>
+  );
+}
+
 function SearchResultCard({
   item,
   onPress,
 }: {
-  item: GoogleBook;
+  item: SearchBook;
   onPress: () => void;
 }) {
   return (
@@ -178,7 +325,8 @@ function SearchResultCard({
         gap: 12,
         padding: 12,
         borderWidth: 1,
-        borderColor: COLORS.border,
+        borderColor:
+          item.source === "database" ? COLORS.primarySoft : COLORS.border,
         borderRadius: 18,
         backgroundColor: pressed ? "#f5efe7" : COLORS.card,
         alignItems: "center",
@@ -209,6 +357,8 @@ function SearchResultCard({
         <Text style={{ color: COLORS.muted, marginTop: 4, fontSize: 12 }}>
           {item.pageCount ? `${item.pageCount} sayfa` : "Sayfa bilgisi yok"}
         </Text>
+
+        <SourceBadge source={item.source} />
       </View>
     </Pressable>
   );
@@ -262,10 +412,11 @@ export default function BookSearchPicker({ onSelect, initialQuery }: Props) {
 
   const [query, setQuery] = useState("");
   const [debouncedQuery, setDebouncedQuery] = useState("");
-  const [bookResults, setBookResults] = useState<GoogleBook[]>([]);
+  const [bookResults, setBookResults] = useState<SearchBook[]>([]);
   const [userResults, setUserResults] = useState<ProfileSearchRow[]>([]);
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState<StateMessage | null>(null);
+
   useEffect(() => {
     if (initialQuery && initialQuery.trim()) {
       setQuery(initialQuery);
@@ -310,18 +461,21 @@ export default function BookSearchPicker({ onSelect, initialQuery }: Props) {
         setLoading(true);
         setMessage(null);
 
-        const [booksData, usersResponse] = await Promise.all([
-          searchGoogleBooks(q, 10, controller.signal),
-          supabase
-            .from("profiles")
-            .select(
-              "id, username, full_name, first_name, last_name, avatar_url",
-            )
-            .or(
-              `username.ilike.%${q}%,full_name.ilike.%${q}%,first_name.ilike.%${q}%,last_name.ilike.%${q}%`,
-            )
-            .limit(6),
-        ]);
+        const [googleBooksData, dbBooksData, usersResponse] = await Promise.all(
+          [
+            searchGoogleBooks(q, 10, controller.signal),
+            searchDatabaseBooks(q),
+            supabase
+              .from("profiles")
+              .select(
+                "id, username, full_name, first_name, last_name, avatar_url",
+              )
+              .or(
+                `username.ilike.%${q}%,full_name.ilike.%${q}%,first_name.ilike.%${q}%,last_name.ilike.%${q}%`,
+              )
+              .limit(6),
+          ],
+        );
 
         if (controller.signal.aborted) return;
 
@@ -331,13 +485,21 @@ export default function BookSearchPicker({ onSelect, initialQuery }: Props) {
 
         const users = (usersResponse.data ?? []) as ProfileSearchRow[];
 
-        setBookResults(booksData);
+        const googleBooks = googleBooksData.map(mapGoogleBookToSearchBook);
+
+        const combinedBooks = removeDuplicateBooks([
+          ...dbBooksData,
+          ...googleBooks,
+        ]).slice(0, 15);
+
+        setBookResults(combinedBooks);
         setUserResults(users);
 
-        if (booksData.length === 0 && users.length === 0) {
+        if (combinedBooks.length === 0 && users.length === 0) {
           setMessage({
             title: "Sonuç bulunamadı",
-            description: "Farklı bir kitap, yazar veya kullanıcı adı dene.",
+            description:
+              "Farklı bir kitap, yazar veya kullanıcı adı dene. AI ile eklenen kitaplar da burada aranır.",
             variant: "empty",
           });
         }
@@ -372,8 +534,8 @@ export default function BookSearchPicker({ onSelect, initialQuery }: Props) {
     setLoading(false);
   };
 
-  const handleSelectBook = (item: GoogleBook) => {
-    onSelect(item);
+  const handleSelectBook = (item: SearchBook) => {
+    onSelect(item as GoogleBook);
     setBookResults([]);
     setUserResults([]);
     setMessage(null);

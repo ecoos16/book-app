@@ -37,6 +37,7 @@ function RootNavigator() {
       "ai-recommendations",
       "user",
       "book-community",
+      "ai-add-book",
     ];
 
     const inAllowedStandaloneRoute =

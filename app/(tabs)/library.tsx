@@ -1,15 +1,10 @@
 // app/(tabs)/library.tsx
 
 import { Ionicons } from "@expo/vector-icons";
-import { router } from "expo-router";
-import React, { useMemo } from "react";
+import { router, useLocalSearchParams } from "expo-router";
+import React, { useEffect, useMemo, useState } from "react";
 import { Pressable, ScrollView, Text, View } from "react-native";
 import { useBooks } from "../../context/BooksContext";
-
-/**
- * ReadSphere renk paleti
- * Stitch tasarımındaki sıcak ve editorial hisse yakın tonlar
- */
 const COLORS = {
   bg: "#fbf9f5",
   card: "#fffdf9",
@@ -23,20 +18,25 @@ const COLORS = {
   graySoft: "#f3efe8",
 };
 
-/**
- * Kategori kartı için icon tipleri
- */
 type LibraryCardIcon = keyof typeof Ionicons.glyphMap;
 
-/**
- * Kitaplıkta kullanılan kategori kartı
- *
- * Her kart:
- * - bir kategori başlığı gösterir
- * - alt açıklama içerir
- * - kaç kitap olduğunu badge ile gösterir
- * - basılabilir görünür
- */
+type SaveParams = {
+  saved?: string | string[];
+  notice?: string | string[];
+  title?: string | string[];
+  status?: string | string[];
+};
+
+function getParamValue(value?: string | string[]) {
+  return Array.isArray(value) ? value[0] : value;
+}
+
+function getStatusLabel(status?: string) {
+  if (status === "reading") return "Okuyorum";
+  if (status === "read") return "Okudum";
+  return "İstiyorum";
+}
+
 function LibrarySectionCard({
   title,
   subtitle,
@@ -55,16 +55,12 @@ function LibrarySectionCard({
   return (
     <Pressable
       onPress={onPress}
-      style={({ pressed, hovered }) => ({
+      style={({ pressed }) => ({
         padding: 18,
         borderRadius: 22,
         borderWidth: 1,
         borderColor: COLORS.border,
-        backgroundColor: pressed
-          ? "#f6f1ea"
-          : hovered
-            ? "#fffaf4"
-            : COLORS.card,
+        backgroundColor: pressed ? "#f6f1ea" : COLORS.card,
         gap: 12,
         transform: [{ scale: pressed ? 0.985 : 1 }],
         shadowColor: "#2f2a24",
@@ -74,7 +70,6 @@ function LibrarySectionCard({
         elevation: 2,
       })}
     >
-      {/* Üst satır: ikon + badge */}
       <View
         style={{
           flexDirection: "row",
@@ -105,42 +100,22 @@ function LibrarySectionCard({
             borderColor: COLORS.border,
           }}
         >
-          <Text
-            style={{
-              fontWeight: "800",
-              color: COLORS.text,
-              fontSize: 12,
-            }}
-          >
+          <Text style={{ fontWeight: "800", color: COLORS.text, fontSize: 12 }}>
             {count} kitap
           </Text>
         </View>
       </View>
 
-      {/* Başlıklar */}
       <View style={{ gap: 6 }}>
-        <Text
-          style={{
-            fontSize: 20,
-            fontWeight: "900",
-            color: COLORS.text,
-          }}
-        >
+        <Text style={{ fontSize: 20, fontWeight: "900", color: COLORS.text }}>
           {title}
         </Text>
 
-        <Text
-          style={{
-            color: COLORS.muted,
-            lineHeight: 20,
-            fontSize: 14,
-          }}
-        >
+        <Text style={{ color: COLORS.muted, lineHeight: 20, fontSize: 14 }}>
           {subtitle}
         </Text>
       </View>
 
-      {/* Alt satır: dokunma yönlendirmesi */}
       <View
         style={{
           flexDirection: "row",
@@ -150,11 +125,7 @@ function LibrarySectionCard({
         }}
       >
         <Text
-          style={{
-            color: COLORS.primary,
-            fontWeight: "800",
-            fontSize: 13,
-          }}
+          style={{ color: COLORS.primary, fontWeight: "800", fontSize: 13 }}
         >
           Listeyi aç
         </Text>
@@ -165,20 +136,11 @@ function LibrarySectionCard({
   );
 }
 
-/**
- * Kitaplık ekranı
- *
- * Bu ekran:
- * - kullanıcının kitaplarını 3 ana kategoriye ayırır
- * - okuyorum / okudum / istiyorum mantığını korur
- * - Stitch tasarımındaki premium sıcaklığı taşır
- */
 export default function Library() {
   const { books, isHydrated } = useBooks();
+  const params = useLocalSearchParams<SaveParams>();
+  const [notice, setNotice] = useState("");
 
-  /**
-   * Kategori bazlı kitap sayıları
-   */
   const counts = useMemo(() => {
     return {
       reading: books.filter((b) => b.status === "reading").length,
@@ -187,34 +149,69 @@ export default function Library() {
     };
   }, [books]);
 
+  useEffect(() => {
+    const saved = getParamValue(params.saved);
+    const noticeType = getParamValue(params.notice);
+
+    if (saved !== "1" && !noticeType) return;
+
+    const title = getParamValue(params.title) || "Kitap";
+    const status = getParamValue(params.status);
+    const label = getStatusLabel(status);
+
+    if (noticeType === "deleted") {
+      setNotice(`${title} kitabı silindi.`);
+    } else if (noticeType === "duplicate") {
+      setNotice(`${title} zaten kitaplığında var.`);
+    } else {
+      setNotice(`${title} kitabı ${label} kitaplığına eklendi.`);
+    }
+
+    const timer = setTimeout(() => {
+      setNotice("");
+      router.setParams({
+        saved: undefined,
+        notice: undefined,
+        title: undefined,
+        status: undefined,
+      });
+    }, 3000);
+
+    return () => clearTimeout(timer);
+  }, [params.saved, params.notice, params.title, params.status]);
+
   return (
     <ScrollView
       style={{ flex: 1, backgroundColor: COLORS.bg }}
-      contentContainerStyle={{
-        padding: 18,
-        gap: 16,
-        paddingBottom: 120,
-      }}
+      contentContainerStyle={{ padding: 18, gap: 16, paddingBottom: 120 }}
     >
-      {/* ================= ÜST BAŞLIK ================= */}
+      {!!notice && (
+        <View
+          style={{
+            backgroundColor: COLORS.text,
+            paddingVertical: 13,
+            paddingHorizontal: 14,
+            borderRadius: 16,
+            borderWidth: 1,
+            borderColor: COLORS.border,
+          }}
+        >
+          <Text
+            style={{ color: "#fff7f4", textAlign: "center", fontWeight: "900" }}
+          >
+            {notice}
+          </Text>
+        </View>
+      )}
+
       <View style={{ gap: 8 }}>
         <Text
-          style={{
-            fontSize: 30,
-            fontWeight: "900",
-            color: COLORS.primary,
-          }}
+          style={{ fontSize: 30, fontWeight: "900", color: COLORS.primary }}
         >
           Kitaplık
         </Text>
 
-        <Text
-          style={{
-            color: COLORS.muted,
-            lineHeight: 22,
-            fontSize: 15,
-          }}
-        >
+        <Text style={{ color: COLORS.muted, lineHeight: 22, fontSize: 15 }}>
           Kitaplarını durumlarına göre düzenle, takip et ve okuma yolculuğunu
           daha görünür hale getir.
         </Text>
@@ -225,12 +222,8 @@ export default function Library() {
           console.log("GO AI PAGE");
           router.push("/ai-recommendations");
         }}
-        style={({ pressed, hovered }) => ({
-          backgroundColor: pressed
-            ? "#6b4c33"
-            : hovered
-              ? "#8a6240"
-              : COLORS.primary,
+        style={({ pressed }) => ({
+          backgroundColor: pressed ? "#6b4c33" : COLORS.primary,
           paddingVertical: 16,
           paddingHorizontal: 16,
           borderRadius: 20,
@@ -248,17 +241,11 @@ export default function Library() {
       >
         <Ionicons name="sparkles-outline" size={20} color="#fff7f4" />
 
-        <Text
-          style={{
-            color: "#fff7f4",
-            fontWeight: "900",
-            fontSize: 15,
-          }}
-        >
+        <Text style={{ color: "#fff7f4", fontWeight: "900", fontSize: 15 }}>
           AI Kitap Önerisi Al
         </Text>
       </Pressable>
-      {/* ================= LOADING ================= */}
+
       {!isHydrated ? (
         <View
           style={{
@@ -273,7 +260,6 @@ export default function Library() {
         </View>
       ) : (
         <>
-          {/* ================= OKUYORUM ================= */}
           <LibrarySectionCard
             title="Okuyorum"
             subtitle="Şu anda aktif olarak devam ettiğin kitaplar burada."
@@ -283,7 +269,6 @@ export default function Library() {
             onPress={() => router.push("/lists/reading")}
           />
 
-          {/* ================= OKUDUM ================= */}
           <LibrarySectionCard
             title="Okudum"
             subtitle="Bitirdiğin, puanladığın veya not aldığın kitaplar."
@@ -293,7 +278,6 @@ export default function Library() {
             onPress={() => router.push("/lists/read")}
           />
 
-          {/* ================= İSTİYORUM ================= */}
           <LibrarySectionCard
             title="İstiyorum"
             subtitle="Daha sonra okumak için kaydettiğin kitap listesi."
@@ -305,7 +289,6 @@ export default function Library() {
         </>
       )}
 
-      {/* ================= YENİ KİTAP EKLE ================= */}
       <Pressable
         onPress={() =>
           router.push({
@@ -313,13 +296,9 @@ export default function Library() {
             params: { status: "want" },
           })
         }
-        style={({ pressed, hovered }) => ({
+        style={({ pressed }) => ({
           marginTop: 6,
-          backgroundColor: pressed
-            ? "#6b4c33"
-            : hovered
-              ? "#8a6240"
-              : COLORS.primary,
+          backgroundColor: pressed ? "#6b4c33" : COLORS.primary,
           paddingVertical: 16,
           borderRadius: 18,
           alignItems: "center",
@@ -335,13 +314,7 @@ export default function Library() {
         })}
       >
         <Ionicons name="add" size={20} color="#fff7f4" />
-        <Text
-          style={{
-            color: "#fff7f4",
-            fontWeight: "900",
-            fontSize: 15,
-          }}
-        >
+        <Text style={{ color: "#fff7f4", fontWeight: "900", fontSize: 15 }}>
           Yeni Kitap Ekle
         </Text>
       </Pressable>
