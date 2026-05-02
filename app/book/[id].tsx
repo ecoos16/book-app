@@ -17,7 +17,7 @@ import { supabase } from "../../lib/supabase";
 import type { Book, BookStatus } from "../../types/book";
 
 const STORAGE_KEY = "BOOKS_V1";
-const AI_BACKEND_URL = "http://localhost:3001/api/ai-books/insight";
+const AI_BACKEND_URL = "http://192.168.1.104:3001/api/ai-books/insight";
 const COLORS = {
   bg: "#fbf9f5",
   card: "#fffdf9",

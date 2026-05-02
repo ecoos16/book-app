@@ -1,5 +1,6 @@
 // app/ai-add-book.tsx
 
+import * as ImageManipulator from "expo-image-manipulator";
 import * as ImagePicker from "expo-image-picker";
 import { router } from "expo-router";
 import React, { useState } from "react";
@@ -8,6 +9,7 @@ import {
   Alert,
   Image,
   Modal,
+  Platform,
   Pressable,
   ScrollView,
   Text,
@@ -17,7 +19,7 @@ import {
 import { useAuth } from "../context/AuthContext";
 import { useBooks } from "../context/BooksContext";
 import { supabase } from "../lib/supabase";
-const AI_BACKEND_URL = "http://localhost:3001/api/ai-books/analyze";
+const AI_BACKEND_URL = "http://192.168.1.104:3001/api/ai-books/analyze";
 
 type BookStatus = "want" | "reading" | "read";
 
@@ -53,6 +55,22 @@ export default function AiAddBookScreen() {
       setNotice("");
     }, 2500);
   };
+  const prepareImageForAI = async (uri: string) => {
+    const manipulated = await ImageManipulator.manipulateAsync(
+      uri,
+      [{ resize: { width: 900 } }],
+      {
+        compress: 0.85,
+        format: ImageManipulator.SaveFormat.JPEG,
+      },
+    );
+
+    return {
+      uri: manipulated.uri,
+      name: "cover.jpg",
+      type: "image/jpeg",
+    };
+  };
   const normalizeBookText = (value: unknown) => {
     if (typeof value !== "string") return "";
     return value.trim().toLocaleLowerCase("tr").replace(/\s+/g, " ");
@@ -72,33 +90,42 @@ export default function AiAddBookScreen() {
   };
 
   const pickImage = async () => {
+    const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+
+    if (permission.status !== "granted") {
+      Alert.alert("İzin gerekli", "Galeri izni vermen gerekiyor.");
+      return;
+    }
+
     const result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ["images"],
       quality: 0.8,
     });
 
-    if (!result.canceled) {
-      setImage(result.assets[0]);
+    if (!result.canceled && result.assets?.length > 0) {
+      const fixedImage = await prepareImageForAI(result.assets[0].uri);
+      setImage(fixedImage as any);
     }
   };
-
   const takePhoto = async () => {
     const permission = await ImagePicker.requestCameraPermissionsAsync();
 
-    if (!permission.granted) {
+    if (permission.status !== "granted") {
       Alert.alert("İzin gerekli", "Kamera izni vermen gerekiyor.");
       return;
     }
 
     const result = await ImagePicker.launchCameraAsync({
+      mediaTypes: ["images"],
+      allowsEditing: true,
       quality: 0.8,
     });
 
-    if (!result.canceled) {
-      setImage(result.assets[0]);
+    if (!result.canceled && result.assets?.length > 0) {
+      const fixedImage = await prepareImageForAI(result.assets[0].uri);
+      setImage(fixedImage as any);
     }
   };
-
   const analyzeBook = async () => {
     if (!title.trim() && !image) {
       Alert.alert("Eksik bilgi", "Kitap adı yaz veya kapak görseli ekle.");
@@ -116,9 +143,17 @@ export default function AiAddBookScreen() {
       if (author.trim()) formData.append("author", author.trim());
 
       if (image) {
-        const imageResponse = await fetch(image.uri);
-        const blob = await imageResponse.blob();
-        formData.append("cover", blob, "cover.jpg");
+        if (Platform.OS === "web") {
+          const imageResponse = await fetch(image.uri);
+          const blob = await imageResponse.blob();
+          formData.append("cover", blob, "cover.jpg");
+        } else {
+          formData.append("cover", {
+            uri: image.uri,
+            name: "cover.jpg",
+            type: "image/jpeg",
+          } as any);
+        }
       }
 
       const response = await fetch(AI_BACKEND_URL, {
