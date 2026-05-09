@@ -19,7 +19,8 @@ import {
 import { useAuth } from "../context/AuthContext";
 import { useBooks } from "../context/BooksContext";
 import { supabase } from "../lib/supabase";
-const AI_BACKEND_URL = "http://192.168.1.104:3001/api/ai-books/analyze";
+const AI_BACKEND_URL =
+  "https://readsphere-ai-backend.onrender.com/api/ai-books/analyze";
 
 type BookStatus = "want" | "reading" | "read";
 

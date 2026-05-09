@@ -12,6 +12,10 @@ import { useBooks } from "../../context/BooksContext";
 import { useChat } from "../../context/ChatContext";
 import { usePosts } from "../../context/PostsContext";
 import { useUser } from "../../context/UserContext";
+import {
+  getGenreDiscoveryQuery,
+  getReaderTypeQuery,
+} from "../../lib/discoveryQueries";
 import { supabase } from "../../lib/supabase";
 
 type ProfileRow = {
@@ -30,7 +34,8 @@ type PersonalizedCard = {
   emoji: string;
   title: string;
   subtitle: string;
-  query: string;
+  displayTitle: string;
+  searchQuery: string;
 };
 
 const COLORS = {
@@ -377,7 +382,8 @@ function buildPersonalizedCards(
       emoji: "📚",
       title: `${genre} türünde yeni kitaplar keşfet`,
       subtitle: "Favori türlerinden yola çıkarak hazırlandı.",
-      query: genre,
+      displayTitle: `${genre} keşfet`,
+      searchQuery: getGenreDiscoveryQuery(genre),
     });
   });
 
@@ -387,7 +393,8 @@ function buildPersonalizedCards(
       emoji: "✨",
       title: `${type} ruhuna uygun öneriler`,
       subtitle: "Okur vibe’ına yakın kitapları ara.",
-      query: type.replace(/[✨📚🌙✍️🪄🔍💔⚡☕🔥😅]/g, "").trim() || type,
+      displayTitle: `${type} önerileri`,
+      searchQuery: getReaderTypeQuery(type),
     });
   });
 
@@ -397,7 +404,8 @@ function buildPersonalizedCards(
       emoji: "🧭",
       title: `${mood} için kitap seçimi`,
       subtitle: "Bugünkü okuma moduna göre keşif başlat.",
-      query: mood,
+      displayTitle: `${mood} kitapları`,
+      searchQuery: `${mood} books`,
     });
   });
 
@@ -407,11 +415,12 @@ function buildPersonalizedCards(
       emoji: "🧠",
       title: `${value} sevenlere özel`,
       subtitle: "Kitapta önemsediğin detaylara göre önerildi.",
-      query: value,
+      displayTitle: `${value} kitapları`,
+      searchQuery: `${value} books`,
     });
   });
 
-  return cards.slice(0, 10);
+  return cards.slice(0, 20);
 }
 
 function PersonalizedRecommendationCard({
@@ -852,7 +861,8 @@ export default function Home() {
                     router.push({
                       pathname: "/add-book",
                       params: {
-                        query: item.query,
+                        query: item.searchQuery,
+                        displayTitle: item.displayTitle,
                         status: "want",
                       },
                     })

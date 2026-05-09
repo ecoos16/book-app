@@ -22,9 +22,9 @@ export type AppUser = {
   favoriteGenres?: string[];
   favoriteAuthors?: string[];
   favoriteBook?: string;
-  readingMood?: string;
-  bookValue?: string;
-  readerType?: string;
+  readingMood?: string[];
+  bookValue?: string[];
+  readerType?: string[];
   yearlyGoal?: number | null;
   onboardingCompleted?: boolean;
 };
@@ -51,9 +51,9 @@ const DEFAULT_USER: AppUser = {
   favoriteGenres: [],
   favoriteAuthors: [],
   favoriteBook: "",
-  readingMood: "",
-  bookValue: "",
-  readerType: "",
+  readingMood: [],
+  bookValue: [],
+  readerType: [],
   yearlyGoal: null,
   onboardingCompleted: false,
 };
@@ -71,9 +71,9 @@ type ProfileRow = {
   favorite_genres: string[] | null;
   favorite_authors: string[] | null;
   favorite_book: string | null;
-  reading_mood: string | null;
-  book_value: string | null;
-  reader_type: string | null;
+  reading_mood: string[] | null;
+  book_value: string[] | null;
+  reader_type: string[] | null;
   yearly_goal: number | null;
   onboarding_completed: boolean | null;
 };
@@ -104,9 +104,9 @@ function mapProfileToUser(profile: ProfileRow): AppUser {
     favoriteGenres: profile.favorite_genres ?? [],
     favoriteAuthors: profile.favorite_authors ?? [],
     favoriteBook: profile.favorite_book ?? "",
-    readingMood: profile.reading_mood ?? "",
-    bookValue: profile.book_value ?? "",
-    readerType: profile.reader_type ?? "",
+    readingMood: profile.reading_mood ?? [],
+    bookValue: profile.book_value ?? [],
+    readerType: profile.reader_type ?? [],
     yearlyGoal: profile.yearly_goal ?? null,
     onboardingCompleted: profile.onboarding_completed ?? false,
   };

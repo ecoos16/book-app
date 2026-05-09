@@ -136,17 +136,18 @@ function buildSearchUrl(
   key: string,
   maxResults: number,
 ): string {
-  const safeMaxResults = Math.min(Math.max(maxResults, 1), 20);
+  const safeMaxResults = Math.min(Math.max(maxResults, 1), 40);
 
   return (
     `${GOOGLE_BASE_URL}?q=${encodeURIComponent(query)}` +
     `&maxResults=${safeMaxResults}` +
     `&printType=books` +
     `&orderBy=relevance` +
+    `&langRestrict=tr` +
+    `&country=TR` +
     `&key=${encodeURIComponent(key)}`
   );
 }
-
 async function searchGoogleWithKey(
   query: string,
   key: string,
@@ -252,7 +253,8 @@ export async function searchGoogleBooks(
     throw new DOMException("Aborted", "AbortError");
   }
 
-  const cacheKey = `${trimmedQuery.toLocaleLowerCase("tr")}__${maxResults}`;
+  const safeMaxResults = Math.min(Math.max(maxResults, 1), 40);
+  const cacheKey = `${trimmedQuery.toLocaleLowerCase("tr")}__${safeMaxResults}`;
   const cached = cache.get(cacheKey);
 
   if (cached && Date.now() - cached.at < CACHE_TTL_MS) {
@@ -260,18 +262,52 @@ export async function searchGoogleBooks(
   }
 
   try {
-    const results = await searchGoogleSequential(
+    const queries = [
       trimmedQuery,
-      maxResults,
-      signal,
-    );
+      `intitle:${trimmedQuery}`,
+      `inauthor:${trimmedQuery}`,
+      `${trimmedQuery} kitapları`,
+      `popüler ${trimmedQuery} kitapları`,
+      `çok satan ${trimmedQuery} kitapları`,
+    ];
+
+    const collected: GoogleBook[] = [];
+    const seen = new Set<string>();
+
+    for (const q of queries) {
+      if (signal?.aborted) {
+        throw new DOMException("Aborted", "AbortError");
+      }
+
+      const results = await searchGoogleSequential(q, safeMaxResults, signal);
+
+      for (const book of results) {
+        const title = book.title?.toLocaleLowerCase("tr").trim() ?? "";
+        const author = Array.isArray(book.authors)
+          ? book.authors.join(", ").toLocaleLowerCase("tr").trim()
+          : "";
+
+        const duplicateKey = book.id || `${title}-${author}`;
+
+        if (!seen.has(duplicateKey)) {
+          seen.add(duplicateKey);
+          collected.push(book);
+        }
+      }
+
+      if (collected.length >= safeMaxResults) {
+        break;
+      }
+    }
+
+    const finalResults = collected.slice(0, safeMaxResults);
 
     cache.set(cacheKey, {
       at: Date.now(),
-      data: results,
+      data: finalResults,
     });
 
-    return results;
+    return finalResults;
   } catch (error: any) {
     if (error?.name === "AbortError") {
       throw error;

@@ -252,9 +252,21 @@ export function BooksProvider({ children }: { children: ReactNode }) {
   }
 
   async function upsertBookToSupabase(book: Book, safeUserId: string | null) {
-    if (!safeUserId) return;
+    console.log("UPSERT START:", {
+      safeUserId,
+      title: book.title,
+      author: book.author,
+      googleId: book.googleId,
+    });
+
+    if (!safeUserId) {
+      console.log("UPSERT STOP: userId yok");
+      return;
+    }
 
     const row = mapBookToSupabaseRow(book, safeUserId);
+
+    console.log("UPSERT ROW:", row);
 
     if (book.googleId) {
       const { error } = await supabase.from("books").upsert(row, {

@@ -13,6 +13,7 @@ import {
 } from "react-native";
 
 import { useAuth } from "../context/AuthContext";
+import { getAIDiscoveryRecommendations } from "../lib/aiDiscovery";
 import { searchGoogleBooks } from "../lib/googleBooks";
 import { supabase } from "../lib/supabase";
 import type { GoogleBook } from "../types/googleBooks";
@@ -37,8 +38,7 @@ type Props = {
   initialQuery?: string;
 };
 
-type SearchBookSource = GoogleBook["source"] | "database";
-
+type SearchBookSource = GoogleBook["source"] | "database" | "ai";
 type SearchBook = Omit<GoogleBook, "source"> & {
   source?: SearchBookSource;
   dbBookId?: string;
@@ -105,7 +105,6 @@ function makeDuplicateKey(book: SearchBook) {
 
   return `${title}__${authors}`;
 }
-
 function removeDuplicateBooks(books: SearchBook[]) {
   const seen = new Set<string>();
 
@@ -118,6 +117,75 @@ function removeDuplicateBooks(books: SearchBook[]) {
     seen.add(key);
     return true;
   });
+}
+
+async function searchBooksAuthorFirst(
+  query: string,
+  signal?: AbortSignal,
+): Promise<GoogleBook[]> {
+  const trimmed = query.trim();
+
+  const authorResults = await searchGoogleBooks(
+    `inauthor:${trimmed}`,
+    20,
+    signal,
+  );
+
+  const cleanedAuthorResults = authorResults.filter((book) => {
+    const title = normalizeText(book.title);
+
+    const bannedWords = [
+      "üzerine",
+      "inceleme",
+      "biyografi",
+      "yazan",
+      "anlatıyor",
+      "romanları",
+      "hayatı",
+      "armağan",
+      "sempozyumu",
+    ];
+
+    return !bannedWords.some((word) => title.includes(word));
+  });
+
+  if (cleanedAuthorResults.length >= 5) {
+    return cleanedAuthorResults;
+  }
+
+  const normalResults = await searchGoogleBooks(trimmed, 10, signal);
+
+  const merged = removeDuplicateBooks([
+    ...cleanedAuthorResults.map(mapGoogleBookToSearchBook),
+    ...normalResults.map(mapGoogleBookToSearchBook),
+  ]);
+
+  return merged.map((item) => item as GoogleBook);
+}
+
+function isDiscoveryQuery(query: string) {
+  const q = normalizeText(query);
+
+  const keywords = [
+    "bilim kurgu",
+    "roman",
+    "fantazi",
+    "psikoloji",
+    "felsefe",
+    "distopya",
+    "korku",
+    "polisiye",
+    "tarih",
+    "macera",
+    "romantik",
+    "çok satan",
+    "popüler",
+    "ödüllü",
+    "klasik",
+    "gençlik",
+  ];
+
+  return keywords.some((keyword) => q.includes(keyword));
 }
 
 function mapDbBookToSearchBook(book: SupabaseBookRow): SearchBook {
@@ -174,7 +242,7 @@ async function searchDatabaseBooks(query: string): Promise<SearchBook[]> {
       `title.ilike.%${safeQuery}%,author.ilike.%${safeQuery}%,publisher.ilike.%${safeQuery}%,isbn.ilike.%${safeQuery}%`,
     )
     .order("created_at", { ascending: false })
-    .limit(10);
+    .limit(20);
 
   if (error) {
     console.log("SUPABASE BOOK SEARCH ERROR:", error);
@@ -283,6 +351,7 @@ function SourceBadge({ source }: { source?: SearchBookSource }) {
   if (!source) return null;
 
   const isDatabase = source === "database";
+  const isAI = source === "ai";
 
   return (
     <View
@@ -304,7 +373,11 @@ function SourceBadge({ source }: { source?: SearchBookSource }) {
           color: isDatabase ? COLORS.primary : COLORS.muted,
         }}
       >
-        {isDatabase ? "ReadSphere veritabanı" : "Google Books"}
+        {isAI
+          ? "AI önerisi"
+          : isDatabase
+            ? "ReadSphere veritabanı"
+            : "Google Books"}{" "}
       </Text>
     </View>
   );
@@ -461,21 +534,91 @@ export default function BookSearchPicker({ onSelect, initialQuery }: Props) {
         setLoading(true);
         setMessage(null);
 
-        const [googleBooksData, dbBooksData, usersResponse] = await Promise.all(
-          [
-            searchGoogleBooks(q, 10, controller.signal),
-            searchDatabaseBooks(q),
-            supabase
-              .from("profiles")
-              .select(
-                "id, username, full_name, first_name, last_name, avatar_url",
-              )
-              .or(
-                `username.ilike.%${q}%,full_name.ilike.%${q}%,first_name.ilike.%${q}%,last_name.ilike.%${q}%`,
-              )
-              .limit(6),
-          ],
-        );
+        let googleBooksData: GoogleBook[] = [];
+
+        const discoveryMode = isDiscoveryQuery(q);
+        if (discoveryMode) {
+          const aiBooks = await getAIDiscoveryRecommendations({
+            genre: q,
+            limit: 8,
+          });
+
+          const aiResults: SearchBook[] = [];
+
+          for (let index = 0; index < aiBooks.length; index++) {
+            const book = aiBooks[index];
+
+            const title = book.title?.trim() || "";
+            const author = book.author?.trim() || "";
+
+            let matchedBook: GoogleBook | null = null;
+
+            try {
+              const query = author
+                ? `intitle:${title} inauthor:${author}`
+                : title;
+
+              const results = await searchGoogleBooks(
+                query,
+                3,
+                controller.signal,
+              );
+
+              matchedBook = results[0] ?? null;
+            } catch (error) {
+              console.log("AI PREVIEW MATCH ERROR:", error);
+            }
+
+            aiResults.push({
+              id: matchedBook?.id || `ai-${normalizeText(title)}-${index}`,
+              title: matchedBook?.title || title,
+              authors:
+                matchedBook?.authors && matchedBook.authors.length > 0
+                  ? matchedBook.authors
+                  : author
+                    ? [author]
+                    : [],
+              thumbnail: matchedBook?.thumbnail,
+              pageCount: matchedBook?.pageCount,
+              description: matchedBook?.description || book.reason,
+              categories: matchedBook?.categories,
+              publishedDate: matchedBook?.publishedDate,
+              language: matchedBook?.language,
+              source: "ai",
+            });
+          }
+
+          setBookResults(aiResults);
+          setUserResults([]);
+
+          setMessage(
+            aiResults.length === 0
+              ? {
+                  title: "AI öneri bulamadı",
+                  description: "Farklı bir tür veya arama kelimesi dene.",
+                  variant: "empty",
+                }
+              : null,
+          );
+
+          return;
+        } else {
+          googleBooksData = await searchBooksAuthorFirst(q, controller.signal);
+        }
+
+        const [dbBooksData, usersResponse] = await Promise.all([
+          searchDatabaseBooks(q),
+
+          supabase
+            .from("profiles")
+            .select(
+              "id, username, full_name, first_name, last_name, avatar_url",
+            )
+            .or(
+              `username.ilike.%${q}%,full_name.ilike.%${q}%,first_name.ilike.%${q}%,last_name.ilike.%${q}%`,
+            )
+            .limit(10),
+        ]);
 
         if (controller.signal.aborted) return;
 
@@ -486,11 +629,14 @@ export default function BookSearchPicker({ onSelect, initialQuery }: Props) {
         const users = (usersResponse.data ?? []) as ProfileSearchRow[];
 
         const googleBooks = googleBooksData.map(mapGoogleBookToSearchBook);
-
+        console.log(
+          "FINAL GOOGLE BOOKS:",
+          googleBooks.map((b) => b.title),
+        );
         const combinedBooks = removeDuplicateBooks([
           ...dbBooksData,
           ...googleBooks,
-        ]).slice(0, 15);
+        ]).slice(0, 30);
 
         setBookResults(combinedBooks);
         setUserResults(users);
@@ -534,7 +680,45 @@ export default function BookSearchPicker({ onSelect, initialQuery }: Props) {
     setLoading(false);
   };
 
-  const handleSelectBook = (item: SearchBook) => {
+  const handleSelectBook = async (item: SearchBook) => {
+    // AI önerisine tıklanınca önce Google Books'ta gerçek kitap detayını ara
+    if (item.source === "ai") {
+      try {
+        setLoading(true);
+
+        const title = item.title?.trim() || "";
+        const author = Array.isArray(item.authors)
+          ? item.authors.join(" ").trim()
+          : "";
+
+        const query = author ? `intitle:${title} inauthor:${author}` : title;
+
+        const results = await searchGoogleBooks(query, 5);
+
+        const bestMatch = results[0];
+
+        if (bestMatch) {
+          onSelect(bestMatch);
+        } else {
+          // Google Books eşleşmesi bulunamazsa AI verisiyle formu doldur
+          onSelect(item as GoogleBook);
+        }
+      } catch (error) {
+        console.log("AI BOOK DETAIL MATCH ERROR:", error);
+
+        // Hata olursa yine AI verisiyle formu doldur
+        onSelect(item as GoogleBook);
+      } finally {
+        setLoading(false);
+        setBookResults([]);
+        setUserResults([]);
+        setMessage(null);
+      }
+
+      return;
+    }
+
+    // Normal Google Books / database sonucunda mevcut davranış
     onSelect(item as GoogleBook);
     setBookResults([]);
     setUserResults([]);

@@ -7,23 +7,33 @@
     "icon": "./assets/images/icon.png",
     "scheme": "readsphere",
     "userInterfaceStyle": "automatic",
+
     "android": {
       "package": "com.ecesuorhan.kitapapp",
+
+      "permissions": ["CAMERA", "READ_MEDIA_IMAGES", "POST_NOTIFICATIONS"],
+
       "adaptiveIcon": {
         "foregroundImage": "./assets/images/android-icon-foreground.png",
         "backgroundColor": "#E6F4FE"
       }
     },
+
+    "plugins": [
+      "expo-web-browser",
+      "expo-image-picker",
+      "expo-camera",
+      "expo-notifications"
+    ],
+
     "web": {
       "favicon": "./assets/images/favicon.png"
     },
+
     "extra": {
       "eas": {
         "projectId": "dbee6f3a-2556-4412-9490-a8682b5d762f"
       }
-    },
-    "plugins": [
-      "expo-web-browser"
-    ]
+    }
   }
 }

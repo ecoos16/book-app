@@ -17,7 +17,8 @@ import { supabase } from "../../lib/supabase";
 import type { Book, BookStatus } from "../../types/book";
 
 const STORAGE_KEY = "BOOKS_V1";
-const AI_BACKEND_URL = "http://192.168.1.104:3001/api/ai-books/insight";
+const AI_BACKEND_URL =
+  "https://readsphere-ai-backend.onrender.com/api/ai-books/insight";
 const COLORS = {
   bg: "#fbf9f5",
   card: "#fffdf9",
@@ -492,13 +493,16 @@ export default function BookDetail() {
     try {
       setLoadingAlsoRead(true);
 
-      const { data, error } = await supabase.rpc("get_also_read_books", {
-        p_title: book.title,
-        p_author: book.author,
-        p_current_user_id: authUser.id,
-        p_limit: 5,
-      });
-
+      const { data, error } = await supabase.rpc(
+        "get_same_book_readers_by_google_id",
+        {
+          p_google_book_id: book.googleId ?? "",
+          p_current_user_id: authUser.id,
+          p_title: book.title,
+          p_author: book.author,
+          p_limit: 20,
+        },
+      );
       if (error) {
         console.log("ALSO READ BOOKS ERROR:", error);
         setAlsoReadBooks([]);
@@ -529,19 +533,21 @@ export default function BookDetail() {
   useEffect(() => {
     async function fetchReaders() {
       if (!authUser?.id) {
+        console.log("READERS STOP: auth yok");
         setSameReaders([]);
         setLoadingReaders(false);
         return;
       }
 
-      if (!book || book.status !== "reading") {
+      if (!book) {
+        console.log("READERS STOP: book yok");
         setSameReaders([]);
         setLoadingReaders(false);
         return;
       }
 
-      if (!book.googleId) {
-        console.log("❌ GOOGLE ID YOK → eşleşme çıkmaz");
+      if (book.status !== "reading") {
+        console.log("READERS STOP: kitap reading değil", book.status);
         setSameReaders([]);
         setLoadingReaders(false);
         return;
@@ -549,17 +555,29 @@ export default function BookDetail() {
 
       setLoadingReaders(true);
 
+      console.log("READERS RPC PARAMS:", {
+        p_google_book_id: book.googleId ?? "",
+        p_current_user_id: authUser.id,
+        p_title: book.title,
+        p_author: book.author,
+        p_limit: 20,
+      });
+
       const { data, error } = await supabase.rpc(
         "get_same_book_readers_by_google_id",
         {
-          p_google_book_id: book.googleId,
+          p_google_book_id: book.googleId ?? "",
           p_current_user_id: authUser.id,
+          p_title: book.title,
+          p_author: book.author,
           p_limit: 20,
         },
       );
 
+      console.log("READERS RPC DATA:", data);
+      console.log("READERS RPC ERROR:", error);
+
       if (error) {
-        console.log("READERS ERROR:", error);
         setSameReaders([]);
       } else {
         setSameReaders((data ?? []) as SameReader[]);
@@ -567,7 +585,6 @@ export default function BookDetail() {
 
       setLoadingReaders(false);
     }
-
     fetchReaders();
   }, [book, authUser?.id]);
   const readersCount = useMemo(() => {

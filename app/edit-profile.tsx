@@ -50,6 +50,7 @@ const GENRES = [
   "Manga",
   "Distopya",
 ];
+
 const READER_VIBES = [
   "Düzenli okuma alışkanlığına sahibim",
   "Yavaş ve sindirerek okumayı tercih ederim",
@@ -62,6 +63,7 @@ const READER_VIBES = [
   "Dönemsel olarak okuma alışkanlığım değişebilir",
   "Farklı türleri keşfetmeyi severim",
 ];
+
 const READING_MOODS = [
   "Klasik eserler okumak istiyorum",
   "Düşündüren ve derinlikli metinler arıyorum",
@@ -72,6 +74,7 @@ const READING_MOODS = [
   "Daha hafif ve akıcı kitaplar tercih ediyorum",
   "Farklı türleri keşfetmek istiyorum",
 ];
+
 const BOOK_VALUES = [
   "Güçlü karakter gelişimi",
   "Akıcı ve anlaşılır anlatım",
@@ -84,6 +87,21 @@ const BOOK_VALUES = [
   "Bilgi ve farkındalık kazandırması",
   "Kalıcı etki bırakması",
 ];
+
+function toArray(value: unknown): string[] {
+  if (Array.isArray(value)) {
+    return value.filter(
+      (item): item is string =>
+        typeof item === "string" && item.trim().length > 0,
+    );
+  }
+
+  if (typeof value === "string" && value.trim().length > 0) {
+    return [value.trim()];
+  }
+
+  return [];
+}
 
 function ChipSelect({
   label,
@@ -137,15 +155,23 @@ export default function EditProfileScreen() {
   const [username, setUsername] = useState(user.username ?? "");
   const [bio, setBio] = useState(user.bio ?? "");
   const [favoriteBook, setFavoriteBook] = useState(user.favoriteBook ?? "");
-  const [readerType, setReaderType] = useState(user.readerType ?? "");
-  const [readingMood, setReadingMood] = useState(user.readingMood ?? "");
-  const [bookValue, setBookValue] = useState(user.bookValue ?? "");
+
+  const [readerType, setReaderType] = useState<string[]>(
+    toArray(user.readerType),
+  );
+  const [readingMood, setReadingMood] = useState<string[]>(
+    toArray(user.readingMood),
+  );
+  const [bookValue, setBookValue] = useState<string[]>(toArray(user.bookValue));
+
   const [yearlyGoal, setYearlyGoal] = useState(
     user.yearlyGoal ? String(user.yearlyGoal) : "",
   );
+
   const [favoriteGenres, setFavoriteGenres] = useState<string[]>(
     user.favoriteGenres ?? [],
   );
+
   const [favoriteAuthorsInput, setFavoriteAuthorsInput] = useState(
     (user.favoriteAuthors ?? []).join(", "),
   );
@@ -229,8 +255,6 @@ export default function EditProfileScreen() {
   };
 
   const onSave = async () => {
-    console.log("SAVE BUTTON PRESSED");
-
     if (!authUser?.id) {
       Alert.alert("Hata", "Oturum açık değil.");
       return;
@@ -252,8 +276,6 @@ export default function EditProfileScreen() {
         setUploadingAvatar(false);
       }
 
-      console.log("FINAL AVATAR URL:", finalAvatarUrl);
-
       const profilePayload = {
         first_name: firstName.trim(),
         last_name: lastName.trim(),
@@ -262,9 +284,11 @@ export default function EditProfileScreen() {
         avatar_url: finalAvatarUrl,
         bio: bio.trim(),
         favorite_book: favoriteBook.trim(),
+
         reader_type: readerType,
         reading_mood: readingMood,
         book_value: bookValue,
+
         yearly_goal: yearlyGoal ? Number(yearlyGoal) : null,
         favorite_genres: favoriteGenres,
         favorite_authors: favoriteAuthors,
@@ -343,18 +367,11 @@ export default function EditProfileScreen() {
         </Pressable>
 
         <View style={{ flex: 1 }}>
-          <Text
-            style={{
-              fontSize: 26,
-              fontWeight: "900",
-              color: COLORS.text,
-            }}
-          >
+          <Text style={{ fontSize: 26, fontWeight: "900", color: COLORS.text }}>
             Profili Düzenle
           </Text>
           <Text style={{ color: COLORS.muted }}>
-            Profil bilgilerini güncelleyerek önerileri
-            kişiselleştirebilirsin{" "}
+            Profil bilgilerini güncelleyerek önerileri kişiselleştirebilirsin
           </Text>
         </View>
       </View>
@@ -474,18 +491,6 @@ export default function EditProfileScreen() {
             },
           ]}
         />
-
-        <TextInput
-          ref={yearlyGoalRef}
-          value={yearlyGoal}
-          onChangeText={setYearlyGoal}
-          placeholder="Yıllık kitap hedefin"
-          placeholderTextColor="#9a9389"
-          keyboardType="numeric"
-          returnKeyType="done"
-          onSubmitEditing={onSave}
-          style={inputStyle}
-        />
       </View>
 
       <View
@@ -499,7 +504,7 @@ export default function EditProfileScreen() {
         }}
       >
         <Text style={{ fontSize: 18, fontWeight: "900", color: COLORS.text }}>
-          Tercih Ettiğin Türler{" "}
+          Tercih Ettiğin Türler
         </Text>
 
         <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 10 }}>
@@ -525,7 +530,7 @@ export default function EditProfileScreen() {
         }}
       >
         <Text style={{ fontSize: 18, fontWeight: "900", color: COLORS.text }}>
-          Okuma Tercihlerin{" "}
+          Okuma Tercihlerin
         </Text>
 
         <TextInput
@@ -562,15 +567,15 @@ export default function EditProfileScreen() {
         }}
       >
         <Text style={{ fontSize: 18, fontWeight: "900", color: COLORS.text }}>
-          Okuma Alışkanlığın{" "}
+          Okuma Alışkanlığın
         </Text>
 
         {READER_VIBES.map((item) => (
           <ChipSelect
             key={item}
             label={item}
-            selected={readerType === item}
-            onPress={() => setReaderType(item)}
+            selected={readerType.includes(item)}
+            onPress={() => setReaderType([item])}
           />
         ))}
       </View>
@@ -586,7 +591,7 @@ export default function EditProfileScreen() {
         }}
       >
         <Text style={{ fontSize: 18, fontWeight: "900", color: COLORS.text }}>
-          Okuma Tercihi{" "}
+          Okuma Tercihi
         </Text>
 
         <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 10 }}>
@@ -594,14 +599,14 @@ export default function EditProfileScreen() {
             <ChipSelect
               key={item}
               label={item}
-              selected={readingMood === item}
-              onPress={() => setReadingMood(item)}
+              selected={readingMood.includes(item)}
+              onPress={() => setReadingMood([item])}
             />
           ))}
         </View>
 
         <Text style={{ fontSize: 16, fontWeight: "800", color: COLORS.text }}>
-          Bir kitapta senin için en önemli özellikler nelerdir?{" "}
+          Bir kitapta senin için en önemli özellikler nelerdir?
         </Text>
 
         <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 10 }}>
@@ -609,8 +614,8 @@ export default function EditProfileScreen() {
             <ChipSelect
               key={item}
               label={item}
-              selected={bookValue === item}
-              onPress={() => setBookValue(item)}
+              selected={bookValue.includes(item)}
+              onPress={() => setBookValue([item])}
             />
           ))}
         </View>
@@ -631,11 +636,14 @@ export default function EditProfileScreen() {
         </Text>
 
         <TextInput
+          ref={yearlyGoalRef}
           value={yearlyGoal}
           onChangeText={setYearlyGoal}
           placeholder="Bu yıl için okuma hedefin (örn: 24)"
           placeholderTextColor="#9a9389"
           keyboardType="numeric"
+          returnKeyType="done"
+          onSubmitEditing={onSave}
           style={inputStyle}
         />
       </View>

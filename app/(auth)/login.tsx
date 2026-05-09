@@ -107,14 +107,24 @@ export default function Login() {
           backgroundColor: COLORS.card,
           borderWidth: 1,
           borderColor: COLORS.border,
-          borderRadius: 28,
-          padding: 22,
-          gap: 16,
+          borderRadius: 30,
+          padding: 24,
+          gap: 14,
+
+          shadowColor: "#000",
+          shadowOpacity: 0.08,
+          shadowRadius: 18,
+          shadowOffset: {
+            width: 0,
+            height: 8,
+          },
+
+          elevation: 4,
         }}
       >
         {/* EMAIL */}
         <TextInput
-          placeholder="Email"
+          placeholder="E-posta"
           placeholderTextColor="#9a9389"
           autoCapitalize="none"
           keyboardType="email-address"
@@ -126,8 +136,12 @@ export default function Login() {
             borderWidth: 1,
             borderColor: COLORS.border,
             borderRadius: 18,
-            padding: 14,
-            backgroundColor: "#fff",
+            paddingHorizontal: 16,
+            paddingVertical: 14,
+            backgroundColor: "#f8f1ea",
+            color: COLORS.text,
+            fontSize: 15,
+            fontWeight: "600",
           }}
         />
 
@@ -135,6 +149,7 @@ export default function Login() {
         <TextInput
           ref={passwordRef}
           placeholder="Şifre"
+          placeholderTextColor="#9a9389"
           secureTextEntry
           value={password}
           onChangeText={setPassword}
@@ -144,11 +159,15 @@ export default function Login() {
             borderWidth: 1,
             borderColor: COLORS.border,
             borderRadius: 18,
-            padding: 14,
-            backgroundColor: "#fff",
+            paddingHorizontal: 16,
+            paddingVertical: 14,
+            backgroundColor: "#f8f1ea",
+            color: COLORS.text,
+            fontSize: 15,
+            fontWeight: "600",
           }}
         />
-
+        <View style={{ alignItems: "flex-end" }}></View>
         {/* NORMAL LOGIN */}
         <Pressable
           onPress={handleLogin}
@@ -192,7 +211,18 @@ export default function Login() {
             </>
           )}
         </Pressable>
-
+        <View style={{ alignItems: "center", marginTop: -4 }}>
+          <Link
+            href="/(auth)/forgot-password"
+            style={{
+              color: COLORS.primary,
+              fontWeight: "900",
+              fontSize: 13,
+            }}
+          >
+            Şifremi unuttum
+          </Link>
+        </View>
         {/* REGISTER */}
         <View style={{ alignItems: "center", marginTop: 8 }}>
           <Text style={{ color: COLORS.muted }}>Hesabın yok mu?</Text>
